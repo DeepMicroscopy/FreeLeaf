@@ -1,4 +1,4 @@
-import { api, parseBibtex, serializeEntry } from "@freeleaf/shared";
+import { api, findDuplicateByContent, parseBibtex, serializeEntry } from "@freeleaf/shared";
 import type { BibEntry } from "@freeleaf/shared";
 import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
@@ -16,6 +16,11 @@ interface BibliographyContextValue {
   addEntries: (parsed: Array<{ type: string; key: string; fields: Record<string, string> }>) => AddResult;
   updateEntry: (key: string, next: { type: string; key: string; fields: Record<string, string> }) => boolean;
   deleteEntry: (key: string) => boolean;
+  /** Same paper under a different key — see findDuplicateByContent. Always
+   * re-parses live content rather than trusting the `entries` state, which
+   * can lag a tick behind the Yjs observer. */
+  findNearDuplicate: (candidate: { fields: Record<string, string> }) => BibEntry | null;
+  findByKey: (key: string) => BibEntry | null;
 }
 
 const BibliographyContext = createContext<BibliographyContextValue | null>(null);
@@ -127,8 +132,22 @@ export function BibliographyProvider({ projectId, children }: { projectId: strin
     return true;
   }
 
+  function findNearDuplicate(candidate: { fields: Record<string, string> }): BibEntry | null {
+    const ytext = ytextRef.current;
+    if (!ytext) return null;
+    return findDuplicateByContent(parseBibtex(ytext.toString()), candidate);
+  }
+
+  function findByKey(key: string): BibEntry | null {
+    const ytext = ytextRef.current;
+    if (!ytext) return null;
+    return parseBibtex(ytext.toString()).find((e) => e.key === key) ?? null;
+  }
+
   return (
-    <BibliographyContext.Provider value={{ entries, loading, addEntries, updateEntry, deleteEntry }}>
+    <BibliographyContext.Provider
+      value={{ entries, loading, addEntries, updateEntry, deleteEntry, findNearDuplicate, findByKey }}
+    >
       {children}
     </BibliographyContext.Provider>
   );

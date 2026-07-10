@@ -10,27 +10,72 @@ import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
 import { PageSpinner } from "../ui/Spinner";
 import { useToast } from "../ui/Toast";
+import type { DuplicateChoice } from "./DuplicateDialog";
+import { DuplicateDialog } from "./DuplicateDialog";
 import { EntryForm } from "./EntryForm";
 import styles from "./LibraryTab.module.css";
 
 export function LibraryTab() {
-  const { entries, loading, addEntries, updateEntry, deleteEntry } = useBibliography();
+  const { entries, loading, addEntries, updateEntry, deleteEntry, findNearDuplicate, findByKey } = useBibliography();
   const { canWrite } = useWorkspace();
   const { show } = useToast();
   const [formEntry, setFormEntry] = useState<BibEntry | "new" | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [dupModal, setDupModal] = useState<{
+    existing: BibEntry;
+    incoming: { key: string; fields: Record<string, string> };
+    resolve: (choice: DuplicateChoice) => void;
+  } | null>(null);
 
-  function importParsed(parsed: Array<{ type: string; key: string; fields: Record<string, string> }>) {
+  function showDuplicateModal(
+    existing: BibEntry,
+    incoming: { key: string; fields: Record<string, string> },
+  ): Promise<DuplicateChoice> {
+    return new Promise((resolve) => {
+      setDupModal({
+        existing,
+        incoming,
+        resolve: (choice) => {
+          setDupModal(null);
+          resolve(choice);
+        },
+      });
+    });
+  }
+
+  async function importParsed(parsed: Array<{ type: string; key: string; fields: Record<string, string> }>) {
     if (parsed.length === 0) {
       show("No BibTeX entries found in that content.", "error");
       return;
     }
-    const { added, conflicts } = addEntries(parsed);
-    if (added.length > 0) {
-      const suffix = conflicts.length > 0 ? `, ${conflicts.length} duplicate key(s) skipped` : "";
-      show(`Added ${added.length} reference${added.length === 1 ? "" : "s"}${suffix}.`);
-    } else if (conflicts.length > 0) {
-      show(`All ${conflicts.length} entries were already in the library — nothing added.`, "error");
+    const addedKeys: string[] = [];
+    const alreadyKnownKeys: string[] = [];
+    for (const entry of parsed) {
+      // Exact key already present -> unambiguous, no modal needed. Must
+      // come before the content-based check: an exact re-import otherwise
+      // matches itself as a "near duplicate."
+      if (findByKey(entry.key)) {
+        alreadyKnownKeys.push(entry.key);
+        continue;
+      }
+      const near = findNearDuplicate(entry);
+      if (near) {
+        const choice = await showDuplicateModal(near, entry);
+        if (choice === "skip") continue;
+        if (choice === "existing") {
+          alreadyKnownKeys.push(near.key);
+          continue;
+        }
+      }
+      const { added, conflicts } = addEntries([entry]);
+      if (added.length > 0) addedKeys.push(added[0]);
+      else if (conflicts.length > 0) alreadyKnownKeys.push(entry.key); // race: key taken between our check and now
+    }
+    if (addedKeys.length > 0) {
+      const suffix = alreadyKnownKeys.length > 0 ? `, already had: ${alreadyKnownKeys.join(", ")}` : "";
+      show(`Added reference${addedKeys.length === 1 ? "" : "s"}: ${addedKeys.join(", ")}${suffix}.`);
+    } else if (alreadyKnownKeys.length > 0) {
+      show(`Already in the library: ${alreadyKnownKeys.join(", ")} — nothing added.`, "error");
     }
   }
 
@@ -39,7 +84,7 @@ export function LibraryTab() {
     const text = e.clipboardData.getData("text/plain");
     if (!looksLikeBibtex(text)) return;
     e.preventDefault();
-    importParsed(parseBibtex(text));
+    void importParsed(parseBibtex(text));
   }
 
   async function handleDrop(e: DragEvent<HTMLDivElement>) {
@@ -53,7 +98,7 @@ export function LibraryTab() {
       show("That file doesn't look like BibTeX.", "error");
       return;
     }
-    importParsed(parseBibtex(text));
+    await importParsed(parseBibtex(text));
   }
 
   function handleDelete(entry: BibEntry) {
@@ -158,6 +203,9 @@ export function LibraryTab() {
             ))}
           </tbody>
         </table>
+      )}
+      {dupModal && (
+        <DuplicateDialog existing={dupModal.existing} incoming={dupModal.incoming} onResolve={dupModal.resolve} />
       )}
     </div>
   );

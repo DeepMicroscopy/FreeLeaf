@@ -1,4 +1,5 @@
 import { api, looksLikeBibtex, parseBibtex } from "@freeleaf/shared";
+import type { BibEntry } from "@freeleaf/shared";
 import { autocompletion, completionKeymap } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { StreamLanguage } from "@codemirror/language";
@@ -15,6 +16,8 @@ import { useBibliography } from "../../lib/bibliography";
 import { Spinner } from "../ui/Spinner";
 import { useToast } from "../ui/Toast";
 import { citeCompletionSource } from "./citeCompletion";
+import type { DuplicateChoice } from "./DuplicateDialog";
+import { DuplicateDialog } from "./DuplicateDialog";
 import styles from "./CodeMirrorEditor.module.css";
 
 type ConnectionStatus = "connecting" | "live" | "disconnected";
@@ -72,7 +75,7 @@ export function CodeMirrorEditor({
   onCompileShortcut?: () => void;
 }) {
   const { user } = useAuth();
-  const { entries, addEntries } = useBibliography();
+  const { entries, addEntries, findNearDuplicate, findByKey } = useBibliography();
   const { show } = useToast();
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -83,22 +86,83 @@ export function CodeMirrorEditor({
   onCompileShortcutRef.current = onCompileShortcut;
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
+  const addEntriesRef = useRef(addEntries);
+  addEntriesRef.current = addEntries;
+  const findNearDuplicateRef = useRef(findNearDuplicate);
+  findNearDuplicateRef.current = findNearDuplicate;
+  const findByKeyRef = useRef(findByKey);
+  findByKeyRef.current = findByKey;
 
-  const importBibtexRef = useRef((_text: string) => {});
-  importBibtexRef.current = (text: string) => {
+  const [dupModal, setDupModal] = useState<{
+    existing: BibEntry;
+    incoming: { key: string; fields: Record<string, string> };
+    resolve: (choice: DuplicateChoice) => void;
+  } | null>(null);
+  const showDuplicateModalRef = useRef<
+    (existing: BibEntry, incoming: { key: string; fields: Record<string, string> }) => Promise<DuplicateChoice>
+  >(null!);
+  if (!showDuplicateModalRef.current) {
+    showDuplicateModalRef.current = (existing, incoming) =>
+      new Promise<DuplicateChoice>((resolve) => {
+        setDupModal({
+          existing,
+          incoming,
+          resolve: (choice) => {
+            setDupModal(null);
+            resolve(choice);
+          },
+        });
+      });
+  }
+
+  // Paste/drop of BibTeX content (Plan.md §9 Phase 6): resolve each entry —
+  // exact key already present -> just cite it (no double add); same title +
+  // first author under a *different* key -> ask via modal; otherwise add and
+  // cite the new key. Then insert \cite{key1, key2, ...} at the position the
+  // cursor was at when the paste/drop happened.
+  const resolveAndCiteRef = useRef(async (_text: string, _view: EditorView, _atPos: number) => {});
+  resolveAndCiteRef.current = async (text: string, view: EditorView, atPos: number) => {
     const parsed = parseBibtex(text);
     if (parsed.length === 0) {
       show("No BibTeX entries found in that content.", "error");
       return;
     }
-    const { added, conflicts } = addEntries(parsed);
-    if (added.length > 0) {
-      const suffix = conflicts.length > 0 ? `, ${conflicts.length} duplicate key(s) skipped` : "";
-      show(`Added ${added.length} reference${added.length === 1 ? "" : "s"}${suffix}.`);
-    } else if (conflicts.length > 0) {
-      show(`All ${conflicts.length} entries were already in the library — nothing added.`, "error");
+
+    const resolvedKeys: string[] = [];
+    for (const entry of parsed) {
+      // Exact key already present -> unambiguous, just cite it. Must be
+      // checked *before* the content-based near-duplicate check: an exact
+      // re-paste otherwise matches itself as a "near duplicate" and pops
+      // the modal needlessly.
+      if (findByKeyRef.current(entry.key)) {
+        resolvedKeys.push(entry.key);
+        continue;
+      }
+      const near = findNearDuplicateRef.current(entry);
+      if (near) {
+        const choice = await showDuplicateModalRef.current(near, entry);
+        if (choice === "skip") continue;
+        if (choice === "existing") {
+          resolvedKeys.push(near.key);
+          continue;
+        }
+        // "add" falls through to adding it as a new entry below.
+      }
+      const { added, conflicts } = addEntriesRef.current([entry]);
+      if (added.length > 0) resolvedKeys.push(added[0]);
+      else if (conflicts.length > 0) resolvedKeys.push(entry.key); // race: someone else took the key between our check and now
     }
+
+    if (resolvedKeys.length === 0) return;
+
+    const citeText = `\\cite{${resolvedKeys.join(", ")}}`;
+    view.dispatch({
+      changes: { from: atPos, to: atPos, insert: citeText },
+      selection: { anchor: atPos + citeText.length },
+    });
+    show(`Added reference${resolvedKeys.length === 1 ? "" : "s"}: ${resolvedKeys.join(", ")}`);
   };
+
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const [presence, setPresence] = useState<PresenceUser[]>([]);
@@ -174,23 +238,25 @@ export function CodeMirrorEditor({
             EditorView.lineWrapping,
             EditorState.readOnly.of(readOnly),
             EditorView.domEventHandlers({
-              paste: (event) => {
+              paste: (event, view) => {
                 const text = event.clipboardData?.getData("text/plain") ?? "";
                 if (!looksLikeBibtex(text)) return false;
                 event.preventDefault();
-                importBibtexRef.current(text);
+                const pos = view.state.selection.main.head;
+                void resolveAndCiteRef.current(text, view, pos);
                 return true;
               },
-              drop: (event) => {
+              drop: (event, view) => {
                 const file = event.dataTransfer?.files?.[0];
                 if (!file) return false;
                 event.preventDefault();
+                const pos = view.state.selection.main.head;
                 void file.text().then((text) => {
                   if (!looksLikeBibtex(text)) {
                     show("That file doesn't look like BibTeX.", "error");
                     return;
                   }
-                  importBibtexRef.current(text);
+                  void resolveAndCiteRef.current(text, view, pos);
                 });
                 return true;
               },
@@ -234,6 +300,9 @@ export function CodeMirrorEditor({
         <div className={styles.loadingOverlay}>
           <Spinner />
         </div>
+      )}
+      {dupModal && (
+        <DuplicateDialog existing={dupModal.existing} incoming={dupModal.incoming} onResolve={dupModal.resolve} />
       )}
     </div>
   );

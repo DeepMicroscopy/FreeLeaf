@@ -115,3 +115,40 @@ export function serializeEntry(entry: { type: string; key: string; fields: Recor
 export function looksLikeBibtex(text: string): boolean {
   return /@\s*[a-zA-Z]+\s*[{(]\s*[^\s,{}()]+\s*,/.test(text);
 }
+
+function normalizeForMatch(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[{}\\]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function firstAuthorNormalized(author: string): string {
+  const first = author.split(/\s+and\s+/i)[0] ?? author;
+  return normalizeForMatch(first);
+}
+
+/** Same paper, different cite key: matches by normalized title + first
+ * author rather than by key, so a re-paste of a reference already in the
+ * library under a different key gets caught instead of silently
+ * duplicated. Deliberately loose (case/punctuation-insensitive, first
+ * author only) — good enough to catch the common "pasted the same paper
+ * twice" case, not a bibliographic-identity guarantee. */
+export function findDuplicateByContent<T extends { fields: Record<string, string> }>(
+  entries: T[],
+  candidate: { fields: Record<string, string> },
+): T | null {
+  const title = candidate.fields.title ? normalizeForMatch(candidate.fields.title) : "";
+  const author = candidate.fields.author ? firstAuthorNormalized(candidate.fields.author) : "";
+  if (!title || !author) return null;
+  return (
+    entries.find(
+      (e) =>
+        e.fields.title &&
+        e.fields.author &&
+        normalizeForMatch(e.fields.title) === title &&
+        firstAuthorNormalized(e.fields.author) === author,
+    ) ?? null
+  );
+}
