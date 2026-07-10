@@ -1,6 +1,6 @@
 import { api, apiOrigin } from "@freeleaf/shared";
 import type { components } from "@freeleaf/shared";
-import { FileX2, RotateCw } from "lucide-react";
+import { FileText, FileX2, RotateCw } from "lucide-react";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 
 import { Button } from "../ui/Button";
@@ -23,6 +23,9 @@ export const CompilePane = forwardRef<CompilePaneHandle, { projectId: string; ca
     const [run, setRun] = useState<CompileRunOut | null>(null);
     const [compiling, setCompiling] = useState(false);
     const [loadingLast, setLoadingLast] = useState(true);
+    const [viewMode, setViewMode] = useState<"pdf" | "log">("pdf");
+    const [logText, setLogText] = useState<string | null>(null);
+    const [logLoading, setLogLoading] = useState(false);
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const inFlightRef = useRef(false);
     const rerunRequestedRef = useRef(false);
@@ -84,6 +87,25 @@ export const CompilePane = forwardRef<CompilePaneHandle, { projectId: string; ca
       };
     }, []);
 
+    useEffect(() => {
+      if (viewMode !== "log" || !run) return;
+      let cancelled = false;
+      setLogLoading(true);
+      (async () => {
+        const res = await fetch(`${apiOrigin()}/api/projects/${projectId}/compile-runs/${run.id}/log`, {
+          credentials: "include",
+        });
+        const text = res.ok ? await res.text() : "Couldn't load the log for this compile run.";
+        if (!cancelled) {
+          setLogText(text);
+          setLogLoading(false);
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [viewMode, run, projectId]);
+
     if (loadingLast) {
       return (
         <div className={styles.centered}>
@@ -96,17 +118,29 @@ export const CompilePane = forwardRef<CompilePaneHandle, { projectId: string; ca
       <div className={styles.pane}>
         <div className={styles.toolbar}>
           <StatusLabel run={run} compiling={compiling} />
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={compile}
-            loading={compiling}
-            disabled={!canWrite}
-            title={canWrite ? undefined : "You don't have permission to compile this project."}
-          >
-            <RotateCw size={14} aria-hidden="true" />
-            Recompile
-          </Button>
+          <div className={styles.toolbarActions}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setViewMode((m) => (m === "pdf" ? "log" : "pdf"))}
+              disabled={!run}
+              title={!run ? "Nothing compiled yet." : undefined}
+            >
+              <FileText size={14} aria-hidden="true" />
+              {viewMode === "pdf" ? "View log" : "View PDF"}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={compile}
+              loading={compiling}
+              disabled={!canWrite}
+              title={canWrite ? undefined : "You don't have permission to compile this project."}
+            >
+              <RotateCw size={14} aria-hidden="true" />
+              Recompile
+            </Button>
+          </div>
         </div>
         <div className={styles.body}>
           {!run && !compiling && (
@@ -116,15 +150,27 @@ export const CompilePane = forwardRef<CompilePaneHandle, { projectId: string; ca
               description="Click Recompile, or save an edit — compiling happens automatically after every save."
             />
           )}
-          {run?.has_pdf && (
-            <PdfViewer src={`${apiOrigin()}/api/projects/${projectId}/compile-runs/${run.id}/pdf`} />
-          )}
-          {run && !run.has_pdf && !compiling && (
-            <EmptyState
-              icon={<FileX2 size={32} aria-hidden="true" />}
-              title={run.status === "timeout" ? "Compile timed out" : "Compile failed"}
-              description="See the errors below for details."
-            />
+          {run && viewMode === "log" ? (
+            logLoading ? (
+              <div className={styles.centered}>
+                <Spinner />
+              </div>
+            ) : (
+              <pre className={styles.logView}>{logText}</pre>
+            )
+          ) : (
+            <>
+              {run?.has_pdf && (
+                <PdfViewer src={`${apiOrigin()}/api/projects/${projectId}/compile-runs/${run.id}/pdf`} />
+              )}
+              {run && !run.has_pdf && !compiling && (
+                <EmptyState
+                  icon={<FileX2 size={32} aria-hidden="true" />}
+                  title={run.status === "timeout" ? "Compile timed out" : "Compile failed"}
+                  description="See the errors below for details."
+                />
+              )}
+            </>
           )}
           {run && (run.errors.length > 0 || run.warnings.length > 0) && (
             <DiagnosticsList run={run} />
