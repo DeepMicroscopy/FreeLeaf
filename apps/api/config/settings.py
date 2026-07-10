@@ -58,6 +58,12 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
+if not DEBUG:
+    # Serves collected static files straight from gunicorn in production
+    # (see STATICFILES_STORAGE below). Skipped in dev — collectstatic never
+    # runs there, so STATIC_ROOT doesn't exist and the middleware just warns.
+    MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
+
 # --- FreeLeaf auth (Plan.md §8/§9 Phase 1) ---
 # ORCID / magic-link / anonymous sign-in; no passwords. See accounts app.
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
