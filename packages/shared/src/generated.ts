@@ -619,6 +619,8 @@ export interface components {
             central_bib_path?: string | null;
             /** Compiler */
             compiler: string;
+            /** Bib Engine */
+            bib_engine: string;
         };
         /** ProjectSettingsIn */
         ProjectSettingsIn: {
@@ -628,6 +630,8 @@ export interface components {
             central_bib_path?: string | null;
             /** Compiler */
             compiler?: string | null;
+            /** Bib Engine */
+            bib_engine?: string | null;
         };
         /** CompileRunOut */
         CompileRunOut: {

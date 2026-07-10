@@ -14,6 +14,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     texlive-latex-extra \
     texlive-fonts-recommended \
     texlive-xetex \
+    texlive-bibtex-extra \
+    biber \
     latexmk \
     && rm -rf /var/lib/apt/lists/*
 

@@ -21,7 +21,7 @@ from core.session import get_current_user
 
 from .authz import get_authorized_project, require_role
 from .log_parser import Diagnostic, parse_log
-from .models import Compiler, CompileRun, FileType, ProjectSettings, Role
+from .models import BibEngine, Compiler, CompileRun, FileType, ProjectSettings, Role
 from .paths import InvalidPathError, normalize_path
 
 logger = logging.getLogger(__name__)
@@ -97,11 +97,15 @@ class ProjectSettingsOut(Schema):
     main_doc_path: str
     central_bib_path: str | None = None
     compiler: str
+    bib_engine: str
 
 
 def _settings_out(s: ProjectSettings) -> ProjectSettingsOut:
     return ProjectSettingsOut(
-        main_doc_path=s.main_doc_path, central_bib_path=s.central_bib_path, compiler=s.compiler
+        main_doc_path=s.main_doc_path,
+        central_bib_path=s.central_bib_path,
+        compiler=s.compiler,
+        bib_engine=s.bib_engine,
     )
 
 
@@ -116,6 +120,7 @@ class ProjectSettingsIn(Schema):
     main_doc_path: str | None = None
     central_bib_path: str | None = None
     compiler: str | None = None
+    bib_engine: str | None = None
 
 
 @router.patch("/projects/{project_id}/settings", response=ProjectSettingsOut)
@@ -129,6 +134,10 @@ def update_settings(request, project_id: uuid.UUID, payload: ProjectSettingsIn):
         if payload.compiler not in (Compiler.PDFLATEX, Compiler.XELATEX):
             raise HttpError(400, "compiler must be 'pdflatex' or 'xelatex'.")
         s.compiler = payload.compiler
+    if payload.bib_engine is not None:
+        if payload.bib_engine not in (BibEngine.BIBTEX, BibEngine.BIBER):
+            raise HttpError(400, "bib_engine must be 'bibtex' or 'biber'.")
+        s.bib_engine = payload.bib_engine
     if payload.main_doc_path is not None:
         try:
             s.main_doc_path = normalize_path(payload.main_doc_path)

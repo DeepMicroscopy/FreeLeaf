@@ -90,6 +90,11 @@ class Compiler(models.TextChoices):
     XELATEX = "xelatex", "XeLaTeX"
 
 
+class BibEngine(models.TextChoices):
+    BIBTEX = "bibtex", "BibTeX"
+    BIBER = "biber", "Biber"
+
+
 class ProjectSettings(models.Model):
     """One-to-one with Project. Auto-created on first access with defaults
     (see get_or_create_settings) rather than at Project creation — keeps
@@ -100,6 +105,12 @@ class ProjectSettings(models.Model):
     main_doc_path = models.CharField(max_length=512, default="main.tex")
     central_bib_path = models.CharField(max_length=512, null=True, blank=True)
     compiler = models.CharField(max_length=16, choices=Compiler.choices, default=Compiler.PDFLATEX)
+    # latexmk auto-detects bibtex vs biber from the document's own packages
+    # (biblatex -> biber, traditional \bibliography{} -> bibtex) — this
+    # setting doesn't override that (no such latexmk flag exists, verified
+    # against its docs). It tracks which workflow the project uses and
+    # ensures the corresponding binary is expected to be available.
+    bib_engine = models.CharField(max_length=16, choices=BibEngine.choices, default=BibEngine.BIBTEX)
 
     def __str__(self):
         return f"Settings({self.project_id}, {self.compiler})"

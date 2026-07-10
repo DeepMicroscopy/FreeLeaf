@@ -59,6 +59,18 @@ class ProjectSettingsTests(ApiTestCase):
         body = response.json()
         self.assertEqual(body["compiler"], "pdflatex")
         self.assertEqual(body["main_doc_path"], "main.tex")
+        self.assertEqual(body["bib_engine"], "bibtex")
+
+    def test_switching_bib_engine_persists(self):
+        response = patch_json(self.owner, f"/api/projects/{self.project_id}/settings", {"bib_engine": "biber"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["bib_engine"], "biber")
+        again = self.owner.get(f"/api/projects/{self.project_id}/settings")
+        self.assertEqual(again.json()["bib_engine"], "biber")
+
+    def test_invalid_bib_engine_rejected(self):
+        response = patch_json(self.owner, f"/api/projects/{self.project_id}/settings", {"bib_engine": "natbib"})
+        self.assertEqual(response.status_code, 400)
 
     def test_settings_row_is_created_lazily_once(self):
         self.owner.get(f"/api/projects/{self.project_id}/settings")
