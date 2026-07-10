@@ -138,14 +138,16 @@ export function FileTree() {
     }
   }
 
-  async function uploadFiles(fileList: FileList | File[]) {
+async function uploadFiles(fileList: FileList | File[]) {
     for (const file of Array.from(fileList)) {
       const { error } = await api.POST("/api/projects/{project_id}/files/upload", {
         params: { path: { project_id: projectId }, query: { path: file.name } },
-        body: { file },
+        // Cast as any here to satisfy the strict OpenAPI schema type checker
+        body: { file: file as any }, 
         bodySerializer: (body) => {
           const form = new FormData();
-          form.append("file", body.file);
+          // body.file here will still correctly reference your original native File object
+          form.append("file", body.file); 
           return form;
         },
       });
