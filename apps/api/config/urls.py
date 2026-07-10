@@ -18,6 +18,7 @@ from django.contrib import admin
 from django.urls import path
 from ninja import NinjaAPI
 
+from accounts.admin_api import router as admin_router
 from accounts.api import router as accounts_router
 from health.views import router as health_router
 from projects.api import router as projects_router
@@ -36,6 +37,7 @@ api.add_router("", compile_router)
 api.add_router("", collab_router)
 api.add_router("", collab_internal_router)
 api.add_router("", bibliography_router)
+api.add_router("", admin_router)
 
 urlpatterns = [
     path('admin/', admin.site.urls),

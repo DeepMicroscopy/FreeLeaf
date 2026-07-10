@@ -15,6 +15,12 @@ class User(models.Model):
     email = models.EmailField(null=True, blank=True)
     display_name = models.CharField(max_length=255, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    last_login_at = models.DateTimeField(null=True, blank=True)
+    # Gates the in-app admin view (Plan.md §9 Phase 7) — distinct from Django
+    # admin's own staff/superuser flags on the *separate* django.contrib.auth
+    # User model (see CLAUDE.md: that one is reserved for Django admin only).
+    # No UI to grant this yet; bootstrap the first admin via manage.py shell.
+    is_admin = models.BooleanField(default=False)
 
     class Meta:
         constraints = [

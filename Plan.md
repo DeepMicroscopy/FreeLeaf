@@ -182,6 +182,21 @@ Anonymous users get a lightweight `User` row (`kind='anonymous'`, optional `disp
 - **Site settings**: Current features include: activate domain whitelist for signup via orcid. 
 - **Acceptance:** changing the compiler or central bib in Settings changes compile behavior and which keys the Library/autocomplete use; each shipped polish item has tests + a docs entry.
 
+### Phase 8 - Comments and Versioning
+- **Editing** Introduce an editing mode, to be selected between "Writing", "Reviewing" and "Polishing". 
+- **Track changes** In reviewing mode, changes are tracked and a visible diff is being displayed as markup. 
+- **Visual Diff Markup** Render inline insertions with a green background/underline and deletions with a red background/strikethrough.
+- **Comments** Allow users to add a comment to code. For this, add a new pane right to the text and left to the pdf view. Users may also reply to comments. Editors and owners may resolve comments. 
+- **Polishing** A specialized UI layer focused on formatting, grammar, and typography. Keystrokes operate like Writing mode, but automated linting, LaTeX compilation warnings, and micro-typography checks (e.g., detecting missing non-breaking spaces ~ before citations, orphaned headings, or unescaped symbols) are aggressively surfaced.
+- **Version Control & History**:
+Automated Snapshots: Implement a debounce mechanism (e.g., 5 minutes of inactivity or every 1000 keystrokes) to automatically commit a version history checkpoint.
+Named Versions: Allow users to manually freeze the current state, adding a custom label and description (e.g., "Draft Submitted to Advisor").
+Time Travel UI: A toggleable sidebar replacing the review pane, allowing users to scroll through past commits, view a side-by-side split file diff, and trigger a Restore to this Version action.
+
+Additionally, some polishing in phase 8:
+**Warnings**: Present warnings only of last latex run. Else, in particular unknown citations will be shown as warnings for every compile, which does not make sense.
+
+
 ---
 
 ## 10. Repository layout (target)

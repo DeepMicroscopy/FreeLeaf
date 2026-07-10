@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { ToastProvider } from "./components/ui/Toast";
 import { AuthProvider, useAuth } from "./lib/auth";
 import { PageSpinner } from "./components/ui/Spinner";
+import { AdminPage } from "./routes/AdminPage";
 import { JoinPage } from "./routes/JoinPage";
 import { LoginPage } from "./routes/LoginPage";
 import { MagicLinkCallbackPage } from "./routes/MagicLinkCallbackPage";
@@ -22,6 +23,14 @@ function RedirectIfAuthed({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <PageSpinner />;
   if (user) return <Navigate to="/projects" replace />;
+  return <>{children}</>;
+}
+
+function RequireAdmin({ children }: { children: ReactNode }) {
+  const { user, loading } = useAuth();
+  if (loading) return <PageSpinner />;
+  if (!user) return <Navigate to="/login" replace />;
+  if (!user.is_admin) return <Navigate to="/projects" replace />;
   return <>{children}</>;
 }
 
@@ -52,6 +61,14 @@ function AppRoutes() {
           <RequireAuth>
             <ProjectWorkspace />
           </RequireAuth>
+        }
+      />
+      <Route
+        path="/admin"
+        element={
+          <RequireAdmin>
+            <AdminPage />
+          </RequireAdmin>
         }
       />
       <Route path="*" element={<Navigate to="/projects" replace />} />

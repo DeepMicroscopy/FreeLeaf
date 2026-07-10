@@ -3,7 +3,7 @@ import type { components } from "@freeleaf/shared";
 import { useEffect, useRef, useState } from "react";
 import type { DragEvent, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { FileText, LogOut, Plus, Upload, Users } from "lucide-react";
+import { FileText, LogOut, Plus, ShieldCheck, Upload, Users } from "lucide-react";
 
 import { Button } from "../components/ui/Button";
 import { TextField } from "../components/ui/TextField";
@@ -132,6 +132,12 @@ export function ProjectsPage() {
         </div>
         <div className={styles.userMenu}>
           <span className={styles.userName}>{user?.display_name ?? user?.email ?? "Anonymous"}</span>
+          {user?.is_admin && (
+            <Button variant="ghost" size="sm" onClick={() => navigate("/admin")}>
+              <ShieldCheck size={14} aria-hidden="true" />
+              Admin
+            </Button>
+          )}
           <Button variant="ghost" size="sm" onClick={() => logout()}>
             <LogOut size={14} aria-hidden="true" />
             Sign out

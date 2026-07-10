@@ -32,6 +32,7 @@ class UserOut(Schema):
     display_name: str | None = None
     email: str | None = None
     orcid_id: str | None = None
+    is_admin: bool = False
 
 
 def _user_out(user: User) -> UserOut:
@@ -41,6 +42,7 @@ def _user_out(user: User) -> UserOut:
         display_name=user.display_name,
         email=user.email,
         orcid_id=user.orcid_id,
+        is_admin=user.is_admin,
     )
 
 
