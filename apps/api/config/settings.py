@@ -83,6 +83,19 @@ CORS_ALLOW_CREDENTIALS = True
 _csrf_trusted = os.environ.get('CSRF_TRUSTED_ORIGINS', _default_dev_origins)
 CSRF_TRUSTED_ORIGINS = [o for o in _csrf_trusted.split(',') if o]
 
+# Only needed for a split-subdomain deployment (web and api on different
+# hosts under one parent domain — see .env.prod.example topology B). The
+# session cookie already works fine across subdomains with no extra config
+# (subdomains are "same-site", so the browser resends it automatically) —
+# but the CSRF cookie's value has to be *read* by the web app's own JS
+# (to echo back as the X-CSRFToken header), and by default the cookie is
+# host-only: scoped to the api's exact host, invisible to document.cookie
+# on a *different* host even under the same parent domain. Setting this to
+# the shared parent (e.g. ".example.com") makes the cookie visible to both.
+# Leave unset for the same-origin topology (default) — host-only is correct
+# there since web and api share one host.
+CSRF_COOKIE_DOMAIN = os.environ.get('CSRF_COOKIE_DOMAIN') or None
+
 # Mailpit in dev (see docker-compose.yml); Mailgun (via django-anymail) in
 # production when MAILGUN_API_KEY is set (see docker-compose.prod.yml).
 MAILGUN_API_KEY = os.environ.get('MAILGUN_API_KEY')

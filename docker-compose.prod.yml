@@ -57,6 +57,8 @@ services:
       FRONTEND_URL: ${FRONTEND_URL}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
       CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS}
+      # Only needed for split-subdomain deployments — see .env.prod.example.
+      CSRF_COOKIE_DOMAIN: ${CSRF_COOKIE_DOMAIN:-}
       DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL}
       # Mailgun via django-anymail — set to switch off Mailpit's dev SMTP backend.
       MAILGUN_API_KEY: ${MAILGUN_API_KEY}
