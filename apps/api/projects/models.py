@@ -111,6 +111,7 @@ class ProjectSettings(models.Model):
     # against its docs). It tracks which workflow the project uses and
     # ensures the corresponding binary is expected to be available.
     bib_engine = models.CharField(max_length=16, choices=BibEngine.choices, default=BibEngine.BIBTEX)
+    cite_autocomplete_enabled = models.BooleanField(default=True)
 
     def __str__(self):
         return f"Settings({self.project_id}, {self.compiler})"

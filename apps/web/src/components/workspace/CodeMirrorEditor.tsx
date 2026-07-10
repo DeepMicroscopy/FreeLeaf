@@ -177,10 +177,14 @@ export function CodeMirrorEditor({
     let ydoc: Y.Doc | null = null;
 
     (async () => {
-      const { data } = await api.GET("/api/projects/{project_id}/files/{file_id}/collab-token", {
-        params: { path: { project_id: projectId, file_id: fileId } },
-      });
+      const [{ data }, { data: settingsData }] = await Promise.all([
+        api.GET("/api/projects/{project_id}/files/{file_id}/collab-token", {
+          params: { path: { project_id: projectId, file_id: fileId } },
+        }),
+        api.GET("/api/projects/{project_id}/settings", { params: { path: { project_id: projectId } } }),
+      ]);
       if (!data || cancelled) return;
+      const citeAutocompleteEnabled = settingsData?.cite_autocomplete_enabled ?? true;
 
       ydoc = new Y.Doc();
       const ytext = ydoc.getText("content");
@@ -221,7 +225,9 @@ export function CodeMirrorEditor({
             lineNumbers(),
             history(),
             StreamLanguage.define(stex),
-            autocompletion({ override: [citeCompletionSource(() => entriesRef.current)] }),
+            ...(citeAutocompleteEnabled
+              ? [autocompletion({ override: [citeCompletionSource(() => entriesRef.current)] })]
+              : []),
             keymap.of([
               {
                 key: "Mod-s",
@@ -232,7 +238,7 @@ export function CodeMirrorEditor({
               },
               ...defaultKeymap,
               ...historyKeymap,
-              ...completionKeymap,
+              ...(citeAutocompleteEnabled ? completionKeymap : []),
             ]),
             theme,
             EditorView.lineWrapping,

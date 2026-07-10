@@ -98,6 +98,7 @@ class ProjectSettingsOut(Schema):
     central_bib_path: str | None = None
     compiler: str
     bib_engine: str
+    cite_autocomplete_enabled: bool
 
 
 def _settings_out(s: ProjectSettings) -> ProjectSettingsOut:
@@ -106,6 +107,7 @@ def _settings_out(s: ProjectSettings) -> ProjectSettingsOut:
         central_bib_path=s.central_bib_path,
         compiler=s.compiler,
         bib_engine=s.bib_engine,
+        cite_autocomplete_enabled=s.cite_autocomplete_enabled,
     )
 
 
@@ -121,6 +123,7 @@ class ProjectSettingsIn(Schema):
     central_bib_path: str | None = None
     compiler: str | None = None
     bib_engine: str | None = None
+    cite_autocomplete_enabled: bool | None = None
 
 
 @router.patch("/projects/{project_id}/settings", response=ProjectSettingsOut)
@@ -138,6 +141,8 @@ def update_settings(request, project_id: uuid.UUID, payload: ProjectSettingsIn):
         if payload.bib_engine not in (BibEngine.BIBTEX, BibEngine.BIBER):
             raise HttpError(400, "bib_engine must be 'bibtex' or 'biber'.")
         s.bib_engine = payload.bib_engine
+    if payload.cite_autocomplete_enabled is not None:
+        s.cite_autocomplete_enabled = payload.cite_autocomplete_enabled
     if payload.main_doc_path is not None:
         try:
             s.main_doc_path = normalize_path(payload.main_doc_path)

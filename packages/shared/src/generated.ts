@@ -621,6 +621,8 @@ export interface components {
             compiler: string;
             /** Bib Engine */
             bib_engine: string;
+            /** Cite Autocomplete Enabled */
+            cite_autocomplete_enabled: boolean;
         };
         /** ProjectSettingsIn */
         ProjectSettingsIn: {
@@ -632,6 +634,8 @@ export interface components {
             compiler?: string | null;
             /** Bib Engine */
             bib_engine?: string | null;
+            /** Cite Autocomplete Enabled */
+            cite_autocomplete_enabled?: boolean | null;
         };
         /** CompileRunOut */
         CompileRunOut: {

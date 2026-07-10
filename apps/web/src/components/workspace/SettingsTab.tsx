@@ -35,7 +35,11 @@ export function SettingsTab() {
     };
   }, [projectId]);
 
-  async function save(patch: Partial<Pick<ProjectSettingsOut, "compiler" | "central_bib_path" | "bib_engine">>) {
+  async function save(
+    patch: Partial<
+      Pick<ProjectSettingsOut, "compiler" | "central_bib_path" | "bib_engine" | "cite_autocomplete_enabled">
+    >,
+  ) {
     setSaving(true);
     const { data, error } = await api.PATCH("/api/projects/{project_id}/settings", {
       params: { path: { project_id: projectId } },
@@ -117,6 +121,26 @@ export function SettingsTab() {
             <code>\usepackage&#123;biblatex&#125;</code> uses Biber, a traditional{" "}
             <code>\bibliographystyle&#123;&#125;</code> uses BibTeX. This doesn't override that; it just tracks
             which workflow this project uses.
+          </span>
+        </label>
+      </section>
+
+      <section className={styles.section}>
+        <h3 className={styles.sectionTitle}>Editor</h3>
+
+        <label className={styles.checkboxField}>
+          <input
+            type="checkbox"
+            checked={settings.cite_autocomplete_enabled}
+            disabled={!canWrite || saving}
+            onChange={(e) => save({ cite_autocomplete_enabled: e.target.checked })}
+          />
+          <span>
+            <span className={styles.label}>Autocomplete suggestions</span>
+            <span className={styles.hint}>
+              Shows a completion list of cite keys (with title/author) while typing{" "}
+              <code>\cite&#123;&#125;</code> and its variants in the editor.
+            </span>
           </span>
         </label>
       </section>
