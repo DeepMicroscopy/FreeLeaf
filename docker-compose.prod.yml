@@ -18,7 +18,7 @@ services:
       - postgres-data:/var/lib/postgresql/data
     # EXPOSED PORTS REMOVED (No public internet access to DB)
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -74,8 +74,8 @@ services:
     ports:
       - "127.0.0.1:8002:8000" # localhost-only debug access; nginx reaches it via the internal network regardless
     command: >
-      sh -c "python manage.py migrate --noinput &&
-             python manage.py collectstatic --noinput &&
+      sh -c "python manage.py migrate --settings=config.settings --noinput &&
+             python manage.py collectstatic --settings=config.settings --noinput &&
              gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3"
     depends_on:
       postgres:
