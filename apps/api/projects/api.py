@@ -232,6 +232,62 @@ def list_members(request, project_id: uuid.UUID):
     ]
 
 
+class MemberUpdateIn(Schema):
+    role: str
+
+
+@router.patch("/projects/{project_id}/members/{member_user_id}", response=MemberOut)
+def update_member_role(request, project_id: uuid.UUID, member_user_id: uuid.UUID, payload: MemberUpdateIn):
+    user = get_current_user(request)
+    project, membership = get_authorized_project(user, project_id)
+    require_role(membership, Role.OWNER)
+
+    if payload.role not in (Role.OWNER, Role.EDITOR, Role.VIEWER):
+        raise HttpError(400, "role must be 'owner', 'editor', or 'viewer'.")
+
+    target = project.memberships.select_related("user").filter(user_id=member_user_id).first()
+    if target is None:
+        raise HttpError(404, "That user isn't a member of this project.")
+
+    if target.role == Role.OWNER and payload.role != Role.OWNER:
+        _require_another_owner_exists(project, exclude_user_id=member_user_id)
+
+    target.role = payload.role
+    target.save(update_fields=["role"])
+    return MemberOut(
+        user_id=target.user.id,
+        display_name=target.user.display_name or target.user.email or target.user.orcid_id or "Anonymous",
+        kind=target.user.kind,
+        role=target.role,
+        is_you=target.user_id == user.id,
+    )
+
+
+@router.delete("/projects/{project_id}/members/{member_user_id}")
+def remove_member(request, project_id: uuid.UUID, member_user_id: uuid.UUID):
+    user = get_current_user(request)
+    project, membership = get_authorized_project(user, project_id)
+    require_role(membership, Role.OWNER)
+
+    target = project.memberships.filter(user_id=member_user_id).first()
+    if target is None:
+        raise HttpError(404, "That user isn't a member of this project.")
+
+    if target.role == Role.OWNER:
+        _require_another_owner_exists(project, exclude_user_id=member_user_id)
+
+    target.delete()
+    return {"detail": "removed"}
+
+
+def _require_another_owner_exists(project, exclude_user_id) -> None:
+    """Guard against demoting/removing the last owner, which would leave
+    the project with no one able to manage access, settings, or delete it."""
+    remaining_owners = project.memberships.filter(role=Role.OWNER).exclude(user_id=exclude_user_id).exists()
+    if not remaining_owners:
+        raise HttpError(400, "A project must always have at least one owner.")
+
+
 # --- Share links -----------------------------------------------------------
 
 

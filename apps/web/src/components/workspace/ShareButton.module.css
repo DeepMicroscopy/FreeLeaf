@@ -128,3 +128,37 @@
   color: var(--accent-700);
   background: var(--accent-soft);
 }
+
+.memberControls {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.roleSelect {
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+}
+
+.removeButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.removeButton:hover {
+  background: var(--danger-50);
+  color: var(--danger-600);
+}

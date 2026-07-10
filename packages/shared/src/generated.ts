@@ -242,6 +242,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/members/{member_user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Member */
+        delete: operations["projects_api_remove_member"];
+        options?: never;
+        head?: never;
+        /** Update Member Role */
+        patch: operations["projects_api_update_member_role"];
+        trace?: never;
+    };
     "/api/projects/{project_id}/share-links": {
         parameters: {
             query?: never;
@@ -622,6 +640,11 @@ export interface components {
             role: string;
             /** Is You */
             is_you: boolean;
+        };
+        /** MemberUpdateIn */
+        MemberUpdateIn: {
+            /** Role */
+            role: string;
         };
         /** ShareLinkOut */
         ShareLinkOut: {
@@ -1161,6 +1184,54 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MemberOut"][];
+                };
+            };
+        };
+    };
+    projects_api_remove_member: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                member_user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    projects_api_update_member_role: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                member_user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemberUpdateIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberOut"];
                 };
             };
         };

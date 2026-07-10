@@ -193,6 +193,76 @@ class MembersTests(ApiTestCase):
         response = Client().get(f"/api/projects/{self.project_id}/members")
         self.assertEqual(response.status_code, 401)
 
+    def test_owner_can_promote_viewer_to_editor(self):
+        link_resp = post_json(
+            self.owner_client, f"/api/projects/{self.project_id}/share-links", {"role": "viewer"}
+        )
+        viewer = Client()
+        post_json(viewer, f"/api/share-links/{link_resp.json()['token']}/join", {"display_name": "Vera"})
+        member_user_id = next(
+            m["user_id"] for m in self.owner_client.get(f"/api/projects/{self.project_id}/members").json()
+            if m["display_name"] == "Vera"
+        )
+
+        response = patch_json(
+            self.owner_client, f"/api/projects/{self.project_id}/members/{member_user_id}", {"role": "editor"}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["role"], "editor")
+
+    def test_cannot_demote_the_last_owner(self):
+        owner_user_id = next(
+            m["user_id"] for m in self.owner_client.get(f"/api/projects/{self.project_id}/members").json()
+            if m["role"] == "owner"
+        )
+        response = patch_json(
+            self.owner_client, f"/api/projects/{self.project_id}/members/{owner_user_id}", {"role": "editor"}
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_owner_can_remove_a_member(self):
+        link_resp = post_json(
+            self.owner_client, f"/api/projects/{self.project_id}/share-links", {"role": "viewer"}
+        )
+        viewer = Client()
+        post_json(viewer, f"/api/share-links/{link_resp.json()['token']}/join", {"display_name": "Vera"})
+        member_user_id = next(
+            m["user_id"] for m in self.owner_client.get(f"/api/projects/{self.project_id}/members").json()
+            if m["display_name"] == "Vera"
+        )
+
+        response = self.owner_client.delete(f"/api/projects/{self.project_id}/members/{member_user_id}")
+        self.assertEqual(response.status_code, 200)
+
+        remaining = self.owner_client.get(f"/api/projects/{self.project_id}/members").json()
+        self.assertEqual(len(remaining), 1)
+
+        removed_access = viewer.get(f"/api/projects/{self.project_id}")
+        self.assertEqual(removed_access.status_code, 404)
+
+    def test_cannot_remove_the_last_owner(self):
+        owner_user_id = next(
+            m["user_id"] for m in self.owner_client.get(f"/api/projects/{self.project_id}/members").json()
+            if m["role"] == "owner"
+        )
+        response = self.owner_client.delete(f"/api/projects/{self.project_id}/members/{owner_user_id}")
+        self.assertEqual(response.status_code, 400)
+
+    def test_viewer_cannot_change_roles(self):
+        link_resp = post_json(
+            self.owner_client, f"/api/projects/{self.project_id}/share-links", {"role": "viewer"}
+        )
+        viewer = Client()
+        post_json(viewer, f"/api/share-links/{link_resp.json()['token']}/join", {})
+        member_user_id = next(
+            m["user_id"] for m in self.owner_client.get(f"/api/projects/{self.project_id}/members").json()
+            if m["role"] == "owner"
+        )
+        response = patch_json(
+            viewer, f"/api/projects/{self.project_id}/members/{member_user_id}", {"role": "viewer"}
+        )
+        self.assertEqual(response.status_code, 403)
+
 
 def _make_zip(entries: dict[str, bytes]) -> bytes:
     buf = io.BytesIO()

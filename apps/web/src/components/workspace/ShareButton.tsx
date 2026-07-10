@@ -1,7 +1,7 @@
 import { api } from "@freeleaf/shared";
 import type { components } from "@freeleaf/shared";
 import { useState } from "react";
-import { Check, Copy, Share2 } from "lucide-react";
+import { Check, Copy, Share2, X } from "lucide-react";
 
 import { Button } from "../ui/Button";
 import { Spinner } from "../ui/Spinner";
@@ -51,6 +51,26 @@ export function ShareButton({ projectId }: { projectId: string }) {
     setTimeout(() => setCopied(false), 1500);
   }
 
+  async function changeRole(userId: string, role: string) {
+    const { data, error: reqError } = await api.PATCH("/api/projects/{project_id}/members/{member_user_id}", {
+      params: { path: { project_id: projectId, member_user_id: userId } },
+      body: { role },
+    });
+    if (!reqError && data) {
+      setMembers((prev) => prev?.map((m) => (m.user_id === userId ? data : m)) ?? null);
+    }
+  }
+
+  async function removeMember(userId: string) {
+    if (!window.confirm("Remove this person's access to the project?")) return;
+    const { error: reqError } = await api.DELETE("/api/projects/{project_id}/members/{member_user_id}", {
+      params: { path: { project_id: projectId, member_user_id: userId } },
+    });
+    if (!reqError) {
+      setMembers((prev) => prev?.filter((m) => m.user_id !== userId) ?? null);
+    }
+  }
+
   return (
     <div className={styles.wrapper}>
       <Button variant="secondary" size="sm" onClick={toggle}>
@@ -96,7 +116,28 @@ export function ShareButton({ projectId }: { projectId: string }) {
                       {m.display_name}
                       {m.is_you && <span className={styles.youTag}> (you)</span>}
                     </span>
-                    <span className={[styles.roleBadge, styles[`role_${m.role}`]].join(" ")}>{m.role}</span>
+                    {m.role === "owner" || m.is_you ? (
+                      <span className={[styles.roleBadge, styles[`role_${m.role}`]].join(" ")}>{m.role}</span>
+                    ) : (
+                      <span className={styles.memberControls}>
+                        <select
+                          className={styles.roleSelect}
+                          value={m.role}
+                          onChange={(e) => changeRole(m.user_id, e.target.value)}
+                        >
+                          <option value="editor">editor</option>
+                          <option value="viewer">viewer</option>
+                        </select>
+                        <button
+                          type="button"
+                          className={styles.removeButton}
+                          aria-label={`Remove ${m.display_name}`}
+                          onClick={() => removeMember(m.user_id)}
+                        >
+                          <X size={13} aria-hidden="true" />
+                        </button>
+                      </span>
+                    )}
                   </li>
                 ))}
               </ul>
