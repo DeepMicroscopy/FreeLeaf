@@ -8,7 +8,7 @@ export async function fetchFileContent(fileId: string): Promise<string> {
   const res = await fetch(`${API_INTERNAL_URL}/api/internal/collab/files/${fileId}/content`, {
     headers: { "X-Collab-Secret": COLLAB_SHARED_SECRET },
   });
-  if (!res.ok) throw new Error(`fetchFileContent(${fileId}) failed: ${res.status}`);
+  if (!res.ok) throw new Error(`fetchFileContent(${fileId}) failed: ${res.status} ${await res.text()}`);
   const body = (await res.json()) as { content: string };
   return body.content;
 }

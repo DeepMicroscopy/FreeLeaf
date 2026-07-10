@@ -41,31 +41,34 @@ function send(ws: WebSocket, encoder: encoding.Encoder): void {
   ws.send(encoding.toUint8Array(encoder));
 }
 
-function setupConnection(ws: WebSocket, room: Room, readOnly: boolean): void {
+function handleMessage(ws: WebSocket, room: Room, state: ConnState, data: ArrayBuffer): void {
+  const decoder = decoding.createDecoder(new Uint8Array(data));
+  const encoder = encoding.createEncoder();
+  const messageType = decoding.readVarUint(decoder);
+
+  switch (messageType) {
+    case messageSync: {
+      encoding.writeVarUint(encoder, messageSync);
+      readSyncMessage(decoder, encoder, room, ws, state.readOnly);
+      // readSyncMessage only writes a reply for step1 (step2/update produce
+      // none) — length is always >= 1 here from the outer byte alone, so
+      // only send if something beyond that outer byte was actually written.
+      if (encoding.length(encoder) > 1) send(ws, encoder);
+      break;
+    }
+    case messageAwareness: {
+      const update = decoding.readVarUint8Array(decoder);
+      awarenessProtocol.applyAwarenessUpdate(room.awareness, update, ws);
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+function setupConnection(ws: WebSocket, room: Room, readOnly: boolean): ConnState {
   room.clientCount += 1;
   const state: ConnState = { readOnly, controlledClientIds: new Set() };
-
-  ws.on("message", (data: ArrayBuffer) => {
-    const decoder = decoding.createDecoder(new Uint8Array(data));
-    const encoder = encoding.createEncoder();
-    const messageType = decoding.readVarUint(decoder);
-
-    switch (messageType) {
-      case messageSync: {
-        encoding.writeVarUint(encoder, messageSync);
-        readSyncMessage(decoder, encoder, room, ws, state.readOnly);
-        send(ws, encoder);
-        break;
-      }
-      case messageAwareness: {
-        const update = decoding.readVarUint8Array(decoder);
-        awarenessProtocol.applyAwarenessUpdate(room.awareness, update, ws);
-        break;
-      }
-      default:
-        break;
-    }
-  });
 
   const awarenessChangeHandler = (
     { added, updated, removed }: { added: number[]; updated: number[]; removed: number[] },
@@ -121,6 +124,8 @@ function setupConnection(ws: WebSocket, room: Room, readOnly: boolean): void {
     );
     send(ws, encoder2);
   }
+
+  return state;
 }
 
 /** Mirrors y-protocols/sync's readSyncMessage, except step2/update are
@@ -184,9 +189,21 @@ wss.on("connection", (ws, req) => {
     return;
   }
 
+  // The client sends its own sync step1 immediately on open — before
+  // getOrCreateRoom's async content fetch resolves. Buffer any message that
+  // arrives before the room is ready instead of attaching the real handler
+  // late, which would silently drop that first message (EventEmitter doesn't
+  // queue events for listeners that aren't attached yet) and leave the
+  // client stuck never receiving the step2 reply that marks it synced.
+  const pending: ArrayBuffer[] = [];
+  ws.on("message", (data: ArrayBuffer) => pending.push(data));
+
   void getOrCreateRoom(fileId).then((room) => {
     if (ws.readyState !== WebSocket.OPEN) return; // client may have gone already
-    setupConnection(ws, room, payload.role === "viewer");
+    const state = setupConnection(ws, room, payload.role === "viewer");
+    ws.removeAllListeners("message");
+    for (const data of pending) handleMessage(ws, room, state, data);
+    ws.on("message", (data: ArrayBuffer) => handleMessage(ws, room, state, data));
   });
 });
 

@@ -420,6 +420,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/files/{file_id}/collab-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Collab Token */
+        get: operations["projects_collab_api_get_collab_token"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/collab/files/{file_id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Internal Get Content */
+        get: operations["projects_collab_api_internal_get_content"];
+        /** Internal Put Content */
+        put: operations["projects_collab_api_internal_put_content"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -611,6 +646,18 @@ export interface components {
             file?: string | null;
             /** Line */
             line?: number | null;
+        };
+        /** CollabTokenOut */
+        CollabTokenOut: {
+            /** Token */
+            token: string;
+            /** Ws Url */
+            ws_url: string;
+        };
+        /** InternalContentIn */
+        InternalContentIn: {
+            /** Content */
+            content: string;
         };
     };
     responses: never;
@@ -1342,6 +1389,73 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    projects_collab_api_get_collab_token: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CollabTokenOut"];
+                };
+            };
+        };
+    };
+    projects_collab_api_internal_get_content: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    projects_collab_api_internal_put_content: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InternalContentIn"];
+            };
+        };
         responses: {
             /** @description OK */
             200: {
