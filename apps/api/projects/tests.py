@@ -1,0 +1,157 @@
+import json
+from datetime import timedelta
+
+from django.core import mail
+from django.test import Client
+from django.utils import timezone
+
+from accounts.models import User
+from core.testing import ApiTestCase
+
+from .models import Membership, Project, Role, ShareLink
+
+
+def post_json(client, url, data=None):
+    return client.post(url, data=json.dumps(data or {}), content_type="application/json")
+
+
+def patch_json(client, url, data=None):
+    return client.patch(url, data=json.dumps(data or {}), content_type="application/json")
+
+
+def _login_via_magic_link(client, email):
+    post_json(client, "/api/auth/magic-link/request", {"email": email})
+    token = mail.outbox[-1].body.split("token=")[1].split()[0].strip()
+    post_json(client, "/api/auth/magic-link/verify", {"token": token})
+
+
+class ProjectCrudTests(ApiTestCase):
+    def test_anonymous_user_cannot_create_project(self):
+        post_json(self.client, "/api/auth/anonymous", {"display_name": "Guest"})
+        response = post_json(self.client, "/api/projects", {"name": "My Paper"})
+        self.assertEqual(response.status_code, 403)
+
+    def test_logged_in_user_can_create_list_get_update_delete(self):
+        _login_via_magic_link(self.client, "ada@example.com")
+
+        create = post_json(self.client, "/api/projects", {"name": "My Paper"})
+        self.assertEqual(create.status_code, 200)
+        project_id = create.json()["id"]
+        self.assertEqual(create.json()["role"], "owner")
+
+        listing = self.client.get("/api/projects")
+        self.assertEqual(len(listing.json()), 1)
+
+        detail = self.client.get(f"/api/projects/{project_id}")
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.json()["name"], "My Paper")
+
+        updated = patch_json(self.client, f"/api/projects/{project_id}", {"name": "Renamed"})
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(updated.json()["name"], "Renamed")
+
+        deleted = self.client.delete(f"/api/projects/{project_id}")
+        self.assertEqual(deleted.status_code, 200)
+        self.assertFalse(Project.objects.filter(id=project_id).exists())
+
+    def test_create_project_requires_login(self):
+        response = post_json(Client(), "/api/projects", {"name": "Nope"})
+        self.assertEqual(response.status_code, 401)
+
+
+class ShareLinkAuthorizationTests(ApiTestCase):
+    def setUp(self):
+        super().setUp()
+        self.owner_client = Client()
+        _login_via_magic_link(self.owner_client, "owner@example.com")
+        create = post_json(self.owner_client, "/api/projects", {"name": "Shared Paper"})
+        self.project_id = create.json()["id"]
+
+    def test_stranger_without_share_link_is_blocked(self):
+        stranger = Client()
+        post_json(stranger, "/api/auth/anonymous", {"display_name": "Stranger"})
+        response = stranger.get(f"/api/projects/{self.project_id}")
+        self.assertEqual(response.status_code, 404)
+
+    def test_anonymous_user_can_join_via_share_link_and_only_that_project(self):
+        link_resp = post_json(
+            self.owner_client, f"/api/projects/{self.project_id}/share-links", {"role": "editor"}
+        )
+        self.assertEqual(link_resp.status_code, 200)
+        token = link_resp.json()["token"]
+        self.assertIsNotNone(token)
+
+        joiner = Client()
+        join = post_json(joiner, f"/api/share-links/{token}/join", {"display_name": "Anon Collaborator"})
+        self.assertEqual(join.status_code, 200)
+        self.assertEqual(join.json()["id"], self.project_id)
+        self.assertEqual(join.json()["role"], "editor")
+
+        me = joiner.get("/api/auth/me")
+        self.assertEqual(me.json()["kind"], "anonymous")
+        self.assertEqual(me.json()["display_name"], "Anon Collaborator")
+
+        # Access granted to the shared project...
+        detail = joiner.get(f"/api/projects/{self.project_id}")
+        self.assertEqual(detail.status_code, 200)
+
+        # ...but not to some other project this anonymous user has no link for.
+        other = post_json(self.owner_client, "/api/projects", {"name": "Other Paper"})
+        other_id = other.json()["id"]
+        blocked = joiner.get(f"/api/projects/{other_id}")
+        self.assertEqual(blocked.status_code, 404)
+
+    def test_expired_share_link_is_rejected(self):
+        link_resp = post_json(
+            self.owner_client, f"/api/projects/{self.project_id}/share-links", {"role": "viewer"}
+        )
+        token = link_resp.json()["token"]
+        ShareLink.objects.filter(project_id=self.project_id).update(
+            expires_at=timezone.now() - timedelta(hours=1)
+        )
+        response = post_json(Client(), f"/api/share-links/{token}/join", {})
+        self.assertEqual(response.status_code, 404)
+
+    def test_only_owner_can_create_or_list_share_links(self):
+        member_client = Client()
+        link_resp = post_json(
+            self.owner_client, f"/api/projects/{self.project_id}/share-links", {"role": "viewer"}
+        )
+        post_json(member_client, f"/api/share-links/{link_resp.json()['token']}/join", {})
+
+        forbidden = post_json(
+            member_client, f"/api/projects/{self.project_id}/share-links", {"role": "editor"}
+        )
+        self.assertEqual(forbidden.status_code, 403)
+
+    def test_viewer_cannot_rename_project(self):
+        link_resp = post_json(
+            self.owner_client, f"/api/projects/{self.project_id}/share-links", {"role": "viewer"}
+        )
+        viewer = Client()
+        post_json(viewer, f"/api/share-links/{link_resp.json()['token']}/join", {})
+
+        response = patch_json(viewer, f"/api/projects/{self.project_id}", {"name": "Hijacked"})
+        self.assertEqual(response.status_code, 403)
+
+    def test_revoked_share_link_no_longer_works(self):
+        link_resp = post_json(
+            self.owner_client, f"/api/projects/{self.project_id}/share-links", {"role": "viewer"}
+        )
+        link_id = link_resp.json()["id"]
+        token = link_resp.json()["token"]
+
+        revoke = self.owner_client.delete(f"/api/projects/{self.project_id}/share-links/{link_id}")
+        self.assertEqual(revoke.status_code, 200)
+
+        response = post_json(Client(), f"/api/share-links/{token}/join", {})
+        self.assertEqual(response.status_code, 404)
+
+
+class MembershipModelTests(ApiTestCase):
+    def test_unique_membership_per_project_user(self):
+        user = User.objects.create(kind=User.Kind.ANONYMOUS, display_name="X")
+        project = Project.objects.create(name="P")
+        Membership.objects.create(project=project, user=user, role=Role.VIEWER)
+        with self.assertRaises(Exception):
+            Membership.objects.create(project=project, user=user, role=Role.EDITOR)

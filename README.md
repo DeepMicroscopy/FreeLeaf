@@ -6,7 +6,7 @@ Full spec: [`Plan.md`](./Plan.md). Working conventions for contributors/agents: 
 
 ## Status
 
-Phase 0 (scaffold & infra) — see [`Status.md`](./Status.md) for current progress.
+See [`Status.md`](./Status.md) for current progress.
 
 ## Stack
 
@@ -32,6 +32,8 @@ This starts:
 | MinIO console | http://localhost:9001 |
 
 A fresh clone should build and start with no extra setup.
+
+> Always open the app at **http://localhost:5173**, not `http://127.0.0.1:5173`. Browsers treat the two as different sites, so cookies from the api (at `localhost:8000`) won't reliably carry over if you mix them — this bites hardest in Safari.
 
 ## Local development (without Docker)
 

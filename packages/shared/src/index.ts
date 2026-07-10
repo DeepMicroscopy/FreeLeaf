@@ -1,2 +1,5 @@
-// Generated OpenAPI TS client lands here (see CLAUDE.md: "don't hand-write").
-export {};
+// Generated OpenAPI TS client + a thin typed fetch wrapper (see CLAUDE.md:
+// "don't hand-write" types — regenerate src/generated.ts via `pnpm generate`
+// whenever apps/api's schema changes).
+export { api, apiOrigin, ensureCsrfCookie } from "./client";
+export type { components, operations, paths } from "./generated";

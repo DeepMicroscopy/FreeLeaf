@@ -50,6 +50,21 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-freeleaf}
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      EMAIL_HOST: mailpit
+      EMAIL_PORT: 1025
+      # ORCID sandbox app credentials (Plan.md §9 Phase 1) — leave blank to
+      # develop the other two sign-in paths; ORCID sign-in 400s until set.
+      ORCID_ENV: ${ORCID_ENV:-sandbox}
+      ORCID_CLIENT_ID: ${ORCID_CLIENT_ID:-}
+      ORCID_CLIENT_SECRET: ${ORCID_CLIENT_SECRET:-}
+      ORCID_REDIRECT_URI: ${ORCID_REDIRECT_URI:-http://localhost:8000/api/auth/orcid/callback}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-freeleaf}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-freeleafsecret}
+      MINIO_BUCKET: ${MINIO_BUCKET:-freeleaf}
     volumes:
       - ./apps/api:/app
     ports:
@@ -59,6 +74,10 @@ services:
              python manage.py runserver 0.0.0.0:8000"
     depends_on:
       postgres:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+      minio:
         condition: service_healthy
 
   collab:
@@ -77,6 +96,8 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+    environment:
+      VITE_API_ORIGIN: ${VITE_API_ORIGIN:-http://localhost:8000}
     volumes:
       - ./apps/web:/repo/apps/web
       - /repo/apps/web/node_modules

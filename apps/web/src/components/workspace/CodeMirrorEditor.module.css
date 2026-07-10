@@ -1,0 +1,59 @@
+.wrapper {
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+}
+
+.statusBar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+  min-height: 28px;
+}
+
+.status {
+  font-size: 11.5px;
+  font-weight: 550;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.saving {
+  color: var(--text-tertiary);
+}
+
+.saved {
+  color: var(--accent-700);
+  background: var(--accent-soft);
+}
+
+.unsaved {
+  color: var(--text-tertiary);
+}
+
+.error {
+  color: var(--danger-600);
+  background: var(--danger-50);
+}
+
+.editorHost {
+  flex: 1;
+  overflow: hidden;
+}
+
+.editorHost :global(.cm-editor) {
+  height: 100%;
+}
+
+.loadingOverlay {
+  position: absolute;
+  inset: 0;
+  top: 41px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-surface);
+}

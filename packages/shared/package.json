@@ -6,9 +6,14 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {
+    "generate": "openapi-typescript http://localhost:8000/api/openapi.json -o src/generated.ts",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "openapi-fetch": "^0.13.4"
+  },
   "devDependencies": {
+    "openapi-typescript": "^7.4.4",
     "typescript": "^5.7.2"
   }
 }

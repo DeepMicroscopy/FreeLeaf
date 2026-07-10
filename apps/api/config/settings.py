@@ -38,19 +38,50 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'corsheaders',
     'ninja',
     'health',
+    'accounts',
+    'projects',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'accounts.middleware.CurrentUserMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+# --- FreeLeaf auth (Plan.md §8/§9 Phase 1) ---
+# ORCID / magic-link / anonymous sign-in; no passwords. See accounts app.
+FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
+
+# 'localhost' and '127.0.0.1' are different origins (and different *sites*,
+# since one's a domain and one's a bare IP) to a browser, even though they
+# point at the same box — dev browsers commonly hit either. Cookies set by
+# the api won't bridge the two regardless (recommend accessing the app via
+# the same hostname consistently — see README), but at minimum both must be
+# allowed here or CORS rejects the request outright before cookies matter.
+_default_dev_origins = 'http://localhost:5173,http://127.0.0.1:5173'
+
+_cors_origins = os.environ.get('CORS_ALLOWED_ORIGINS', _default_dev_origins)
+CORS_ALLOWED_ORIGINS = [o for o in _cors_origins.split(',') if o]
+CORS_ALLOW_CREDENTIALS = True
+
+_csrf_trusted = os.environ.get('CSRF_TRUSTED_ORIGINS', _default_dev_origins)
+CSRF_TRUSTED_ORIGINS = [o for o in _csrf_trusted.split(',') if o]
+
+# Mailpit in dev (see docker-compose.yml); override via env in production.
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = os.environ.get('EMAIL_HOST', 'mailpit')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '1025'))
+EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'false').lower() == 'true'
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@freeleaf.local')
 
 ROOT_URLCONF = 'config.urls'
 
