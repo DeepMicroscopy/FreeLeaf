@@ -96,6 +96,15 @@ CSRF_TRUSTED_ORIGINS = [o for o in _csrf_trusted.split(',') if o]
 # there since web and api share one host.
 CSRF_COOKIE_DOMAIN = os.environ.get('CSRF_COOKIE_DOMAIN') or None
 
+# Real-time collaboration (PLAN.md §6/Phase 5). Shared with apps/collab —
+# must be identical on both services (see docker-compose.yml). Signs the
+# short-lived collab-token issued by GET .../collab-token so the Node
+# service can verify a WS connection's project/file/role without its own
+# session/DB access. COLLAB_WS_URL is what the browser is told to connect
+# to; defaults to the dev collab service's own port.
+COLLAB_SHARED_SECRET = os.environ.get('COLLAB_SHARED_SECRET', 'dev-insecure-collab-secret')
+COLLAB_WS_URL = os.environ.get('COLLAB_WS_URL', 'ws://localhost:1234')
+
 # Mailpit in dev (see docker-compose.yml); Mailgun (via django-anymail) in
 # production when MAILGUN_API_KEY is set (see docker-compose.prod.yml).
 MAILGUN_API_KEY = os.environ.get('MAILGUN_API_KEY')

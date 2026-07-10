@@ -14,7 +14,7 @@ export function EditorTab() {
   const { projectId, files, selectedFileId, canWrite } = useWorkspace();
   const selectedFile = files.find((f) => f.id === selectedFileId);
   const compilePaneRef = useRef<CompilePaneHandle>(null);
-  const handleSaved = useCallback(() => {
+  const handleContentChanged = useCallback(() => {
     compilePaneRef.current?.scheduleAutoCompile();
   }, []);
 
@@ -43,7 +43,7 @@ export function EditorTab() {
               projectId={projectId}
               fileId={selectedFile.id}
               readOnly={!canWrite}
-              onSaved={handleSaved}
+              onContentChanged={handleContentChanged}
             />
           </div>
         </div>

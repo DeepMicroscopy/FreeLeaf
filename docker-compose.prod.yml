@@ -72,6 +72,13 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       MINIO_BUCKET: ${MINIO_BUCKET}
       COMPILE_SERVICE_URL: http://compile:8100
+      # Real-time collab (Phase 5, PLAN.md §6). Must equal collab's own
+      # COLLAB_SHARED_SECRET below. COLLAB_WS_URL is handed to the browser —
+      # nginx (apps/web/nginx.conf) proxies /collab/ same-origin regardless
+      # of topology, so this is always the *web* app's public origin + /collab,
+      # even in a split-subdomain deployment. See .env.prod.example.
+      COLLAB_SHARED_SECRET: ${COLLAB_SHARED_SECRET}
+      COLLAB_WS_URL: ${COLLAB_WS_URL}
     # VOLUMES REMOVED (Code is baked straight into the image)
     ports:
       - "127.0.0.1:8002:8000" # localhost-only debug access; nginx reaches it via the internal network regardless
@@ -89,6 +96,9 @@ services:
     build:
       context: apps/collab
     restart: unless-stopped
+    environment:
+      COLLAB_SHARED_SECRET: ${COLLAB_SHARED_SECRET}
+      API_INTERNAL_URL: http://api:8000
     # No published port: web's nginx reaches it at collab:1234 internally.
 
   # Sandbox worker image (Plan.md §7) — never started; spawned per job by

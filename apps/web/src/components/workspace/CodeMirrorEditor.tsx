@@ -1,15 +1,25 @@
-import { api, apiOrigin } from "@freeleaf/shared";
+import { api } from "@freeleaf/shared";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { StreamLanguage } from "@codemirror/language";
 import { stex } from "@codemirror/legacy-modes/mode/stex";
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
+import { yCollab } from "y-codemirror.next";
+import { WebsocketProvider } from "y-websocket";
+import * as Y from "yjs";
 import { useEffect, useRef, useState } from "react";
 
+import { useAuth } from "../../lib/auth";
 import { Spinner } from "../ui/Spinner";
 import styles from "./CodeMirrorEditor.module.css";
 
-type SaveStatus = "idle" | "saved" | "saving" | "unsaved" | "error";
+type ConnectionStatus = "connecting" | "live" | "disconnected";
+
+interface PresenceUser {
+  clientId: number;
+  name: string;
+  color: string;
+}
 
 const theme = EditorView.theme({
   "&": {
@@ -37,97 +47,125 @@ const theme = EditorView.theme({
   ".cm-scroller": { overflow: "auto" },
 });
 
+function colorForUserId(id: string): { color: string; colorLight: string } {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) | 0;
+  const hue = Math.abs(hash) % 360;
+  return { color: `hsl(${hue} 70% 45%)`, colorLight: `hsl(${hue} 70% 45% / 0.25)` };
+}
+
 export function CodeMirrorEditor({
   projectId,
   fileId,
   readOnly,
-  onSaved,
+  onContentChanged,
 }: {
   projectId: string;
   fileId: string;
   readOnly: boolean;
-  onSaved?: () => void;
+  onContentChanged?: () => void;
 }) {
+  const { user } = useAuth();
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const changeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onContentChangedRef = useRef(onContentChanged);
+  onContentChangedRef.current = onContentChanged;
   const [loading, setLoading] = useState(true);
-  const [status, setStatus] = useState<SaveStatus>("idle");
-  const onSavedRef = useRef(onSaved);
-  onSavedRef.current = onSaved;
-
-  async function save() {
-    const view = viewRef.current;
-    if (!view) return;
-    setStatus("saving");
-    const { error } = await api.PUT("/api/projects/{project_id}/files/{file_id}/content", {
-      params: { path: { project_id: projectId, file_id: fileId } },
-      body: { content: view.state.doc.toString() },
-    });
-    setStatus(error ? "error" : "saved");
-    if (!error) onSavedRef.current?.();
-  }
+  const [status, setStatus] = useState<ConnectionStatus>("connecting");
+  const [presence, setPresence] = useState<PresenceUser[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    setStatus("idle");
+    setStatus("connecting");
+    setPresence([]);
+
+    let provider: WebsocketProvider | null = null;
+    let ydoc: Y.Doc | null = null;
 
     (async () => {
-      const res = await fetch(
-        `${apiOrigin()}/api/projects/${projectId}/files/${fileId}/content`,
-        { credentials: "include" },
-      );
-      const text = res.ok ? await res.text() : "";
-      if (cancelled) return;
+      const { data } = await api.GET("/api/projects/{project_id}/files/{file_id}/collab-token", {
+        params: { path: { project_id: projectId, file_id: fileId } },
+      });
+      if (!data || cancelled) return;
 
-      const state = EditorState.create({
-        doc: text,
-        extensions: [
-          lineNumbers(),
-          history(),
-          StreamLanguage.define(stex),
-          keymap.of([
-            {
-              key: "Mod-s",
-              run: () => {
-                save();
-                return true;
-              },
-            },
-            ...defaultKeymap,
-            ...historyKeymap,
-          ]),
-          theme,
-          EditorView.lineWrapping,
-          EditorState.readOnly.of(readOnly),
-          EditorView.updateListener.of((update) => {
-            if (update.docChanged) {
-              setStatus("unsaved");
-              if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-              saveTimerRef.current = setTimeout(save, 1500);
-            }
-          }),
-        ],
+      ydoc = new Y.Doc();
+      const ytext = ydoc.getText("content");
+      provider = new WebsocketProvider(data.ws_url, fileId, ydoc, {
+        params: { token: data.token },
       });
 
-      viewRef.current?.destroy();
-      viewRef.current = new EditorView({ state, parent: hostRef.current! });
-      setLoading(false);
+      const { color, colorLight } = colorForUserId(user?.id ?? "anonymous");
+      provider.awareness.setLocalStateField("user", {
+        name: user?.display_name || "Anonymous",
+        color,
+        colorLight,
+      });
+
+      const updatePresence = () => {
+        const others: PresenceUser[] = [];
+        provider!.awareness.getStates().forEach((state, clientId) => {
+          if (clientId === ydoc!.clientID) return;
+          const info = (state as { user?: { name?: string; color?: string } }).user;
+          if (info) others.push({ clientId, name: info.name ?? "Anonymous", color: info.color ?? "#999" });
+        });
+        setPresence(others);
+      };
+      provider.awareness.on("change", updatePresence);
+
+      provider.on("status", ({ status: s }: { status: string }) => {
+        if (cancelled) return;
+        setStatus(s === "connected" ? "live" : "disconnected");
+      });
+
+      const onFirstSync = (isSynced: boolean) => {
+        if (!isSynced || cancelled) return;
+        provider!.off("sync", onFirstSync);
+
+        const state = EditorState.create({
+          doc: ytext.toString(),
+          extensions: [
+            lineNumbers(),
+            history(),
+            StreamLanguage.define(stex),
+            keymap.of([...defaultKeymap, ...historyKeymap]),
+            theme,
+            EditorView.lineWrapping,
+            EditorState.readOnly.of(readOnly),
+            yCollab(ytext, provider!.awareness, { undoManager: false }),
+          ],
+        });
+
+        viewRef.current?.destroy();
+        viewRef.current = new EditorView({ state, parent: hostRef.current! });
+        setLoading(false);
+
+        // Only schedule auto-compile for changes *after* the initial content
+        // sync — otherwise just opening the file would trigger a compile.
+        ydoc!.on("update", () => {
+          if (changeTimerRef.current) clearTimeout(changeTimerRef.current);
+          changeTimerRef.current = setTimeout(() => onContentChangedRef.current?.(), 1500);
+        });
+      };
+      provider.on("sync", onFirstSync);
     })();
 
     return () => {
       cancelled = true;
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      if (changeTimerRef.current) clearTimeout(changeTimerRef.current);
       viewRef.current?.destroy();
       viewRef.current = null;
+      provider?.destroy();
+      ydoc?.destroy();
     };
-  }, [projectId, fileId, readOnly]);
+  }, [projectId, fileId, readOnly, user?.id, user?.display_name]);
 
   return (
     <div className={styles.wrapper}>
       <div className={styles.statusBar}>
-        <SaveStatusIndicator status={status} />
+        <PresenceRow users={presence} />
+        <ConnectionStatusPill status={status} />
       </div>
       <div className={styles.editorHost} ref={hostRef} />
       {loading && (
@@ -139,13 +177,20 @@ export function CodeMirrorEditor({
   );
 }
 
-function SaveStatusIndicator({ status }: { status: SaveStatus }) {
-  if (status === "idle") return null;
-  const label = {
-    saving: "Saving…",
-    saved: "Saved",
-    unsaved: "Unsaved changes",
-    error: "Couldn't save",
-  }[status];
+function ConnectionStatusPill({ status }: { status: ConnectionStatus }) {
+  const label = { connecting: "Connecting…", live: "Live", disconnected: "Reconnecting…" }[status];
   return <span className={[styles.status, styles[status]].join(" ")}>{label}</span>;
+}
+
+function PresenceRow({ users }: { users: PresenceUser[] }) {
+  if (users.length === 0) return null;
+  return (
+    <div className={styles.presence} title={users.map((u) => u.name).join(", ")}>
+      {users.map((u) => (
+        <span key={u.clientId} className={styles.presenceDot} style={{ backgroundColor: u.color }}>
+          {u.name.slice(0, 1).toUpperCase()}
+        </span>
+      ))}
+    </div>
+  );
 }

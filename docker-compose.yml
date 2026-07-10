@@ -66,6 +66,12 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-freeleafsecret}
       MINIO_BUCKET: ${MINIO_BUCKET:-freeleaf}
       COMPILE_SERVICE_URL: http://compile:8100
+      # Real-time collab (Phase 5, PLAN.md §6) — must match collab's own
+      # COLLAB_SHARED_SECRET below. COLLAB_WS_URL is what's handed to the
+      # *browser*, so it's the host-reachable address, not the Docker
+      # network one.
+      COLLAB_SHARED_SECRET: ${COLLAB_SHARED_SECRET:-dev-insecure-collab-secret}
+      COLLAB_WS_URL: ${COLLAB_WS_URL:-ws://localhost:1234}
     volumes:
       - ./apps/api:/app
     ports:
@@ -84,8 +90,13 @@ services:
   collab:
     build:
       context: apps/collab
+    environment:
+      COLLAB_SHARED_SECRET: ${COLLAB_SHARED_SECRET:-dev-insecure-collab-secret}
+      API_INTERNAL_URL: http://api:8000
     ports:
       - "1234:1234"
+    depends_on:
+      - api
 
   # Sandbox worker image (Plan.md §7) — never started as a service; spawned
   # per compile job by `compile` via the Docker Engine API. This entry only
