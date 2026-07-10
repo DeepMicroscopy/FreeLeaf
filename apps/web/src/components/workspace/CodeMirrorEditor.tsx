@@ -1,4 +1,4 @@
-import { api } from "@freeleaf/shared";
+import { apiOrigin } from "@freeleaf/shared";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { StreamLanguage } from "@codemirror/language";
 import { stex } from "@codemirror/legacy-modes/mode/stex";
@@ -19,6 +19,11 @@ interface PresenceUser {
   clientId: number;
   name: string;
   color: string;
+}
+
+interface CollabTokenResponse {
+  token: string;
+  ws_url: string;
 }
 
 const theme = EditorView.theme({
@@ -85,11 +90,15 @@ export function CodeMirrorEditor({
     let ydoc: Y.Doc | null = null;
 
     (async () => {
-      const { data } = await api.GET("/api/projects/{project_id}/files/{file_id}/collab-token", {
-        params: { path: { project_id: projectId, file_id: fileId } },
-      });
-      if (!data || cancelled) return;
+      const response = await fetch(
+        new URL(`/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}/collab-token`, apiOrigin()),
+        {
+          credentials: "include",
+        },
+      );
+      if (!response.ok || cancelled) return;
 
+      const data = (await response.json()) as CollabTokenResponse;
       ydoc = new Y.Doc();
       const ytext = ydoc.getText("content");
       provider = new WebsocketProvider(data.ws_url, fileId, ydoc, {
