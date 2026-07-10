@@ -112,6 +112,12 @@ def orcid_login(request, next: str | None = None):
     safe_next = safe_next_path(next)
     if safe_next:
         request.session["orcid_next"] = safe_next
+    logger.info(
+        "orcid_login: session_key=%s host=%s redirect_uri=%s",
+        request.session.session_key,
+        request.get_host(),
+        orcid.REDIRECT_URI,
+    )
     return HttpResponseRedirect(orcid.build_authorize_url(state))
 
 
@@ -121,6 +127,17 @@ def orcid_callback(request, code: str | None = None, state: str | None = None, e
     # cancelled" for every case makes this unfixable from the outside. Each
     # branch here points at a different root cause.
     expected_state = request.session.pop("orcid_oauth_state", None)
+    logger.info(
+        "orcid_callback: session_key=%s host=%s cookies_present=%s code_present=%s "
+        "state_present=%s expected_state_found=%s error=%s",
+        request.session.session_key,
+        request.get_host(),
+        list(request.COOKIES.keys()),
+        bool(code),
+        bool(state),
+        bool(expected_state),
+        error,
+    )
 
     if error:
         raise HttpError(400, f"ORCID returned an error: {error}")
