@@ -208,3 +208,84 @@ class TriggerCompileTests(ApiTestCase):
         post_json(stranger, "/api/auth/anonymous", {})
         response = stranger.get(f"/api/projects/{self.project_id}/compile-runs")
         self.assertEqual(response.status_code, 404)
+
+
+class SyncTexTests(ApiTestCase):
+    """Mocks _dispatch_synctex() (the HTTP call to apps/compile's
+    /synctex/forward and /synctex/backward), matching the same
+    dispatch_compile()-mocking convention used above."""
+
+    def setUp(self):
+        super().setUp()
+        self.owner = Client()
+        _login_new_user(self.owner, "owner@example.com")
+        create = post_json(self.owner, "/api/projects", {"name": "P"})
+        self.project_id = create.json()["id"]
+        with patch("projects.compile_api.dispatch_compile") as mock_dispatch:
+            mock_dispatch.return_value = {**FAKE_SUCCESS, "synctex_base64": "aGVsbG8="}  # "hello"
+            run_response = post_json(self.owner, f"/api/projects/{self.project_id}/compile")
+        self.run_id = run_response.json()["id"]
+
+    def test_requires_login(self):
+        response = Client().get(
+            f"/api/projects/{self.project_id}/compile-runs/{self.run_id}/synctex/forward",
+            {"file": "main.tex", "line": 3},
+        )
+        self.assertEqual(response.status_code, 401)
+
+    @patch("projects.compile_api._dispatch_synctex")
+    def test_forward_search_returns_pdf_position(self, mock_dispatch):
+        mock_dispatch.return_value = {
+            "page": 1, "x": 231.5, "y": 134.7, "h": 133.7, "v": 137.2, "width": 343.7, "height": 9.9,
+        }
+        response = self.owner.get(
+            f"/api/projects/{self.project_id}/compile-runs/{self.run_id}/synctex/forward",
+            {"file": "main.tex", "line": 3},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["page"], 1)
+        called_body = mock_dispatch.call_args.args[1]
+        self.assertEqual(called_body["file"], "main.tex")
+        self.assertEqual(called_body["line"], 3)
+
+    @patch("projects.compile_api._dispatch_synctex")
+    def test_backward_search_returns_source_position(self, mock_dispatch):
+        mock_dispatch.return_value = {"file": "main.tex", "line": 3, "column": -1}
+        response = self.owner.get(
+            f"/api/projects/{self.project_id}/compile-runs/{self.run_id}/synctex/backward",
+            {"page": 1, "x": 231.5, "y": 134.7},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["file"], "main.tex")
+
+    @patch("projects.compile_api._dispatch_synctex")
+    def test_no_record_returns_404(self, mock_dispatch):
+        mock_dispatch.return_value = None
+        response = self.owner.get(
+            f"/api/projects/{self.project_id}/compile-runs/{self.run_id}/synctex/forward",
+            {"file": "main.tex", "line": 999},
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_viewer_can_use_synctex(self):
+        link = post_json(self.owner, f"/api/projects/{self.project_id}/share-links", {"role": "viewer"})
+        viewer = Client()
+        post_json(viewer, f"/api/share-links/{link.json()['token']}/join", {})
+        with patch("projects.compile_api._dispatch_synctex") as mock_dispatch:
+            mock_dispatch.return_value = {"page": 1, "x": 0, "y": 0, "h": 0, "v": 0, "width": 0, "height": 0}
+            response = viewer.get(
+                f"/api/projects/{self.project_id}/compile-runs/{self.run_id}/synctex/forward",
+                {"file": "main.tex", "line": 1},
+            )
+        self.assertEqual(response.status_code, 200)
+
+    def test_run_without_synctex_data_gets_404(self):
+        with patch("projects.compile_api.dispatch_compile") as mock_dispatch:
+            mock_dispatch.return_value = {**FAKE_SUCCESS, "synctex_base64": None}
+            run_response = post_json(self.owner, f"/api/projects/{self.project_id}/compile")
+        no_synctex_run_id = run_response.json()["id"]
+        response = self.owner.get(
+            f"/api/projects/{self.project_id}/compile-runs/{no_synctex_run_id}/synctex/forward",
+            {"file": "main.tex", "line": 1},
+        )
+        self.assertEqual(response.status_code, 404)

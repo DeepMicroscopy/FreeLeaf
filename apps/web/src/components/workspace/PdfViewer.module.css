@@ -14,10 +14,52 @@
   background: var(--bg-inset);
 }
 
+.pageWrap {
+  position: relative;
+}
+
 .page {
   box-shadow: var(--shadow-md);
   border-radius: 2px;
   background: #fff;
+  cursor: text;
+}
+
+.toolbar {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  box-shadow: var(--shadow-md);
+}
+
+.zoomLabel {
+  font-size: 12px;
+  color: var(--text-secondary);
+  min-width: 38px;
+  text-align: center;
+}
+
+.highlight {
+  position: absolute;
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  pointer-events: none;
+  animation: highlightFade 1.5s ease-out forwards;
+}
+
+@keyframes highlightFade {
+  0% { opacity: 1; }
+  70% { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 .overlay {

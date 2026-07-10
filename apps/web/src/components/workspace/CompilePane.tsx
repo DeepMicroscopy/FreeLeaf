@@ -7,6 +7,7 @@ import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
 import { Spinner } from "../ui/Spinner";
 import { PdfViewer } from "./PdfViewer";
+import type { PdfViewerHandle } from "./PdfViewer";
 import styles from "./CompilePane.module.css";
 
 type CompileRunOut = components["schemas"]["CompileRunOut"];
@@ -16,10 +17,13 @@ const AUTO_COMPILE_DEBOUNCE_MS = 800;
 export interface CompilePaneHandle {
   scheduleAutoCompile: () => void;
   triggerCompile: () => void;
+  jumpToPdf: (file: string, line: number) => Promise<void>;
 }
 
-export const CompilePane = forwardRef<CompilePaneHandle, { projectId: string; canWrite: boolean }>(
-  function CompilePane({ projectId, canWrite }, ref) {
+export const CompilePane = forwardRef<
+  CompilePaneHandle,
+  { projectId: string; canWrite: boolean; onJumpToSource?: (file: string, line: number) => void }
+>(function CompilePane({ projectId, canWrite, onJumpToSource }, ref) {
     const [run, setRun] = useState<CompileRunOut | null>(null);
     const [compiling, setCompiling] = useState(false);
     const [loadingLast, setLoadingLast] = useState(true);
@@ -29,6 +33,24 @@ export const CompilePane = forwardRef<CompilePaneHandle, { projectId: string; ca
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const inFlightRef = useRef(false);
     const rerunRequestedRef = useRef(false);
+    const pdfViewerRef = useRef<PdfViewerHandle>(null);
+    const runRef = useRef(run);
+    runRef.current = run;
+    const onJumpToSourceRef = useRef(onJumpToSource);
+    onJumpToSourceRef.current = onJumpToSource;
+
+    const handleSourceClick = useCallback(
+      async (page: number, x: number, y: number) => {
+        const currentRun = runRef.current;
+        if (!currentRun) return;
+        const { data } = await api.GET(
+          "/api/projects/{project_id}/compile-runs/{run_id}/synctex/backward",
+          { params: { path: { project_id: projectId, run_id: currentRun.id }, query: { page, x, y } } },
+        );
+        if (data) onJumpToSourceRef.current?.(data.file, data.line);
+      },
+      [projectId],
+    );
 
     const compile = useCallback(async () => {
       if (inFlightRef.current) {
@@ -60,8 +82,26 @@ export const CompilePane = forwardRef<CompilePaneHandle, { projectId: string; ca
           if (timerRef.current) clearTimeout(timerRef.current);
           compile();
         },
+        jumpToPdf: async (file: string, line: number) => {
+          const currentRun = runRef.current;
+          if (!currentRun) return;
+          const { data } = await api.GET(
+            "/api/projects/{project_id}/compile-runs/{run_id}/synctex/forward",
+            { params: { path: { project_id: projectId, run_id: currentRun.id }, query: { file, line } } },
+          );
+          if (data) {
+            setViewMode("pdf");
+            pdfViewerRef.current?.scrollToPosition({
+              page: data.page,
+              h: data.h,
+              v: data.v,
+              width: data.width,
+              height: data.height,
+            });
+          }
+        },
       }),
-      [compile],
+      [compile, projectId],
     );
 
     useEffect(() => {
@@ -161,7 +201,11 @@ export const CompilePane = forwardRef<CompilePaneHandle, { projectId: string; ca
           ) : (
             <>
               {run?.has_pdf && (
-                <PdfViewer src={`${apiOrigin()}/api/projects/${projectId}/compile-runs/${run.id}/pdf`} />
+                <PdfViewer
+                  ref={pdfViewerRef}
+                  src={`${apiOrigin()}/api/projects/${projectId}/compile-runs/${run.id}/pdf`}
+                  onSourceClick={handleSourceClick}
+                />
               )}
               {run && !run.has_pdf && !compiling && (
                 <EmptyState

@@ -61,18 +61,27 @@ function colorForUserId(id: string): { color: string; colorLight: string } {
   return { color: `hsl(${hue} 70% 45%)`, colorLight: `hsl(${hue} 70% 45% / 0.25)` };
 }
 
+export interface JumpTarget {
+  line: number;
+  token: number;
+}
+
 export function CodeMirrorEditor({
   projectId,
   fileId,
   readOnly,
   onContentChanged,
   onCompileShortcut,
+  onJumpToPdf,
+  jumpTarget,
 }: {
   projectId: string;
   fileId: string;
   readOnly: boolean;
   onContentChanged?: () => void;
   onCompileShortcut?: () => void;
+  onJumpToPdf?: (line: number) => void;
+  jumpTarget?: JumpTarget;
 }) {
   const { user } = useAuth();
   const { entries, addEntries, findNearDuplicate, findByKey } = useBibliography();
@@ -84,6 +93,8 @@ export function CodeMirrorEditor({
   onContentChangedRef.current = onContentChanged;
   const onCompileShortcutRef = useRef(onCompileShortcut);
   onCompileShortcutRef.current = onCompileShortcut;
+  const onJumpToPdfRef = useRef(onJumpToPdf);
+  onJumpToPdfRef.current = onJumpToPdf;
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
   const addEntriesRef = useRef(addEntries);
@@ -266,6 +277,14 @@ export function CodeMirrorEditor({
                 });
                 return true;
               },
+              mousedown: (event, view) => {
+                if (!(event.metaKey || event.ctrlKey) || !onJumpToPdfRef.current) return false;
+                const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+                if (pos == null) return false;
+                event.preventDefault();
+                onJumpToPdfRef.current(view.state.doc.lineAt(pos).number);
+                return true;
+              },
             }),
             yCollab(ytext, provider!.awareness, { undoManager: false }),
           ],
@@ -294,6 +313,22 @@ export function CodeMirrorEditor({
       ydoc?.destroy();
     };
   }, [projectId, fileId, readOnly, user?.id, user?.display_name]);
+
+  // Applies a pending "jump to this line" request (from clicking in the PDF)
+  // once the editor view is ready. Depends on `loading` too so a jump that
+  // arrives together with a file switch (view not yet created) is retried
+  // once the new view finishes its initial Yjs sync.
+  useEffect(() => {
+    if (loading || !jumpTarget || !viewRef.current) return;
+    const view = viewRef.current;
+    const lineNum = Math.max(1, Math.min(jumpTarget.line, view.state.doc.lines));
+    const line = view.state.doc.line(lineNum);
+    view.dispatch({
+      selection: { anchor: line.from },
+      effects: EditorView.scrollIntoView(line.from, { y: "center" }),
+    });
+    view.focus();
+  }, [jumpTarget, loading]);
 
   return (
     <div className={styles.wrapper}>

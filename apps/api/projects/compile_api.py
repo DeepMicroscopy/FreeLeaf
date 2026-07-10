@@ -93,6 +93,25 @@ def dispatch_compile(tar_bytes: bytes, compiler: str, main_file: str) -> dict:
         raise HttpError(502, "Compile service is unavailable.") from exc
 
 
+def _dispatch_synctex(path: str, body: dict) -> dict | None:
+    request = urllib.request.Request(
+        f"{COMPILE_SERVICE_URL}{path}",
+        data=json.dumps(body).encode(),
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=COMPILE_REQUEST_TIMEOUT_SECONDS) as response:
+            return json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return None
+        detail = exc.read().decode(errors="replace")
+        raise HttpError(400, f"SyncTeX request rejected: {detail}") from exc
+    except urllib.error.URLError as exc:
+        raise HttpError(502, "Compile service is unavailable.") from exc
+
+
 class ProjectSettingsOut(Schema):
     main_doc_path: str
     central_bib_path: str | None = None
@@ -265,3 +284,64 @@ def get_compile_log(request, project_id: uuid.UUID, run_id: uuid.UUID):
     if not run or not run.log_key:
         raise HttpError(404, "No log for this compile run.")
     return HttpResponse(storage.get_object(run.log_key), content_type="text/plain; charset=utf-8")
+
+
+class SyncTexForwardOut(Schema):
+    page: int
+    x: float
+    y: float
+    h: float
+    v: float
+    width: float
+    height: float
+
+
+@router.get("/projects/{project_id}/compile-runs/{run_id}/synctex/forward", response=SyncTexForwardOut)
+def synctex_forward(request, project_id: uuid.UUID, run_id: uuid.UUID, file: str, line: int):
+    """Source position -> PDF position, for jumping the PDF pane to match
+    the editor cursor ("both ways" click-to-source, Plan.md §9 Phase 7)."""
+    user = get_current_user(request)
+    project, _membership = get_authorized_project(user, project_id)
+    run = project.compile_runs.filter(id=run_id).first()
+    if not run or not run.pdf_key or not run.synctex_key:
+        raise HttpError(404, "No SyncTeX data for this compile run.")
+
+    body = {
+        "pdf_base64": base64.b64encode(storage.get_object(run.pdf_key)).decode(),
+        "synctex_base64": base64.b64encode(storage.get_object(run.synctex_key)).decode(),
+        "file": file,
+        "line": line,
+    }
+    result = _dispatch_synctex("/synctex/forward", body)
+    if result is None:
+        raise HttpError(404, "No SyncTeX record for that position.")
+    return SyncTexForwardOut(**result)
+
+
+class SyncTexBackwardOut(Schema):
+    file: str
+    line: int
+    column: int
+
+
+@router.get("/projects/{project_id}/compile-runs/{run_id}/synctex/backward", response=SyncTexBackwardOut)
+def synctex_backward(request, project_id: uuid.UUID, run_id: uuid.UUID, page: int, x: float, y: float):
+    """PDF position -> source position, for jumping the editor to match a
+    click in the PDF pane."""
+    user = get_current_user(request)
+    project, _membership = get_authorized_project(user, project_id)
+    run = project.compile_runs.filter(id=run_id).first()
+    if not run or not run.pdf_key or not run.synctex_key:
+        raise HttpError(404, "No SyncTeX data for this compile run.")
+
+    body = {
+        "pdf_base64": base64.b64encode(storage.get_object(run.pdf_key)).decode(),
+        "synctex_base64": base64.b64encode(storage.get_object(run.synctex_key)).decode(),
+        "page": page,
+        "x": x,
+        "y": y,
+    }
+    result = _dispatch_synctex("/synctex/backward", body)
+    if result is None:
+        raise HttpError(404, "No SyncTeX record for that position.")
+    return SyncTexBackwardOut(**result)

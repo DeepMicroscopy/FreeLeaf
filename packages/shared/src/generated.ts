@@ -509,6 +509,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/compile-runs/{run_id}/synctex/forward": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Synctex Forward
+         * @description Source position -> PDF position, for jumping the PDF pane to match
+         *     the editor cursor ("both ways" click-to-source, Plan.md §9 Phase 7).
+         */
+        get: operations["projects_compile_api_synctex_forward"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/compile-runs/{run_id}/synctex/backward": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Synctex Backward
+         * @description PDF position -> source position, for jumping the editor to match a
+         *     click in the PDF pane.
+         */
+        get: operations["projects_compile_api_synctex_backward"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/files/{file_id}/collab-token": {
         parameters: {
             query?: never;
@@ -803,6 +845,32 @@ export interface components {
             file?: string | null;
             /** Line */
             line?: number | null;
+        };
+        /** SyncTexForwardOut */
+        SyncTexForwardOut: {
+            /** Page */
+            page: number;
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+            /** H */
+            h: number;
+            /** V */
+            v: number;
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
+        };
+        /** SyncTexBackwardOut */
+        SyncTexBackwardOut: {
+            /** File */
+            file: string;
+            /** Line */
+            line: number;
+            /** Column */
+            column: number;
         };
         /** CollabTokenOut */
         CollabTokenOut: {
@@ -1709,6 +1777,59 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    projects_compile_api_synctex_forward: {
+        parameters: {
+            query: {
+                file: string;
+                line: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncTexForwardOut"];
+                };
+            };
+        };
+    };
+    projects_compile_api_synctex_backward: {
+        parameters: {
+            query: {
+                page: number;
+                x: number;
+                y: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncTexBackwardOut"];
+                };
             };
         };
     };
