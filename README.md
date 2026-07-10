@@ -47,6 +47,8 @@ This builds production images (gunicorn + collected/whitenoise-served static for
 
 `docker-compose.prod.yml` uses `name: freeleaf-prod` so it never shares containers/volumes with a dev stack running from the same checkout; its example port (`8001`) is chosen so both can run side by side during testing — map to `80`/`443` for a real deployment.
 
+**Running the web app and api on separate subdomains instead** (your own reverse proxy, not `apps/web/nginx.conf`) works too, but `DJANGO_ALLOWED_HOSTS`, `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`, and `CSRF_TRUSTED_ORIGINS` stop being the same value — see the comment block at the top of `.env.prod.example` for exactly which one needs which host. Getting `DJANGO_ALLOWED_HOSTS` wrong here surfaces as a 400 with nothing useful in the browser; check `docker compose -f docker-compose.prod.yml logs api` for `DisallowedHost` first.
+
 ## Local development (without Docker)
 
 **api**

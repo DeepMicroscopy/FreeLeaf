@@ -142,6 +142,16 @@ Implements Plan.md §7 in full. This is the security-critical core of the projec
 - CI doesn't build the TeX Live image or exercise the sandboxed-compile path (would need Docker-in-Docker in the Actions runner and a multi-hundred-MB image build) — the real sandbox behavior was verified manually this session instead; CI only runs the mocked-fast API tests. Worth revisiting if compile logic churns enough to need automated regression coverage of the sandbox itself.
 - The compiled PDF isn't wired into the frontend yet — that's explicitly Phase 4 ("Co-view compile loop": PDF.js rendering, Recompile button, parsed error panel).
 
+## ORCID login 400 on user's production deployment (`freeleaf-api.deepmicroscopy.org`): RESOLVED
+
+Root cause, found via the new logging (see below) within one round trip: `DisallowedHost` — the user's deployment routes the web app and the api to two *different* hostnames via their own reverse proxy (`freeleaf.deepmicroscopy.org` for the SPA, `freeleaf-api.deepmicroscopy.org` straight to the api), bypassing `apps/web/nginx.conf`'s same-origin proxying entirely. `DJANGO_ALLOWED_HOSTS` didn't include the api's own host, so Django rejected the request outright — not the session/cookie issue the vague original 400 suggested.
+
+This is a valid, real-world deployment topology this repo's docs didn't cover — `.env.prod.example` and `docker-compose.prod.yml` only documented the same-origin-via-nginx setup, implicitly assuming `DJANGO_ALLOWED_HOSTS`/`FRONTEND_URL`/`CORS_ALLOWED_ORIGINS`/`CSRF_TRUSTED_ORIGINS` are always the same one value. Fixed the docs, not just answered the user once:
+- **`.env.prod.example`** now documents both topologies explicitly side by side: (A) same-origin via nginx — all four values identical; (B) split subdomains — `DJANGO_ALLOWED_HOSTS`/`ORCID_REDIRECT_URI` take the **api's** host, `FRONTEND_URL`/`CORS_ALLOWED_ORIGINS`/`CSRF_TRUSTED_ORIGINS` take the **web app's** host (they're no longer the same value once the SPA's fetch() calls are genuinely cross-origin).
+- **README**'s production section links to that and flags the specific failure signature (400 with nothing useful in the browser → check `docker compose -f docker-compose.prod.yml logs api` for `DisallowedHost` first).
+
+The error-message-splitting and `LOGGING` config added while diagnosing (see previous revision of this entry) stay — they're generally useful, not just for this one bug, and are what actually surfaced the real cause in one round trip instead of several rounds of guessing.
+
 ## Next: Phase 4 — Co-view compile loop
 
 PDF.js in the Editor tab's PDF pane (currently a placeholder), a "Recompile" action with debounced auto-compile on save, and a log/error panel that parses the raw compile log Phase 3 already returns into readable warnings/errors with file+line.

@@ -121,7 +121,15 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile.prod
       args:
-        VITE_API_ORIGIN: "" # same-origin: nginx proxies /api under this domain
+        # Empty (default) = same-origin: nginx proxies /api under this domain
+        # (topology A in .env.prod.example). Set VITE_API_ORIGIN to the api's
+        # own absolute origin (e.g. https://freeleaf-api.example.com) for a
+        # split-subdomain deployment (topology B). This is baked into the
+        # static JS bundle at BUILD time, not read at container startup —
+        # changing it requires rebuilding: `docker compose -f
+        # docker-compose.prod.yml build web` (or `up -d --build web`), a
+        # plain restart won't pick up a new value.
+        VITE_API_ORIGIN: ${VITE_API_ORIGIN:-}
     restart: unless-stopped
     ports:
       - "8001:80" # 8001 in this repo's examples so it can run alongside dev's :5173 without clashing; map to :80/:443 for a real deployment
