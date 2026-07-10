@@ -1,0 +1,2 @@
+# No third-party deps yet — stdlib-only health stub.
+# Phase 3 adds the sandboxed pdflatex/xelatex job runner (§7) here.

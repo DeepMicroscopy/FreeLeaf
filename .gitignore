@@ -6,3 +6,8 @@ __pycache__/
 .env
 .vscode/
 dist/
+.venv/
+*.sqlite3
+staticfiles/
+.ruff_cache/
+*.tsbuildinfo

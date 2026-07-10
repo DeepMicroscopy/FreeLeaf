@@ -5,7 +5,7 @@ on:
   pull_request:
 
 jobs:
-  lint-and-typecheck:
+  web:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,3 +19,38 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
+
+  api:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: freeleaf
+          POSTGRES_USER: freeleaf
+          POSTGRES_PASSWORD: freeleaf
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U freeleaf"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+      - run: pytest -q
+        env:
+          DJANGO_SECRET_KEY: ci-test-secret
+          POSTGRES_DB: freeleaf
+          POSTGRES_USER: freeleaf
+          POSTGRES_PASSWORD: freeleaf
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
