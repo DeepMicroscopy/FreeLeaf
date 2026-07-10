@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import * as encoding from "lib0/encoding";
 import * as decoding from "lib0/decoding";
 import * as syncProtocol from "y-protocols/sync";
@@ -167,10 +168,33 @@ function readSyncMessage(
   }
 }
 
+// Lets api force a room's in-memory Yjs state to storage *right now* instead
+// of waiting for the next periodic flush (up to PERSIST_INTERVAL_MS stale) —
+// called before every compile so it sees live edits, not whatever storage
+// last happened to have. No-op (200) if no room is open for that file, since
+// storage is already authoritative in that case. Same shared-secret trust
+// model as the internal endpoints on the api side (projects/collab_api.py).
+async function handleFlushRequest(req: IncomingMessage, res: ServerResponse) {
+  const provided = req.headers["x-collab-secret"];
+  if (provided !== COLLAB_SHARED_SECRET) {
+    res.writeHead(401).end();
+    return;
+  }
+  const fileId = (req.url ?? "").replace(/^\/flush\//, "");
+  const room = rooms.get(fileId);
+  if (room) await room.flush();
+  res.writeHead(200, { "content-type": "application/json" });
+  res.end(JSON.stringify({ ok: true, flushed: Boolean(room) }));
+}
+
 const server = createServer((req, res) => {
   if (req.url === "/health") {
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ status: "ok" }));
+    return;
+  }
+  if (req.method === "POST" && req.url?.startsWith("/flush/")) {
+    void handleFlushRequest(req, res);
     return;
   }
   res.writeHead(404).end();

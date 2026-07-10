@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+import logging
 import os
 import tarfile
 import urllib.error
@@ -8,6 +9,7 @@ import urllib.request
 import uuid
 from urllib.parse import quote
 
+from django.conf import settings as django_settings
 from django.http import HttpResponse
 from django.utils import timezone
 from ninja import Router, Schema
@@ -22,15 +24,42 @@ from .log_parser import Diagnostic, parse_log
 from .models import Compiler, CompileRun, FileType, ProjectSettings, Role
 from .paths import InvalidPathError, normalize_path
 
+logger = logging.getLogger(__name__)
+
 router = Router(auth=SessionAuth())
 
 COMPILE_SERVICE_URL = os.environ.get("COMPILE_SERVICE_URL", "http://compile:8100")
 COMPILE_REQUEST_TIMEOUT_SECONDS = 90  # sandbox's own wall-clock cap is 60s; leave headroom
+COLLAB_FLUSH_TIMEOUT_SECONDS = 5
 
 
 def get_or_create_settings(project) -> ProjectSettings:
     settings_row, _ = ProjectSettings.objects.get_or_create(project=project)
     return settings_row
+
+
+def flush_collab_rooms(project) -> None:
+    """Force any open Yjs collab room (Phase 5) for this project's files to
+    persist its in-memory state to storage *right now*, before we read that
+    storage for a compile. Without this, a file being actively co-edited only
+    reflects storage as of its last periodic flush (up to a few seconds
+    stale) or its last client disconnecting — compiling in that gap silently
+    uses old content. Found via a real report: a document's `\\bibliography{}`
+    target had just been edited, but the compiled log showed latexmk
+    searching for the *previous* filename, because the compile ran against
+    pre-edit storage. No-op per file if no room is currently open for it
+    (collab reports `flushed: false`; storage was already authoritative)."""
+    for f in project.files.exclude(type=FileType.FOLDER):
+        url = f"{django_settings.COLLAB_INTERNAL_URL}/flush/{f.id}"
+        request = urllib.request.Request(
+            url, method="POST", headers={"X-Collab-Secret": django_settings.COLLAB_SHARED_SECRET}
+        )
+        try:
+            urllib.request.urlopen(request, timeout=COLLAB_FLUSH_TIMEOUT_SECONDS)
+        except (urllib.error.URLError, urllib.error.HTTPError) as exc:
+            # Best-effort: if collab is unreachable, compile against whatever
+            # storage already has rather than failing the whole compile.
+            logger.warning("collab flush failed for file %s: %s", f.id, exc)
 
 
 def materialize_tar(project) -> bytes:
@@ -160,6 +189,7 @@ def trigger_compile(request, project_id: uuid.UUID):
     require_role(membership, Role.OWNER, Role.EDITOR)
 
     settings_row = get_or_create_settings(project)
+    flush_collab_rooms(project)
     tar_bytes = materialize_tar(project)
     result = dispatch_compile(tar_bytes, settings_row.compiler, settings_row.main_doc_path)
 

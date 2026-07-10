@@ -104,6 +104,11 @@ CSRF_COOKIE_DOMAIN = os.environ.get('CSRF_COOKIE_DOMAIN') or None
 # to; defaults to the dev collab service's own port.
 COLLAB_SHARED_SECRET = os.environ.get('COLLAB_SHARED_SECRET', 'dev-insecure-collab-secret')
 COLLAB_WS_URL = os.environ.get('COLLAB_WS_URL', 'ws://localhost:1234')
+# Docker-network address api itself uses to call collab's internal HTTP
+# endpoints (e.g. force-flushing a room before compiling) — distinct from
+# COLLAB_WS_URL, which is the *browser*-facing address and is never reachable
+# from inside this container.
+COLLAB_INTERNAL_URL = os.environ.get('COLLAB_INTERNAL_URL', 'http://collab:1234')
 
 # Mailpit in dev (see docker-compose.yml); Mailgun (via django-anymail) in
 # production when MAILGUN_API_KEY is set (see docker-compose.prod.yml).
