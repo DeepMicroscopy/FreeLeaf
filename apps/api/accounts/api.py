@@ -5,11 +5,13 @@ import uuid
 from django.conf import settings
 from django.http import HttpResponseRedirect
 from django.middleware.csrf import get_token
+from django.utils import timezone
 from ninja import Router, Schema
 from ninja.errors import HttpError
 
 from core.ratelimit import check_rate_limit, client_ip
 from core.session import get_current_user, log_in, log_out
+from core.tokens import hash_token
 from core.urlsafety import safe_next_path
 
 from . import orcid
@@ -79,10 +81,27 @@ def anonymous_login(request, payload: AnonymousLoginIn):
 class MagicLinkRequestIn(Schema):
     email: str
     next: str | None = None
+    # Required: magic-link sign-in only works in the context of accepting a
+    # project invite (see JoinPage on the frontend). A standalone "email me
+    # a link" form on the generic login page would let anyone spam arbitrary
+    # addresses with sign-in emails from this instance — gating it behind a
+    # real, unexpired ShareLink token closes that off, since tokens aren't
+    # guessable and are only ever handed out by a project owner.
+    share_link_token: str
 
 
 @router.post("/auth/magic-link/request", auth=csrf_protect)
 def magic_link_request(request, payload: MagicLinkRequestIn):
+    # Deferred import: projects.models importing accounts.models already
+    # exists (the reverse direction), so this stays a DAG, not a cycle —
+    # still deferred to keep that relationship easy to eyeball from here.
+    from projects.models import ShareLink
+
+    token_hash = hash_token(payload.share_link_token)
+    link = ShareLink.objects.filter(token_hash=token_hash).first()
+    if not link or (link.expires_at and link.expires_at < timezone.now()):
+        raise HttpError(403, "Invalid or expired invite link.")
+
     check_rate_limit(f"magic-link:{payload.email.lower()}", limit=3, window_seconds=15 * 60)
     check_rate_limit(f"magic-link-ip:{client_ip(request)}", limit=10, window_seconds=15 * 60)
     request_magic_link(payload.email, next_path=payload.next)

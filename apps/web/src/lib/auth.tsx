@@ -8,7 +8,11 @@ export type CurrentUser = components["schemas"]["UserOut"];
 interface AuthContextValue {
   user: CurrentUser | null;
   loading: boolean;
-  requestMagicLink: (email: string, next?: string) => Promise<void>;
+  // shareLinkToken is required, not optional: magic-link sign-in only works
+  // when accepting a project invite (see JoinPage) — the backend rejects
+  // requests without a valid, matching ShareLink token. No standalone
+  // "email me a link" entry point on the generic login page anymore.
+  requestMagicLink: (email: string, shareLinkToken: string, next?: string) => Promise<void>;
   verifyMagicLink: (token: string) => Promise<CurrentUser>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -33,9 +37,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })();
   }, [refresh]);
 
-  const requestMagicLink = useCallback(async (email: string, next?: string) => {
+  const requestMagicLink = useCallback(async (email: string, shareLinkToken: string, next?: string) => {
     const { error } = await api.POST("/api/auth/magic-link/request", {
-      body: { email, next: next ?? null },
+      body: { email, next: next ?? null, share_link_token: shareLinkToken },
     });
     if (error) throw new Error("Could not send sign-in link.");
   }, []);

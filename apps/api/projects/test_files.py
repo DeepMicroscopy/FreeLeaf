@@ -1,10 +1,10 @@
 import json
 
-from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client
 
-from core.testing import ApiTestCase
+from accounts.models import User
+from core.testing import ApiTestCase, login_as
 
 from .models import ProjectFile
 
@@ -21,17 +21,16 @@ def put_json(client, url, data=None):
     return client.put(url, data=json.dumps(data or {}), content_type="application/json")
 
 
-def _login_via_magic_link(client, email):
-    post_json(client, "/api/auth/magic-link/request", {"email": email})
-    token = mail.outbox[-1].body.split("token=")[1].split()[0].strip()
-    post_json(client, "/api/auth/magic-link/verify", {"token": token})
+def _login_new_user(client, email):
+    user = User.objects.create(kind=User.Kind.EMAIL, email=email)
+    login_as(client, user)
 
 
 class FileTreeTests(ApiTestCase):
     def setUp(self):
         super().setUp()
         self.owner = Client()
-        _login_via_magic_link(self.owner, "owner@example.com")
+        _login_new_user(self.owner, "owner@example.com")
         create = post_json(self.owner, "/api/projects", {"name": "Paper"})
         self.project_id = create.json()["id"]
 

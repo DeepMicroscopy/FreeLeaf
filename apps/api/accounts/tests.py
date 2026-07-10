@@ -6,7 +6,7 @@ from django.core import mail
 from django.test import Client
 from django.utils import timezone
 
-from core.testing import ApiTestCase
+from core.testing import ApiTestCase, login_as
 
 from .magic_link import TOKEN_TTL_MINUTES
 from .models import MagicLink, User
@@ -49,13 +49,60 @@ class AnonymousLoginTests(ApiTestCase):
 
 
 class MagicLinkTests(ApiTestCase):
-    def _request_link(self, email="researcher@example.com"):
-        response = post_json(self.client, "/api/auth/magic-link/request", {"email": email})
+    def setUp(self):
+        super().setUp()
+        # Magic-link sign-in only works in the accept-an-invite context (see
+        # accounts/api.py's magic_link_request), so every test here needs a
+        # real ShareLink to request against — set up an inviter + project +
+        # link once, independent of self.client (which plays the anonymous
+        # requester actually signing in via email, and shouldn't start
+        # logged in as the inviter).
+        owner = User.objects.create(kind=User.Kind.EMAIL, email="owner@example.com")
+        owner_client = Client()
+        login_as(owner_client, owner)
+        project = post_json(owner_client, "/api/projects", {"name": "Paper"}).json()
+        link = post_json(
+            owner_client, f"/api/projects/{project['id']}/share-links", {"role": "editor"}
+        ).json()
+        self.share_link_token = link["token"]
+
+    def _request_link(self, email="researcher@example.com", share_link_token=None):
+        response = post_json(
+            self.client,
+            "/api/auth/magic-link/request",
+            {"email": email, "share_link_token": share_link_token or self.share_link_token},
+        )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(mail.outbox), 1)
         body = mail.outbox[0].body
         token = body.split("token=")[1].split()[0].strip()
         return token
+
+    def test_request_without_share_link_token_is_rejected(self):
+        response = post_json(self.client, "/api/auth/magic-link/request", {"email": "x@example.com"})
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_request_with_invalid_share_link_token_is_rejected(self):
+        response = post_json(
+            self.client,
+            "/api/auth/magic-link/request",
+            {"email": "x@example.com", "share_link_token": "not-a-real-token"},
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_request_with_expired_share_link_token_is_rejected(self):
+        from projects.models import ShareLink
+
+        ShareLink.objects.all().update(expires_at=timezone.now() - timedelta(hours=1))
+        response = post_json(
+            self.client,
+            "/api/auth/magic-link/request",
+            {"email": "x@example.com", "share_link_token": self.share_link_token},
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(len(mail.outbox), 0)
 
     def test_request_and_verify_logs_in_and_upserts_user(self):
         token = self._request_link("a@example.com")
@@ -75,7 +122,7 @@ class MagicLinkTests(ApiTestCase):
         token = self._request_link("Mixed.Case@Example.com")
         response = post_json(self.client, "/api/auth/magic-link/verify", {"token": token})
         self.assertEqual(response.json()["email"], "mixed.case@example.com")
-        self.assertEqual(User.objects.filter(kind="email").count(), 1)
+        self.assertEqual(User.objects.filter(kind="email", email="mixed.case@example.com").count(), 1)
 
     def test_link_is_single_use(self):
         token = self._request_link("b@example.com")
@@ -102,10 +149,11 @@ class MagicLinkTests(ApiTestCase):
         self.assertAlmostEqual(delta.total_seconds(), TOKEN_TTL_MINUTES * 60, delta=5)
 
     def test_repeated_requests_for_same_email_are_rate_limited(self):
+        body = {"email": "rl@example.com", "share_link_token": self.share_link_token}
         for _ in range(3):
-            response = post_json(self.client, "/api/auth/magic-link/request", {"email": "rl@example.com"})
+            response = post_json(self.client, "/api/auth/magic-link/request", body)
             self.assertEqual(response.status_code, 200)
-        response = post_json(self.client, "/api/auth/magic-link/request", {"email": "rl@example.com"})
+        response = post_json(self.client, "/api/auth/magic-link/request", body)
         self.assertEqual(response.status_code, 429)
 
 

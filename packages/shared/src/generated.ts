@@ -334,6 +334,92 @@ export interface paths {
         patch: operations["projects_files_api_rename_file"];
         trace?: never;
     };
+    "/api/projects/{project_id}/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Settings */
+        get: operations["projects_compile_api_get_settings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Settings */
+        patch: operations["projects_compile_api_update_settings"];
+        trace?: never;
+    };
+    "/api/projects/{project_id}/compile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Trigger Compile */
+        post: operations["projects_compile_api_trigger_compile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/compile-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Compile Runs */
+        get: operations["projects_compile_api_list_compile_runs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/compile-runs/{run_id}/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Compile Pdf */
+        get: operations["projects_compile_api_get_compile_pdf"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/compile-runs/{run_id}/log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Compile Log */
+        get: operations["projects_compile_api_get_compile_log"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -365,6 +451,8 @@ export interface components {
             email: string;
             /** Next */
             next?: string | null;
+            /** Share Link Token */
+            share_link_token: string;
         };
         /** MagicLinkVerifyIn */
         MagicLinkVerifyIn: {
@@ -470,6 +558,46 @@ export interface components {
         FileRenameIn: {
             /** Path */
             path: string;
+        };
+        /** ProjectSettingsOut */
+        ProjectSettingsOut: {
+            /** Main Doc Path */
+            main_doc_path: string;
+            /** Central Bib Path */
+            central_bib_path?: string | null;
+            /** Compiler */
+            compiler: string;
+        };
+        /** ProjectSettingsIn */
+        ProjectSettingsIn: {
+            /** Main Doc Path */
+            main_doc_path?: string | null;
+            /** Central Bib Path */
+            central_bib_path?: string | null;
+            /** Compiler */
+            compiler?: string | null;
+        };
+        /** CompileRunOut */
+        CompileRunOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Compiler */
+            compiler: string;
+            /** Status */
+            status: string;
+            /** Started At */
+            started_at: string;
+            /** Finished At */
+            finished_at?: string | null;
+            /** Exit Code */
+            exit_code?: number | null;
+            /** Duration Ms */
+            duration_ms?: number | null;
+            /** Has Pdf */
+            has_pdf: boolean;
         };
     };
     responses: never;
@@ -1074,6 +1202,140 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ProjectFileOut"];
                 };
+            };
+        };
+    };
+    projects_compile_api_get_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectSettingsOut"];
+                };
+            };
+        };
+    };
+    projects_compile_api_update_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectSettingsIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectSettingsOut"];
+                };
+            };
+        };
+    };
+    projects_compile_api_trigger_compile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompileRunOut"];
+                };
+            };
+        };
+    };
+    projects_compile_api_list_compile_runs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompileRunOut"][];
+                };
+            };
+        };
+    };
+    projects_compile_api_get_compile_pdf: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    projects_compile_api_get_compile_log: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

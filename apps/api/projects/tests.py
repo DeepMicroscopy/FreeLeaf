@@ -1,12 +1,11 @@
 import json
 from datetime import timedelta
 
-from django.core import mail
 from django.test import Client
 from django.utils import timezone
 
 from accounts.models import User
-from core.testing import ApiTestCase
+from core.testing import ApiTestCase, login_as
 
 from .models import Membership, Project, Role, ShareLink
 
@@ -19,10 +18,13 @@ def patch_json(client, url, data=None):
     return client.patch(url, data=json.dumps(data or {}), content_type="application/json")
 
 
-def _login_via_magic_link(client, email):
-    post_json(client, "/api/auth/magic-link/request", {"email": email})
-    token = mail.outbox[-1].body.split("token=")[1].split()[0].strip()
-    post_json(client, "/api/auth/magic-link/verify", {"token": token})
+def _login_new_user(client, email):
+    """Not via magic-link: that now requires an existing ShareLink token
+    (see accounts/api.py), so it can't bootstrap the very first non-anonymous
+    user in a test. A directly-created User + direct session login serves
+    the same "just get me a logged-in owner" purpose these tests need."""
+    user = User.objects.create(kind=User.Kind.EMAIL, email=email)
+    login_as(client, user)
 
 
 class ProjectCrudTests(ApiTestCase):
@@ -32,7 +34,7 @@ class ProjectCrudTests(ApiTestCase):
         self.assertEqual(response.status_code, 403)
 
     def test_logged_in_user_can_create_list_get_update_delete(self):
-        _login_via_magic_link(self.client, "ada@example.com")
+        _login_new_user(self.client, "ada@example.com")
 
         create = post_json(self.client, "/api/projects", {"name": "My Paper"})
         self.assertEqual(create.status_code, 200)
@@ -63,7 +65,7 @@ class ShareLinkAuthorizationTests(ApiTestCase):
     def setUp(self):
         super().setUp()
         self.owner_client = Client()
-        _login_via_magic_link(self.owner_client, "owner@example.com")
+        _login_new_user(self.owner_client, "owner@example.com")
         create = post_json(self.owner_client, "/api/projects", {"name": "Shared Paper"})
         self.project_id = create.json()["id"]
 

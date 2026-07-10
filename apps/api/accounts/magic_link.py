@@ -1,4 +1,3 @@
-import hashlib
 import secrets
 from datetime import timedelta
 from urllib.parse import urlencode
@@ -7,6 +6,7 @@ from django.conf import settings
 from django.core.mail import send_mail
 from django.utils import timezone
 
+from core.tokens import hash_token
 from core.urlsafety import safe_next_path
 
 from .models import MagicLink, User
@@ -14,16 +14,12 @@ from .models import MagicLink, User
 TOKEN_TTL_MINUTES = 15
 
 
-def _hash_token(token: str) -> str:
-    return hashlib.sha256(token.encode()).hexdigest()
-
-
 def request_magic_link(email: str, next_path: str | None = None) -> None:
     email = email.strip().lower()
     token = secrets.token_urlsafe(32)
     MagicLink.objects.create(
         email=email,
-        token_hash=_hash_token(token),
+        token_hash=hash_token(token),
         expires_at=timezone.now() + timedelta(minutes=TOKEN_TTL_MINUTES),
     )
     params = {"token": token}
@@ -44,7 +40,7 @@ class MagicLinkError(Exception):
 
 
 def verify_magic_link(token: str) -> User:
-    token_hash = _hash_token(token)
+    token_hash = hash_token(token)
     try:
         link = MagicLink.objects.get(token_hash=token_hash)
     except MagicLink.DoesNotExist as exc:

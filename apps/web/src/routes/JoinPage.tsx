@@ -65,7 +65,7 @@ export function JoinPage() {
     setMagicLinkError(null);
     setMagicLinkState("sending");
     try {
-      await requestMagicLink(email.trim(), `/join/${token}`);
+      await requestMagicLink(email.trim(), token, `/join/${token}`);
       setMagicLinkState("sent");
     } catch {
       setMagicLinkError("Something went wrong. Please try again.");

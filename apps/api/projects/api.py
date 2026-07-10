@@ -1,4 +1,3 @@
-import hashlib
 import secrets
 import uuid
 from datetime import timedelta
@@ -11,16 +10,13 @@ from accounts.auth import CsrfProtect, SessionAuth
 from accounts.models import User
 from core.ratelimit import check_rate_limit, client_ip
 from core.session import get_current_user, log_in
+from core.tokens import hash_token
 
 from .authz import get_authorized_project, require_role
 from .files_api import create_main_tex
 from .models import Membership, Project, Role, ShareLink
 
 router = Router(auth=SessionAuth())
-
-
-def _hash_token(token: str) -> str:
-    return hashlib.sha256(token.encode()).hexdigest()
 
 
 class ProjectOut(Schema):
@@ -143,7 +139,7 @@ def create_share_link(request, project_id: uuid.UUID, payload: ShareLinkCreateIn
 
     link = ShareLink.objects.create(
         project=project,
-        token_hash=_hash_token(token),
+        token_hash=hash_token(token),
         role=payload.role,
         expires_at=expires_at,
     )
@@ -177,7 +173,7 @@ class ShareLinkJoinIn(Schema):
 def join_via_share_link(request, token: str, payload: ShareLinkJoinIn):
     check_rate_limit(f"share-join:{client_ip(request)}", limit=20, window_seconds=60)
 
-    link = ShareLink.objects.filter(token_hash=_hash_token(token)).select_related("project").first()
+    link = ShareLink.objects.filter(token_hash=hash_token(token)).select_related("project").first()
     if link is None:
         raise HttpError(404, "Invalid or expired invite link.")
     if link.expires_at and link.expires_at < timezone.now():

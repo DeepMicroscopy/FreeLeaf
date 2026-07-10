@@ -13,10 +13,10 @@ and error handling when the compile service itself fails.
 import json
 from unittest.mock import patch
 
-from django.core import mail
 from django.test import Client
 
-from core.testing import ApiTestCase
+from accounts.models import User
+from core.testing import ApiTestCase, login_as
 
 from .models import CompileRun, ProjectSettings
 
@@ -29,10 +29,9 @@ def patch_json(client, url, data=None):
     return client.patch(url, data=json.dumps(data or {}), content_type="application/json")
 
 
-def _login_via_magic_link(client, email):
-    post_json(client, "/api/auth/magic-link/request", {"email": email})
-    token = mail.outbox[-1].body.split("token=")[1].split()[0].strip()
-    post_json(client, "/api/auth/magic-link/verify", {"token": token})
+def _login_new_user(client, email):
+    user = User.objects.create(kind=User.Kind.EMAIL, email=email)
+    login_as(client, user)
 
 
 FAKE_SUCCESS = {
@@ -50,7 +49,7 @@ class ProjectSettingsTests(ApiTestCase):
     def setUp(self):
         super().setUp()
         self.owner = Client()
-        _login_via_magic_link(self.owner, "owner@example.com")
+        _login_new_user(self.owner, "owner@example.com")
         create = post_json(self.owner, "/api/projects", {"name": "P"})
         self.project_id = create.json()["id"]
 
@@ -95,7 +94,7 @@ class TriggerCompileTests(ApiTestCase):
     def setUp(self):
         super().setUp()
         self.owner = Client()
-        _login_via_magic_link(self.owner, "owner@example.com")
+        _login_new_user(self.owner, "owner@example.com")
         create = post_json(self.owner, "/api/projects", {"name": "P"})
         self.project_id = create.json()["id"]
 

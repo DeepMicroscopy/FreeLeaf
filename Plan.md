@@ -178,6 +178,8 @@ Anonymous users get a lightweight `User` row (`kind='anonymous'`, optional `disp
 ### Phase 7 — Project settings & polish
 - **Settings tab:** select the **central `.bib` file** (from project files) and the **PDF compiler** (`pdflatex` | `xelatex`); persist to `ProjectSettings` and have Phase 3/4 honor them live.
 - Polish: SyncTeX click-to-source both ways; share-link role management UI; version history/snapshots; `.zip` import/export.
+- Add user management for admin users. They shall be able to see who is active, who as how many projects. Also, they are allowed to set the site settings:
+- **Site settings**: Current features include: activate domain whitelist for signup via orcid. 
 - **Acceptance:** changing the compiler or central bib in Settings changes compile behavior and which keys the Library/autocomplete use; each shipped polish item has tests + a docs entry.
 
 ---
