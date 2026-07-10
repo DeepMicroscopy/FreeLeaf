@@ -10,16 +10,17 @@ WORKDIR /app
 
 # 2. Install runtime & build-time system dependencies cleanly
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq5 \
-    && apt-get install -y --no-install-recommends gcc libpq-dev \
-    && rm -rf /var/lib/apt/lists/* \
-    # 3. Install Python requirements while compiler tools are hot
-    && COPY requirements.txt . \
-    && pip install -r requirements.txt \
-    # 4. Purge compiler dependencies immediately to slim down and harden the image
+    libpq5 gcc libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# 3. Copy requirements over safely on its own Docker layer
+COPY requirements.txt .
+
+# 4. Install Python packages, then purge compiler dependencies to slim down the image
+RUN pip install -r requirements.txt \
     && apt-get purge -y --auto-remove gcc libpq-dev
 
-# 5. Copy the source code artifact
+# 5. Copy the rest of your source code
 COPY . .
 
 # 6. Create a secure, restricted system user
