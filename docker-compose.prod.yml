@@ -1,0 +1,108 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      # Stripped fallbacks; forces explicit configuration via a protected .env file
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    # EXPOSED PORTS REMOVED (No public internet access to DB)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio-data:/data
+    # Only exposing the S3 API port if needed externally; Console port 9001 is removed
+    ports:
+      - "9000:9000" 
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: apps/api
+      dockerfile: Dockerfile.prod # Highly recommended to use a multi-stage production Dockerfile
+    restart: unless-stopped
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY}
+      DJANGO_DEBUG: "false" # Hardcoded to false for safety
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      FRONTEND_URL: ${FRONTEND_URL}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS}
+      # Point these to your production mail provider (e.g. SendGrid, Mailgun)
+      EMAIL_HOST: ${EMAIL_HOST}
+      EMAIL_PORT: ${EMAIL_PORT}
+      EMAIL_HOST_USER: ${EMAIL_HOST_USER}
+      EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD}
+      EMAIL_USE_TLS: "true"
+      ORCID_ENV: ${ORCID_ENV:-live}
+      ORCID_CLIENT_ID: ${ORCID_CLIENT_ID}
+      ORCID_CLIENT_SECRET: ${ORCID_CLIENT_SECRET}
+      ORCID_REDIRECT_URI: ${ORCID_REDIRECT_URI}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+    # VOLUMES REMOVED (Code is baked straight into the image)
+    ports:
+      - "127.0.0.1:8000:8000" # Only binds to localhost so reverse proxy can touch it
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py collectstatic --noinput &&
+             gunicorn myproject.wsgi:application --bind 0.0.0.0:8000 --workers 3"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  collab:
+    build:
+      context: apps/collab
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1234:1234"
+
+  compile:
+    build:
+      context: apps/compile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8100:8100"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile.prod # Should be an Nginx/Caddy stage serving static files
+    restart: unless-stopped
+    ports:
+      - "80:80"   # Exposed to the web
+      - "443:443" # Exposed to the web for SSL
+    depends_on:
+      - api
+
+volumes:
+  postgres-data:
+  minio-data:

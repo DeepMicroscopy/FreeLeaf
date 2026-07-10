@@ -1,0 +1,79 @@
+# ==============================================================================
+# FREELEAF PRODUCTION ENVIRONMENT CONFIGURATION
+# ==============================================================================
+# Instructions: 
+# 1. Copy this file to your production server as '.env'
+# 2. Change ALL placeholder values to secure, randomly generated keys.
+# 3. DO NOT commit the filled-out file to source control.
+
+# ------------------------------------------------------------------------------
+# 1. POSTGRES DATABASE CONFIGURATION
+# ------------------------------------------------------------------------------
+POSTGRES_DB=freeleaf_prod
+POSTGRES_USER=freeleaf_admin
+# Tip: Generate a secure password using: openssl rand -hex 24
+POSTGRES_PASSWORD=your_secure_random_postgres_password_here
+
+# ------------------------------------------------------------------------------
+# 2. DJANGO API CONFIGURATION
+# ------------------------------------------------------------------------------
+# Tip: Generate a secure key using: openssl rand -base64 48
+DJANGO_SECRET_KEY=your_secure_random_django_secret_key_here
+DJANGO_DEBUG=False
+
+# Comma-separated list of hostnames/IPs your API server lives on.
+# Include the domain name managed by your host Nginx proxy.
+DJANGO_ALLOWED_HOSTS=your-hostname.org,localhost,127.0.0.1
+
+# ------------------------------------------------------------------------------
+# 3. NETWORKING, CORS & CSRF (Match your external Nginx routing)
+# ------------------------------------------------------------------------------
+# The public-facing URL of your frontend application
+FRONTEND_URL=https://your-hostname
+
+# Comma-separated origins allowed to make cross-site HTTP requests
+CORS_ALLOWED_ORIGINS=https://your-hostname.org,https://your-hostname.org
+
+# Trusted origins for unsafe requests (e.g. POST requests)
+CSRF_TRUSTED_ORIGINS=https://your-hostname.org,https://your-hostname.org
+
+# ------------------------------------------------------------------------------
+# 4. PRODUCTION EMAIL SERVICE (SMTP)
+# ------------------------------------------------------------------------------
+# Replace these with your real production mail provider (SendGrid, Mailgun, AWS SES, etc.)
+EMAIL_HOST=smtp.mailgun.org
+EMAIL_PORT=587
+EMAIL_HOST_USER=postmaster@yourdomain.com
+EMAIL_HOST_PASSWORD=your_smtp_provider_password_here
+
+# ALTERNATIVELY:
+# ------------------------------------------------------------------------------
+# 4. PRODUCTION EMAIL SERVICE (MAILGUN API)
+# ------------------------------------------------------------------------------
+#MAILGUN_API_KEY=your-active-api-key-here
+#MAILGUN_SENDER_DOMAIN=sandboxXXXXXXXXXXXXXXXXX.mailgun.org
+
+# Use https://api.eu.mailgun.net/v3 if your Mailgun account is in the EU region
+#MAILGUN_API_URL=https://api.mailgun.net/v3
+
+# ------------------------------------------------------------------------------
+# 5. MINIO S3 OBJECT STORAGE CONFIGURATION
+# ------------------------------------------------------------------------------
+MINIO_ROOT_USER=freeleaf_storage_admin
+# Tip: Generate a secure password using: openssl rand -hex 24
+MINIO_ROOT_PASSWORD=your_secure_random_minio_password_here
+MINIO_BUCKET=freeleaf-prod-assets
+
+# ------------------------------------------------------------------------------
+# 6. EXTERNAL AUTHENTICATION (ORCID Integrations)
+# ------------------------------------------------------------------------------
+ORCID_ENV=live
+ORCID_CLIENT_ID=APP-XXXXXXXXXXXXXXXX
+ORCID_CLIENT_SECRET=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+ORCID_REDIRECT_URI=https://your-hostname.org/api/auth/orcid/callback
+
+# ------------------------------------------------------------------------------
+# 7. VITE FRONTEND CONFIGURATION
+# ------------------------------------------------------------------------------
+# Tells the frontend build where to dispatch its API requests
+VITE_API_ORIGIN=https://your-hostname.org
