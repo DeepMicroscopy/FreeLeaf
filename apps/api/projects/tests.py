@@ -153,6 +153,47 @@ class ShareLinkAuthorizationTests(ApiTestCase):
         self.assertEqual(response.status_code, 404)
 
 
+class MembersTests(ApiTestCase):
+    def setUp(self):
+        super().setUp()
+        self.owner_client = Client()
+        _login_new_user(self.owner_client, "owner@example.com")
+        create = post_json(self.owner_client, "/api/projects", {"name": "Shared Paper"})
+        self.project_id = create.json()["id"]
+
+    def test_owner_sees_all_members_and_roles(self):
+        link_resp = post_json(
+            self.owner_client, f"/api/projects/{self.project_id}/share-links", {"role": "viewer"}
+        )
+        viewer = Client()
+        post_json(viewer, f"/api/share-links/{link_resp.json()['token']}/join", {"display_name": "Vera Viewer"})
+
+        response = self.owner_client.get(f"/api/projects/{self.project_id}/members")
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(len(body), 2)
+        roles = {m["role"] for m in body}
+        self.assertEqual(roles, {"owner", "viewer"})
+        viewer_entry = next(m for m in body if m["role"] == "viewer")
+        self.assertEqual(viewer_entry["display_name"], "Vera Viewer")
+        self.assertFalse(viewer_entry["is_you"])
+        owner_entry = next(m for m in body if m["role"] == "owner")
+        self.assertTrue(owner_entry["is_you"])
+
+    def test_viewer_cannot_list_members(self):
+        link_resp = post_json(
+            self.owner_client, f"/api/projects/{self.project_id}/share-links", {"role": "viewer"}
+        )
+        viewer = Client()
+        post_json(viewer, f"/api/share-links/{link_resp.json()['token']}/join", {})
+        response = viewer.get(f"/api/projects/{self.project_id}/members")
+        self.assertEqual(response.status_code, 403)
+
+    def test_requires_login(self):
+        response = Client().get(f"/api/projects/{self.project_id}/members")
+        self.assertEqual(response.status_code, 401)
+
+
 def _make_zip(entries: dict[str, bytes]) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:

@@ -75,3 +75,56 @@
   font-size: 12px;
   font-family: var(--font-mono);
 }
+
+.divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: var(--space-1) 0;
+}
+
+.memberList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.memberRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.memberName {
+  font-size: 12.5px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.youTag {
+  color: var(--text-tertiary);
+}
+
+.roleBadge {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: var(--text-secondary);
+  background: var(--bg-inset);
+}
+
+.role_owner {
+  color: var(--accent-700);
+  background: var(--accent-soft);
+}

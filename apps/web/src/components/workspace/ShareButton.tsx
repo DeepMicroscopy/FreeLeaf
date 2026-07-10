@@ -1,4 +1,5 @@
 import { api } from "@freeleaf/shared";
+import type { components } from "@freeleaf/shared";
 import { useState } from "react";
 import { Check, Copy, Share2 } from "lucide-react";
 
@@ -6,17 +7,26 @@ import { Button } from "../ui/Button";
 import { Spinner } from "../ui/Spinner";
 import styles from "./ShareButton.module.css";
 
+type MemberOut = components["schemas"]["MemberOut"];
+
 export function ShareButton({ projectId }: { projectId: string }) {
   const [open, setOpen] = useState(false);
   const [link, setLink] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [members, setMembers] = useState<MemberOut[] | null>(null);
 
   async function toggle() {
     const next = !open;
     setOpen(next);
     if (next && !link) await generate();
+    if (next) {
+      const { data } = await api.GET("/api/projects/{project_id}/members", {
+        params: { path: { project_id: projectId } },
+      });
+      setMembers(data ?? []);
+    }
   }
 
   async function generate() {
@@ -70,6 +80,26 @@ export function ShareButton({ projectId }: { projectId: string }) {
                   {copied ? "Copied" : "Copy"}
                 </Button>
               </div>
+            )}
+
+            <div className={styles.divider} />
+            <p className={styles.title}>People with access</p>
+            {members === null ? (
+              <div className={styles.loading}>
+                <Spinner size={16} />
+              </div>
+            ) : (
+              <ul className={styles.memberList}>
+                {members.map((m) => (
+                  <li key={m.user_id} className={styles.memberRow}>
+                    <span className={styles.memberName}>
+                      {m.display_name}
+                      {m.is_you && <span className={styles.youTag}> (you)</span>}
+                    </span>
+                    <span className={[styles.roleBadge, styles[`role_${m.role}`]].join(" ")}>{m.role}</span>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
         </>

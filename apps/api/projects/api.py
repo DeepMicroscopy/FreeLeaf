@@ -199,6 +199,39 @@ def delete_project(request, project_id: uuid.UUID):
     return {"detail": "deleted"}
 
 
+# --- Members -----------------------------------------------------------
+
+
+class MemberOut(Schema):
+    user_id: uuid.UUID
+    display_name: str
+    kind: str
+    role: str
+    is_you: bool
+
+
+@router.get("/projects/{project_id}/members", response=list[MemberOut])
+def list_members(request, project_id: uuid.UUID):
+    """Who currently has access and at what level — shown in the Share
+    popover (Plan.md §9 Phase 7). Owner-only, same visibility as share-links:
+    the Share button that surfaces this is itself only rendered for owners."""
+    user = get_current_user(request)
+    project, membership = get_authorized_project(user, project_id)
+    require_role(membership, Role.OWNER)
+
+    members = project.memberships.select_related("user").order_by("-role", "created_at")
+    return [
+        MemberOut(
+            user_id=m.user.id,
+            display_name=m.user.display_name or m.user.email or m.user.orcid_id or "Anonymous",
+            kind=m.user.kind,
+            role=m.role,
+            is_you=m.user_id == user.id,
+        )
+        for m in members
+    ]
+
+
 # --- Share links -----------------------------------------------------------
 
 

@@ -220,6 +220,28 @@ export interface paths {
         patch: operations["projects_api_update_project"];
         trace?: never;
     };
+    "/api/projects/{project_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Members
+         * @description Who currently has access and at what level — shown in the Share
+         *     popover (Plan.md §9 Phase 7). Owner-only, same visibility as share-links:
+         *     the Share button that surfaces this is itself only rendered for owners.
+         */
+        get: operations["projects_api_list_members"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/share-links": {
         parameters: {
             query?: never;
@@ -562,6 +584,22 @@ export interface components {
         ProjectUpdateIn: {
             /** Name */
             name: string;
+        };
+        /** MemberOut */
+        MemberOut: {
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** Display Name */
+            display_name: string;
+            /** Kind */
+            kind: string;
+            /** Role */
+            role: string;
+            /** Is You */
+            is_you: boolean;
         };
         /** ShareLinkOut */
         ShareLinkOut: {
@@ -1055,6 +1093,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectOut"];
+                };
+            };
+        };
+    };
+    projects_api_list_members: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberOut"][];
                 };
             };
         };
