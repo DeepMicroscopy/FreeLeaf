@@ -1,5 +1,5 @@
 import * as pdfjsLib from "pdfjs-dist";
-import type { PDFDocumentProxy, PDFPageProxy, PageViewport } from "pdfjs-dist";
+import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { Maximize, ZoomIn, ZoomOut } from "lucide-react";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
@@ -37,9 +37,9 @@ export const PdfViewer = forwardRef<
 
   const docRef = useRef<PDFDocumentProxy | null>(null);
   const pagesRef = useRef<PDFPageProxy[]>([]);
-  const viewportsRef = useRef<PageViewport[]>([]);
   const pageWrapsRef = useRef<HTMLDivElement[]>([]);
   const baseScaleRef = useRef(1);
+  const currentScaleRef = useRef(1);
   const renderTokenRef = useRef(0);
   const onSourceClickRef = useRef(onSourceClick);
   onSourceClickRef.current = onSourceClick;
@@ -52,14 +52,13 @@ export const PdfViewer = forwardRef<
 
     container.innerHTML = "";
     pageWrapsRef.current = [];
-    viewportsRef.current = [];
+    currentScaleRef.current = scale;
 
     for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
       const page = pagesRef.current[pageNum - 1];
       if (renderTokenRef.current !== token) return;
 
       const viewport = page.getViewport({ scale });
-      viewportsRef.current[pageNum - 1] = viewport;
 
       const pageWrap = document.createElement("div");
       pageWrap.className = styles.pageWrap;
@@ -81,8 +80,11 @@ export const PdfViewer = forwardRef<
         const rect = canvas.getBoundingClientRect();
         const cssX = event.clientX - rect.left;
         const cssY = event.clientY - rect.top;
-        const [pdfX, pdfY] = viewportsRef.current[pageNum - 1].convertToPdfPoint(cssX, cssY);
-        handler(pageNum, pdfX, pdfY);
+        const s = currentScaleRef.current;
+        // SyncTeX coordinates are already top-left-origin/y-down (same
+        // convention as viewport pixels), unlike native PDF user space
+        // (bottom-left/y-up) — so this is a plain unscale, no axis flip.
+        handler(pageNum, cssX / s, cssY / s);
       });
 
       pageWrap.appendChild(canvas);
@@ -152,17 +154,15 @@ export const PdfViewer = forwardRef<
     scrollToPosition: ({ page, h, v, width, height }) => {
       const container = containerRef.current;
       const pageWrap = pageWrapsRef.current[page - 1];
-      const viewport = viewportsRef.current[page - 1];
-      if (!container || !pageWrap || !viewport) return;
+      if (!container || !pageWrap) return;
 
-      // SyncTeX boxes are in PDF space (origin bottom-left, y up); the box's
-      // top edge in that space is v - height (v is the box's baseline/bottom).
-      const [x1, y1] = viewport.convertToViewportPoint(h, v - height);
-      const [x2, y2] = viewport.convertToViewportPoint(h + width, v);
-      const top = Math.min(y1, y2);
-      const left = Math.min(x1, x2);
-      const boxWidth = Math.abs(x2 - x1);
-      const boxHeight = Math.abs(y2 - y1);
+      // Same top-left-origin/y-down convention as the click handler above:
+      // v is the box's baseline, so its top edge is v - height.
+      const s = currentScaleRef.current;
+      const top = (v - height) * s;
+      const left = h * s;
+      const boxWidth = width * s;
+      const boxHeight = height * s;
 
       container.scrollTo({
         top: pageWrap.offsetTop + top - container.clientHeight / 3,
