@@ -175,6 +175,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Project Zip
+         * @description Create a new project from an uploaded .zip (Plan.md §9 Phase 7).
+         *     Unsafe or junk entries (path traversal, absolute paths, OS metadata
+         *     like __MACOSX/.DS_Store, dotfiles) are silently skipped rather than
+         *     failing the whole import — the same "validate every entry independently,
+         *     never trust the archive" discipline as the compile sandbox's tar
+         *     extraction (apps/compile/sandbox.py's _safe_extract), applied here to
+         *     Python's zipfile instead of tarfile.
+         */
+        post: operations["projects_api_import_project_zip"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}": {
         parameters: {
             query?: never;
@@ -919,6 +945,38 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ProjectCreateIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectOut"];
+                };
+            };
+        };
+    };
+    projects_api_import_project_zip: {
+        parameters: {
+            query: {
+                name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * File
+                     * Format: binary
+                     */
+                    file: string;
+                };
             };
         };
         responses: {

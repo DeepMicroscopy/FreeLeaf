@@ -1,13 +1,16 @@
+import io
 import json
+import zipfile
 from datetime import timedelta
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client
 from django.utils import timezone
 
 from accounts.models import User
 from core.testing import ApiTestCase, login_as
 
-from .models import Membership, Project, Role, ShareLink
+from .models import Membership, Project, ProjectFile, Role, ShareLink
 
 
 def post_json(client, url, data=None):
@@ -148,6 +151,88 @@ class ShareLinkAuthorizationTests(ApiTestCase):
 
         response = post_json(Client(), f"/api/share-links/{token}/join", {})
         self.assertEqual(response.status_code, 404)
+
+
+def _make_zip(entries: dict[str, bytes]) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        for name, data in entries.items():
+            zf.writestr(name, data)
+    return buf.getvalue()
+
+
+class ZipImportTests(ApiTestCase):
+    def setUp(self):
+        super().setUp()
+        self.owner = Client()
+        _login_new_user(self.owner, "owner@example.com")
+
+    def _import(self, client, name, zip_bytes):
+        return client.post(
+            f"/api/projects/import?name={name}",
+            {"file": SimpleUploadedFile("upload.zip", zip_bytes, content_type="application/zip")},
+        )
+
+    def test_import_creates_project_and_files(self):
+        zip_bytes = _make_zip({"main.tex": b"\\documentclass{article}", "refs.bib": b"@article{x,}"})
+        response = self._import(self.owner, "Imported Paper", zip_bytes)
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        self.assertEqual(body["name"], "Imported Paper")
+        self.assertEqual(body["role"], "owner")
+
+        paths = set(ProjectFile.objects.filter(project_id=body["id"]).values_list("path", flat=True))
+        self.assertEqual(paths, {"main.tex", "refs.bib"})
+
+    def test_strips_common_leading_directory(self):
+        zip_bytes = _make_zip({"MyProject/main.tex": b"x", "MyProject/sub/fig.png": b"y"})
+        response = self._import(self.owner, "P", zip_bytes)
+        self.assertEqual(response.status_code, 200, response.content)
+        paths = set(ProjectFile.objects.filter(project_id=response.json()["id"]).values_list("path", flat=True))
+        self.assertEqual(paths, {"main.tex", "sub/fig.png"})
+
+    def test_skips_junk_and_traversal_entries_without_failing(self):
+        zip_bytes = _make_zip(
+            {
+                "main.tex": b"x",
+                "__MACOSX/._main.tex": b"junk",
+                ".DS_Store": b"junk",
+                "../../etc/passwd": b"evil",
+            }
+        )
+        response = self._import(self.owner, "P", zip_bytes)
+        self.assertEqual(response.status_code, 200, response.content)
+        paths = set(ProjectFile.objects.filter(project_id=response.json()["id"]).values_list("path", flat=True))
+        self.assertEqual(paths, {"main.tex"})
+
+    def test_empty_zip_rejected(self):
+        response = self._import(self.owner, "P", _make_zip({}))
+        self.assertEqual(response.status_code, 400)
+
+    def test_all_junk_zip_rejected(self):
+        response = self._import(self.owner, "P", _make_zip({".DS_Store": b"junk"}))
+        self.assertEqual(response.status_code, 400)
+
+    def test_bad_zip_bytes_rejected(self):
+        response = self.owner.post(
+            "/api/projects/import?name=P",
+            {"file": SimpleUploadedFile("upload.zip", b"not a zip", content_type="application/zip")},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_requires_login(self):
+        response = self._import(Client(), "P", _make_zip({"main.tex": b"x"}))
+        self.assertEqual(response.status_code, 401)
+
+    def test_anonymous_cannot_import(self):
+        anon = Client()
+        post_json(anon, "/api/auth/anonymous", {"display_name": "Guest"})
+        response = self._import(anon, "P", _make_zip({"main.tex": b"x"}))
+        self.assertEqual(response.status_code, 403)
+
+    def test_blank_name_rejected(self):
+        response = self._import(self.owner, "", _make_zip({"main.tex": b"x"}))
+        self.assertEqual(response.status_code, 400)
 
 
 class MembershipModelTests(ApiTestCase):

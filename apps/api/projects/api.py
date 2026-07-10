@@ -1,22 +1,34 @@
+import io
+import mimetypes
 import secrets
 import uuid
+import zipfile
 from datetime import timedelta
 
+from django.db import IntegrityError
 from django.utils import timezone
-from ninja import Router, Schema
+from ninja import File, Router, Schema
 from ninja.errors import HttpError
+from ninja.files import UploadedFile
 
 from accounts.auth import CsrfProtect, SessionAuth
 from accounts.models import User
+from core import storage
 from core.ratelimit import check_rate_limit, client_ip
 from core.session import get_current_user, log_in
 from core.tokens import hash_token
 
 from .authz import get_authorized_project, require_role
-from .files_api import create_main_tex
-from .models import Membership, Project, Role, ShareLink
+from .files_api import create_main_tex, storage_key_for
+from .models import Membership, Project, ProjectFile, Role, ShareLink
+from .paths import InvalidPathError, guess_file_type, normalize_path
 
 router = Router(auth=SessionAuth())
+
+MAX_ZIP_BYTES = 100 * 1024 * 1024  # 20 MB compressed upload
+MAX_ZIP_UNCOMPRESSED_BYTES = 50 * 1024 * 1024  # 50 MB total once extracted
+MAX_ZIP_ENTRIES = 500
+_IGNORED_BASENAMES = {".ds_store", "thumbs.db"}
 
 
 class ProjectOut(Schema):
@@ -62,6 +74,95 @@ def create_project(request, payload: ProjectCreateIn):
     project = Project.objects.create(owner=user, name=name)
     membership = Membership.objects.create(project=project, user=user, role=Role.OWNER)
     create_main_tex(project)
+    return _project_out(project, membership.role)
+
+
+def _common_leading_dir(names: list[str]) -> str:
+    """If every entry shares one top-level directory, return that prefix
+    (with a trailing slash) so it can be stripped. Common in zip exports
+    that wrap the whole project in one folder (e.g. Overleaf's "Download
+    as zip") — without this, every file would land one level deeper than
+    the user expects."""
+    if not names:
+        return ""
+    tops = {n.split("/", 1)[0] for n in names if "/" in n}
+    if len(tops) == 1:
+        prefix = next(iter(tops)) + "/"
+        if all(n.startswith(prefix) for n in names):
+            return prefix
+    return ""
+
+
+@router.post("/projects/import", response=ProjectOut)
+def import_project_zip(request, name: str, file: UploadedFile = File(...)):
+    """Create a new project from an uploaded .zip (Plan.md §9 Phase 7).
+    Unsafe or junk entries (path traversal, absolute paths, OS metadata
+    like __MACOSX/.DS_Store, dotfiles) are silently skipped rather than
+    failing the whole import — the same "validate every entry independently,
+    never trust the archive" discipline as the compile sandbox's tar
+    extraction (apps/compile/sandbox.py's _safe_extract), applied here to
+    Python's zipfile instead of tarfile."""
+    user = get_current_user(request)
+    if user is None:
+        raise HttpError(401, "Authentication required.")
+    if user.kind == User.Kind.ANONYMOUS:
+        raise HttpError(403, "Anonymous users can't create projects — sign in with ORCID or email.")
+
+    clean_name = name.strip()
+    if not clean_name:
+        raise HttpError(400, "Project name is required.")
+
+    zip_bytes = file.read()
+    if len(zip_bytes) > MAX_ZIP_BYTES:
+        raise HttpError(413, "Zip file is too large.")
+
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(zip_bytes))
+    except zipfile.BadZipFile as exc:
+        raise HttpError(400, "That doesn't look like a valid .zip file.") from exc
+
+    infos = [i for i in zf.infolist() if not i.is_dir()]
+    if not infos:
+        raise HttpError(400, "The zip file is empty.")
+    if len(infos) > MAX_ZIP_ENTRIES:
+        raise HttpError(400, f"Too many files in the zip (max {MAX_ZIP_ENTRIES}).")
+    if sum(i.file_size for i in infos) > MAX_ZIP_UNCOMPRESSED_BYTES:
+        raise HttpError(413, "Zip contents are too large once extracted.")
+
+    common_prefix = _common_leading_dir([i.filename for i in infos])
+
+    entries: list[tuple[str, zipfile.ZipInfo]] = []
+    for info in infos:
+        rel = info.filename[len(common_prefix):] if common_prefix else info.filename
+        basename = rel.rsplit("/", 1)[-1]
+        if not rel or rel.startswith("__MACOSX/") or basename.startswith(".") or basename.lower() in _IGNORED_BASENAMES:
+            continue
+        try:
+            clean_path = normalize_path(rel)
+        except InvalidPathError:
+            continue
+        entries.append((clean_path, info))
+
+    if not entries:
+        raise HttpError(400, "No usable files found in the zip.")
+
+    project = Project.objects.create(owner=user, name=clean_name)
+    membership = Membership.objects.create(project=project, user=user, role=Role.OWNER)
+
+    for clean_path, info in entries:
+        data = zf.read(info)
+        file_id = uuid.uuid4()
+        key = storage_key_for(project.id, file_id)
+        content_type = mimetypes.guess_type(clean_path)[0] or "application/octet-stream"
+        storage.put_object(key, data, content_type)
+        try:
+            ProjectFile.objects.create(
+                id=file_id, project=project, path=clean_path, type=guess_file_type(clean_path),
+                storage_key=key, size=len(data),
+            )
+        except IntegrityError:
+            storage.delete_object(key)  # duplicate path within the zip — keep the first, skip this one
+
     return _project_out(project, membership.role)
 
 
