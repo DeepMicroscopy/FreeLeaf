@@ -1,15 +1,22 @@
 import { apiOrigin } from "@freeleaf/shared";
-import { FileQuestion, FileX2 } from "lucide-react";
+import { FileQuestion } from "lucide-react";
+import { useCallback, useRef } from "react";
 
 import { EmptyState } from "../ui/EmptyState";
 import { useWorkspace } from "../../lib/workspace";
 import { CodeMirrorEditor } from "./CodeMirrorEditor";
+import { CompilePane } from "./CompilePane";
+import type { CompilePaneHandle } from "./CompilePane";
 import { SplitPane } from "./SplitPane";
 import styles from "./EditorTab.module.css";
 
 export function EditorTab() {
   const { projectId, files, selectedFileId, canWrite } = useWorkspace();
   const selectedFile = files.find((f) => f.id === selectedFileId);
+  const compilePaneRef = useRef<CompilePaneHandle>(null);
+  const handleSaved = useCallback(() => {
+    compilePaneRef.current?.scheduleAutoCompile();
+  }, []);
 
   if (!selectedFile) {
     return (
@@ -32,22 +39,16 @@ export function EditorTab() {
         <div className={styles.pane}>
           <div className={styles.paneHeader}>{selectedFile.path}</div>
           <div className={styles.paneBody}>
-            <CodeMirrorEditor projectId={projectId} fileId={selectedFile.id} readOnly={!canWrite} />
-          </div>
-        </div>
-      }
-      right={
-        <div className={styles.pane}>
-          <div className={styles.paneHeader}>PDF preview</div>
-          <div className={styles.paneBody}>
-            <EmptyState
-              icon={<FileX2 size={32} aria-hidden="true" />}
-              title="Nothing compiled yet"
-              description="Sandboxed compilation and a live PDF preview arrive in a later phase. This pane is ready for it."
+            <CodeMirrorEditor
+              projectId={projectId}
+              fileId={selectedFile.id}
+              readOnly={!canWrite}
+              onSaved={handleSaved}
             />
           </div>
         </div>
       }
+      right={<CompilePane ref={compilePaneRef} projectId={projectId} canWrite={canWrite} />}
     />
   );
 }

@@ -41,16 +41,20 @@ export function CodeMirrorEditor({
   projectId,
   fileId,
   readOnly,
+  onSaved,
 }: {
   projectId: string;
   fileId: string;
   readOnly: boolean;
+  onSaved?: () => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<SaveStatus>("idle");
+  const onSavedRef = useRef(onSaved);
+  onSavedRef.current = onSaved;
 
   async function save() {
     const view = viewRef.current;
@@ -61,6 +65,7 @@ export function CodeMirrorEditor({
       body: { content: view.state.doc.toString() },
     });
     setStatus(error ? "error" : "saved");
+    if (!error) onSavedRef.current?.();
   }
 
   useEffect(() => {
