@@ -13,3 +13,4 @@ dist/
 staticfiles/
 .ruff_cache/
 *.tsbuildinfo
+.compile-jobs/

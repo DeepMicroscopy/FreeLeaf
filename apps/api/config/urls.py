@@ -21,6 +21,7 @@ from ninja import NinjaAPI
 from accounts.api import router as accounts_router
 from health.views import router as health_router
 from projects.api import router as projects_router
+from projects.compile_api import router as compile_router
 from projects.files_api import router as files_router
 
 api = NinjaAPI(title="FreeLeaf API")
@@ -28,6 +29,7 @@ api.add_router("", health_router)
 api.add_router("", accounts_router)
 api.add_router("", projects_router)
 api.add_router("", files_router)
+api.add_router("", compile_router)
 
 urlpatterns = [
     path('admin/', admin.site.urls),

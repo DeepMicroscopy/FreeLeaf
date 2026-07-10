@@ -65,6 +65,7 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-freeleaf}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-freeleafsecret}
       MINIO_BUCKET: ${MINIO_BUCKET:-freeleaf}
+      COMPILE_SERVICE_URL: http://compile:8100
     volumes:
       - ./apps/api:/app
     ports:
@@ -86,9 +87,32 @@ services:
     ports:
       - "1234:1234"
 
+  # Sandbox worker image (Plan.md §7) — never started as a service; spawned
+  # per compile job by `compile` via the Docker Engine API. This entry only
+  # exists so `docker compose build texlive` builds/tags it.
+  texlive:
+    build:
+      context: docker/texlive
+    image: freeleaf-texlive:latest
+    profiles: ["build-only"]
+
   compile:
     build:
       context: apps/compile
+    environment:
+      PORT: 8100
+      COMPILE_JOBS_CONTAINER_DIR: /var/lib/freeleaf/jobs
+      # Must be the *host* path of the bind mount below (not visible from
+      # inside this container) — the host Docker daemon needs it to mount
+      # job files into the sibling sandbox containers. See sandbox.py.
+      COMPILE_JOBS_HOST_DIR: ${PWD}/.compile-jobs
+    volumes:
+      # Talks to the host's Docker daemon to spawn ephemeral sandbox
+      # containers — see apps/compile/Dockerfile for why this service (and
+      # only this one) runs as root, and docs/decisions/compile-sandbox.md
+      # for the dev-vs-prod tradeoff this implies.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${PWD}/.compile-jobs:/var/lib/freeleaf/jobs
     ports:
       - "8100:8100"
 

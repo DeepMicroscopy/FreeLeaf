@@ -69,6 +69,7 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       MINIO_BUCKET: ${MINIO_BUCKET}
+      COMPILE_SERVICE_URL: http://compile:8100
     # VOLUMES REMOVED (Code is baked straight into the image)
     ports:
       - "127.0.0.1:8002:8000" # localhost-only debug access; nginx reaches it via the internal network regardless
@@ -88,12 +89,32 @@ services:
     restart: unless-stopped
     # No published port: web's nginx reaches it at collab:1234 internally.
 
+  # Sandbox worker image (Plan.md §7) — never started; spawned per job by
+  # `compile`. `docker compose -f docker-compose.prod.yml build texlive`
+  # builds/tags it before first use.
+  texlive:
+    build:
+      context: docker/texlive
+    image: freeleaf-texlive:latest
+    profiles: ["build-only"]
+
   compile:
     build:
       context: apps/compile
     restart: unless-stopped
-    # No published port: internal-only, reached by api once Phase 3 wires
-    # the compile trigger through (currently a health-only stub).
+    environment:
+      COMPILE_JOBS_CONTAINER_DIR: /var/lib/freeleaf/jobs
+      # Must be the host path of the bind mount below — see apps/compile/sandbox.py.
+      COMPILE_JOBS_HOST_DIR: ${COMPILE_JOBS_HOST_DIR:-${PWD}/.compile-jobs}
+    volumes:
+      # Docker-in-Docker via the host socket — see docs/decisions/compile-sandbox.md.
+      # Plan.md §7 flags this as the accepted dev/interim choice and names
+      # gVisor/Firecracker/nsjail as the hardened production path; this repo
+      # doesn't implement that swap yet, so production currently inherits
+      # the same tradeoff dev does. Revisit before a real multi-tenant deploy.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${COMPILE_JOBS_HOST_DIR:-${PWD}/.compile-jobs}:/var/lib/freeleaf/jobs
+    # No published port: internal-only, reached by api.
 
   web:
     build:

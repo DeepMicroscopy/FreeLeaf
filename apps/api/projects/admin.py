@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Membership, Project, ProjectFile, ShareLink
+from .models import CompileRun, Membership, Project, ProjectFile, ProjectSettings, ShareLink
 
 
 @admin.register(Project)
@@ -25,3 +25,15 @@ class ProjectFileAdmin(admin.ModelAdmin):
     list_display = ("id", "project", "path", "type", "size", "updated_at")
     list_filter = ("type",)
     search_fields = ("path",)
+
+
+@admin.register(ProjectSettings)
+class ProjectSettingsAdmin(admin.ModelAdmin):
+    list_display = ("project", "compiler", "main_doc_path", "central_bib_path")
+    list_filter = ("compiler",)
+
+
+@admin.register(CompileRun)
+class CompileRunAdmin(admin.ModelAdmin):
+    list_display = ("id", "project", "compiler", "status", "started_at", "duration_ms")
+    list_filter = ("status", "compiler")

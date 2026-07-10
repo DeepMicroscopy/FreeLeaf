@@ -1,2 +1,3 @@
-# No third-party deps yet — stdlib-only health stub.
-# Phase 3 adds the sandboxed pdflatex/xelatex job runner (§7) here.
+# Talks to the Docker Engine API over the mounted socket to spawn/kill the
+# ephemeral sandboxed compile containers (see sandbox.py, docker-compose.yml).
+docker>=7,<8

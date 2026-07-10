@@ -83,3 +83,49 @@ class ProjectFile(models.Model):
 
     def __str__(self):
         return f"{self.project_id}:{self.path}"
+
+
+class Compiler(models.TextChoices):
+    PDFLATEX = "pdflatex", "pdfLaTeX"
+    XELATEX = "xelatex", "XeLaTeX"
+
+
+class ProjectSettings(models.Model):
+    """One-to-one with Project. Auto-created on first access with defaults
+    (see get_or_create_settings) rather than at Project creation — keeps
+    Project creation simple and this stays forward-compatible with fields
+    Phase 7's Settings tab UI will add (central .bib, etc.)."""
+
+    project = models.OneToOneField(Project, on_delete=models.CASCADE, related_name="settings")
+    main_doc_path = models.CharField(max_length=512, default="main.tex")
+    central_bib_path = models.CharField(max_length=512, null=True, blank=True)
+    compiler = models.CharField(max_length=16, choices=Compiler.choices, default=Compiler.PDFLATEX)
+
+    def __str__(self):
+        return f"Settings({self.project_id}, {self.compiler})"
+
+
+class CompileRun(models.Model):
+    class Status(models.TextChoices):
+        SUCCESS = "success", "Success"
+        FAILED = "failed", "Failed"
+        TIMEOUT = "timeout", "Timeout"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="compile_runs")
+    compiler = models.CharField(max_length=16, choices=Compiler.choices)
+    status = models.CharField(max_length=16, choices=Status.choices)
+    started_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    # Null when the compile produced no PDF (failed/timeout).
+    pdf_key = models.CharField(max_length=255, null=True, blank=True)
+    log_key = models.CharField(max_length=255, null=True, blank=True)
+    synctex_key = models.CharField(max_length=255, null=True, blank=True)
+    exit_code = models.IntegerField(null=True, blank=True)
+    duration_ms = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-started_at"]
+
+    def __str__(self):
+        return f"CompileRun({self.project_id}, {self.status})"
