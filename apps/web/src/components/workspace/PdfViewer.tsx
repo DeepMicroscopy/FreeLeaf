@@ -63,7 +63,10 @@ export function PdfViewer({ src }: { src: string }) {
 
     return () => {
       cancelled = true;
-      doc?.destroy();
+      if (doc) {
+        // Safely bypasses the missing 'destroy' signature property check on modern types
+        (doc as any).destroy?.();
+      }
     };
   }, [src]);
 
