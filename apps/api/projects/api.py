@@ -1,11 +1,13 @@
 import io
 import mimetypes
+import re
 import secrets
 import uuid
 import zipfile
 from datetime import timedelta
 
 from django.db import IntegrityError
+from django.http import HttpResponse
 from django.utils import timezone
 from ninja import File, Router, Schema
 from ninja.errors import HttpError
@@ -20,7 +22,7 @@ from core.tokens import hash_token
 
 from .authz import get_authorized_project, require_role
 from .files_api import create_main_tex, storage_key_for
-from .models import Membership, Project, ProjectFile, Role, ShareLink
+from .models import FileType, Membership, Project, ProjectFile, Role, ShareLink
 from .paths import InvalidPathError, guess_file_type, normalize_path
 
 router = Router(auth=SessionAuth())
@@ -164,6 +166,26 @@ def import_project_zip(request, name: str, file: UploadedFile = File(...)):
             storage.delete_object(key)  # duplicate path within the zip — keep the first, skip this one
 
     return _project_out(project, membership.role)
+
+
+@router.get("/projects/{project_id}/export")
+def export_project_zip(request, project_id: uuid.UUID):
+    """Download the project's current files as a .zip — the counterpart to
+    /projects/import. Any member can export (same access level as reading
+    file content elsewhere); no role restriction. Folders aren't preserved
+    as empty entries, mirroring import's own file-only handling."""
+    user = get_current_user(request)
+    project, _membership = get_authorized_project(user, project_id)
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for f in project.files.exclude(type=FileType.FOLDER):
+            zf.writestr(f.path, storage.get_object(f.storage_key))
+
+    safe_name = re.sub(r"[^A-Za-z0-9 ._-]", "_", project.name).strip() or "project"
+    response = HttpResponse(buf.getvalue(), content_type="application/zip")
+    response["Content-Disposition"] = f'attachment; filename="{safe_name}.zip"'
+    return response
 
 
 @router.get("/projects/{project_id}", response=ProjectOut)

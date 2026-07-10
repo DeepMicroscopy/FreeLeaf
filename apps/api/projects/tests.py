@@ -346,6 +346,61 @@ class ZipImportTests(ApiTestCase):
         self.assertEqual(response.status_code, 400)
 
 
+class ZipExportTests(ApiTestCase):
+    def setUp(self):
+        super().setUp()
+        self.owner = Client()
+        _login_new_user(self.owner, "owner@example.com")
+        create = post_json(self.owner, "/api/projects", {"name": "Export Me: Weird/Name?"})
+        self.project_id = create.json()["id"]
+        post_json(self.owner, f"/api/projects/{self.project_id}/files", {"path": "refs.bib", "content": "@x"})
+
+    def test_export_contains_all_files(self):
+        response = self.owner.get(f"/api/projects/{self.project_id}/export")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/zip")
+
+        zf = zipfile.ZipFile(io.BytesIO(response.content))
+        self.assertEqual(set(zf.namelist()), {"main.tex", "refs.bib"})
+        self.assertEqual(zf.read("refs.bib"), b"@x")
+
+    def test_filename_sanitized_in_content_disposition(self):
+        response = self.owner.get(f"/api/projects/{self.project_id}/export")
+        disposition = response["Content-Disposition"]
+        self.assertNotIn("/", disposition)
+        self.assertNotIn("?", disposition)
+        self.assertIn("Export Me_ Weird_Name_.zip", disposition)
+
+    def test_viewer_can_export(self):
+        link = post_json(self.owner, f"/api/projects/{self.project_id}/share-links", {"role": "viewer"})
+        viewer = Client()
+        post_json(viewer, f"/api/share-links/{link.json()['token']}/join", {})
+        response = viewer.get(f"/api/projects/{self.project_id}/export")
+        self.assertEqual(response.status_code, 200)
+
+    def test_stranger_gets_404(self):
+        stranger = Client()
+        _login_new_user(stranger, "stranger@example.com")
+        response = stranger.get(f"/api/projects/{self.project_id}/export")
+        self.assertEqual(response.status_code, 404)
+
+    def test_requires_login(self):
+        response = Client().get(f"/api/projects/{self.project_id}/export")
+        self.assertEqual(response.status_code, 401)
+
+    def test_roundtrips_through_import(self):
+        exported = self.owner.get(f"/api/projects/{self.project_id}/export")
+        reimport = self.owner.post(
+            "/api/projects/import?name=Reimported",
+            {"file": SimpleUploadedFile("p.zip", exported.content, content_type="application/zip")},
+        )
+        self.assertEqual(reimport.status_code, 200, reimport.content)
+        paths = set(
+            ProjectFile.objects.filter(project_id=reimport.json()["id"]).values_list("path", flat=True)
+        )
+        self.assertEqual(paths, {"main.tex", "refs.bib"})
+
+
 class MembershipModelTests(ApiTestCase):
     def test_unique_membership_per_project_user(self):
         user = User.objects.create(kind=User.Kind.ANONYMOUS, display_name="X")

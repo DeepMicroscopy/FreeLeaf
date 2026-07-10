@@ -1,4 +1,5 @@
-import { ArrowLeft } from "lucide-react";
+import { apiOrigin } from "@freeleaf/shared";
+import { ArrowLeft, Download } from "lucide-react";
 import { NavLink, Navigate, Route, Routes, useParams } from "react-router-dom";
 
 import { EditorTab } from "../components/workspace/EditorTab";
@@ -49,11 +50,18 @@ function WorkspaceShell() {
             Settings
           </NavLink>
         </nav>
-        {project.role === "owner" && (
-          <div className={styles.headerActions}>
-            <ShareButton projectId={projectId} />
-          </div>
-        )}
+        <div className={styles.headerActions}>
+          <a
+            className={styles.exportLink}
+            href={`${apiOrigin()}/api/projects/${projectId}/export`}
+            download
+            title="Download this project as a .zip"
+          >
+            <Download size={14} aria-hidden="true" />
+            Export
+          </a>
+          {project.role === "owner" && <ShareButton projectId={projectId} />}
+        </div>
       </header>
 
       <div className={styles.body}>
