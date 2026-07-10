@@ -1,0 +1,33 @@
+FROM python:3.12-slim
+
+# 1. Set optimized production Python environment flags
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# 2. Install runtime & build-time system dependencies cleanly
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    && apt-get install -y --no-install-recommends gcc libpq-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    # 3. Install Python requirements while compiler tools are hot
+    && COPY requirements.txt . \
+    && pip install -r requirements.txt \
+    # 4. Purge compiler dependencies immediately to slim down and harden the image
+    && apt-get purge -y --auto-remove gcc libpq-dev
+
+# 5. Copy the source code artifact
+COPY . .
+
+# 6. Create a secure, restricted system user
+RUN useradd --create-home --uid 1000 appuser \
+    && chown -R appuser:appuser /app
+USER appuser
+
+EXPOSE 8000
+
+# 7. Production WSGI command
+CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3"]

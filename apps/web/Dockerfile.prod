@@ -1,0 +1,48 @@
+# ==========================================
+# STAGE 1: Build the static assets
+# ==========================================
+FROM node:20-slim AS builder
+
+WORKDIR /repo
+
+# Install pnpm securely
+RUN npm install -g pnpm@9.15.0
+
+# Copy lockfiles and workspace configs
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY apps/web/package.json apps/web/package.json
+COPY packages/shared/package.json packages/shared/package.json
+COPY apps/collab/package.json apps/collab/package.json
+
+# Install dependencies using frozen-lockfile
+RUN pnpm install --frozen-lockfile
+
+# Copy source code needed for the build
+COPY packages/shared packages/shared
+COPY apps/web apps/web
+
+WORKDIR /repo/apps/web
+
+# Pass any necessary build-time environment variables (e.g., your Mailgun/API urls)
+ARG VITE_API_ORIGIN
+ENV VITE_API_ORIGIN=$VITE_API_ORIGIN
+
+# Compile the application into static HTML/JS/CSS (usually goes to /repo/apps/web/dist)
+RUN pnpm run build
+
+# ==========================================
+# STAGE 2: Serve the assets using Nginx
+# ==========================================
+FROM nginx:1.25-alpine
+
+# Remove default Nginx welcome site
+RUN rm -rf /usr/share/nginx/html/*
+
+# Copy the static production build files from Stage 1 into Nginx
+COPY --from=builder /repo/apps/web/dist /usr/share/nginx/html
+
+# Expose port 80 inside the container network
+EXPOSE 80
+
+# Run Nginx in the foreground
+CMD ["nginx", "-g", "daemon off;"]
