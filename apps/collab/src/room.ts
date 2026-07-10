@@ -17,7 +17,8 @@ export class Room {
   private persistTimer: ReturnType<typeof setInterval>;
   readonly ready: Promise<void>;
 
-  constructor(private readonly fileId: string) {
+  constructor(readonly fileId: string) {
+    console.log(`[collab] room created: ${fileId}`);
     this.ready = this.seed();
     this.ydoc.on("update", () => {
       this.dirty = true;
@@ -35,6 +36,7 @@ export class Room {
     if (this.ytext.length === 0 && content) {
       this.ytext.insert(0, content);
     }
+    console.log(`[collab] room seeded: ${this.fileId} contentLength=${content.length}`);
     // Seeding isn't a real edit — don't burn a persistence round-trip on it.
     this.dirty = false;
   }
@@ -43,7 +45,9 @@ export class Room {
     if (!this.dirty) return;
     this.dirty = false;
     try {
-      await persistFileContent(this.fileId, this.ytext.toString());
+      const content = this.ytext.toString();
+      await persistFileContent(this.fileId, content);
+      console.log(`[collab] persisted ${this.fileId}: contentLength=${content.length}`);
     } catch (err) {
       console.error(`[collab] failed to persist ${this.fileId}:`, err);
       this.dirty = true; // retry on the next tick
@@ -51,6 +55,7 @@ export class Room {
   }
 
   async destroy(): Promise<void> {
+    console.log(`[collab] room destroyed: ${this.fileId}`);
     clearInterval(this.persistTimer);
     await this.flush();
     this.ydoc.destroy();

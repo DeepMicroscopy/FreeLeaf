@@ -1,3 +1,4 @@
+import logging
 import time
 import uuid
 
@@ -13,6 +14,8 @@ from core.session import get_current_user
 
 from .authz import get_authorized_project
 from .models import FileType, ProjectFile
+
+logger = logging.getLogger(__name__)
 
 router = Router(auth=SessionAuth())
 
@@ -34,15 +37,23 @@ def get_collab_token(request, project_id: uuid.UUID, file_id: uuid.UUID):
     if f.type == FileType.FOLDER:
         raise HttpError(400, "Folders aren't collaborative documents.")
 
+    now = time.time()
     payload = {
         "project_id": str(project_id),
         "file_id": str(file_id),
         "user_id": str(user.id),
         "display_name": user.display_name or "Anonymous",
         "role": membership.role,
-        "exp": time.time() + COLLAB_TOKEN_TTL_SECONDS,
+        "exp": now + COLLAB_TOKEN_TTL_SECONDS,
     }
     token = sign_collab_token(payload, settings.COLLAB_SHARED_SECRET)
+    logger.info(
+        "collab-token issued: project=%s file=%s user=%s role=%s issued_at=%.3f exp=%.3f "
+        "ttl=%ss ws_url=%s secret_len=%s secret_prefix=%s",
+        project_id, file_id, user.id, membership.role, now, payload["exp"],
+        COLLAB_TOKEN_TTL_SECONDS, settings.COLLAB_WS_URL,
+        len(settings.COLLAB_SHARED_SECRET), settings.COLLAB_SHARED_SECRET[:4],
+    )
     return CollabTokenOut(token=token, ws_url=settings.COLLAB_WS_URL)
 
 
@@ -55,7 +66,13 @@ def get_collab_token(request, project_id: uuid.UUID, file_id: uuid.UUID):
 
 def _check_internal_secret(request) -> None:
     provided = request.headers.get("X-Collab-Secret", "")
-    if not provided or provided != settings.COLLAB_SHARED_SECRET:
+    expected = settings.COLLAB_SHARED_SECRET
+    if not provided or provided != expected:
+        logger.warning(
+            "internal collab request rejected: provided_len=%s provided_prefix=%s "
+            "expected_len=%s expected_prefix=%s path=%s",
+            len(provided), provided[:4], len(expected), expected[:4], request.path,
+        )
         raise HttpError(401, "Invalid collab service secret.")
 
 

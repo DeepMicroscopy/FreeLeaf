@@ -6,10 +6,15 @@ import * as awarenessProtocol from "y-protocols/awareness";
 import { WebSocket, WebSocketServer } from "ws";
 
 import { Room } from "./room.js";
-import { InvalidCollabToken, verifyCollabToken } from "./token.js";
+import { InvalidCollabToken, decodeCollabTokenUnsafe, verifyCollabToken } from "./token.js";
 
 const PORT = Number(process.env.PORT ?? 1234);
 const COLLAB_SHARED_SECRET = process.env.COLLAB_SHARED_SECRET ?? "dev-insecure-collab-secret";
+
+console.log(
+  `[collab] starting: secret_len=${COLLAB_SHARED_SECRET.length} secret_prefix=${COLLAB_SHARED_SECRET.slice(0, 4)} ` +
+    `api_internal_url=${process.env.API_INTERNAL_URL ?? "http://api:8000"}`,
+);
 
 // Outer wire message types — must match apps/web's y-websocket client exactly
 // (see node_modules/y-websocket/src/y-websocket.js). messageAuth (2) and
@@ -68,6 +73,7 @@ function handleMessage(ws: WebSocket, room: Room, state: ConnState, data: ArrayB
 
 function setupConnection(ws: WebSocket, room: Room, readOnly: boolean): ConnState {
   room.clientCount += 1;
+  console.log(`[collab] connection set up: room=${room.fileId} readOnly=${readOnly} clientCount=${room.clientCount}`);
   const state: ConnState = { readOnly, controlledClientIds: new Set() };
 
   const awarenessChangeHandler = (
@@ -95,15 +101,18 @@ function setupConnection(ws: WebSocket, room: Room, readOnly: boolean): ConnStat
   };
   room.ydoc.on("update", updateHandler);
 
-  ws.on("close", () => {
+  ws.on("close", (code, reason) => {
     room.ydoc.off("update", updateHandler);
     room.awareness.off("update", awarenessChangeHandler);
     awarenessProtocol.removeAwarenessStates(room.awareness, Array.from(state.controlledClientIds), null);
     room.clientCount -= 1;
+    console.log(
+      `[collab] connection closed: room=${room.fileId} code=${code} reason=${reason?.toString() || "<none>"} ` +
+        `remainingClients=${room.clientCount}`,
+    );
     if (room.clientCount <= 0) {
-      const fileId = [...rooms.entries()].find(([, r]) => r === room)?.[0];
       void room.destroy();
-      if (fileId) rooms.delete(fileId);
+      rooms.delete(room.fileId);
     }
   });
 
@@ -175,16 +184,33 @@ wss.on("connection", (ws, req) => {
   const url = new URL(req.url ?? "/", "http://internal");
   const fileId = url.pathname.replace(/^\//, "");
   const token = url.searchParams.get("token") ?? "";
+  const now = Date.now() / 1000;
+
+  console.log(
+    `[collab] connect attempt: room=${fileId} now=${now.toFixed(3)} tokenLen=${token.length} ` +
+      `secret_len=${COLLAB_SHARED_SECRET.length} secret_prefix=${COLLAB_SHARED_SECRET.slice(0, 4)}`,
+  );
 
   let payload;
   try {
     payload = verifyCollabToken(token, COLLAB_SHARED_SECRET);
   } catch (err) {
     const reason = err instanceof InvalidCollabToken ? err.message : "invalid token";
+    const unsafe = decodeCollabTokenUnsafe(token) as { exp?: number; project_id?: string; file_id?: string } | null;
+    const expInfo = unsafe?.exp ? `exp=${unsafe.exp} secondsUntilExpiry=${(unsafe.exp - now).toFixed(1)}` : "exp=<unparseable>";
+    console.error(
+      `[collab] TOKEN REJECTED: room=${fileId} reason="${reason}" now=${now.toFixed(3)} ${expInfo} ` +
+        `decodedPayload=${JSON.stringify(unsafe)}`,
+    );
     ws.close(4401, reason);
     return;
   }
+  console.log(
+    `[collab] token verified OK: room=${fileId} role=${payload.role} user=${payload.user_id} ` +
+      `exp=${payload.exp} now=${now.toFixed(3)} secondsUntilExpiry=${(payload.exp - now).toFixed(1)}`,
+  );
   if (payload.file_id !== fileId) {
+    console.error(`[collab] TOKEN FILE MISMATCH: token.file_id=${payload.file_id} url.fileId=${fileId}`);
     ws.close(4401, "token does not match room");
     return;
   }

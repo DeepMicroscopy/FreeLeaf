@@ -44,3 +44,16 @@ export function verifyCollabToken(token: string, secret: string): CollabTokenPay
   }
   return payload;
 }
+
+/** Decodes the payload without checking the signature or expiry — debug
+ * logging only, never use this for an actual auth decision. Lets us see
+ * what a *rejected* token claimed (e.g. its exp vs. our clock) even when
+ * the signature itself didn't verify. */
+export function decodeCollabTokenUnsafe(token: string): unknown {
+  try {
+    const [payloadB64] = token.split(".");
+    return JSON.parse(base64UrlDecode(payloadB64).toString("utf8"));
+  } catch {
+    return null;
+  }
+}
