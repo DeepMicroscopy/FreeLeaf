@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'corsheaders',
+    'anymail',
     'ninja',
     'health',
     'accounts',
@@ -76,12 +77,30 @@ CORS_ALLOW_CREDENTIALS = True
 _csrf_trusted = os.environ.get('CSRF_TRUSTED_ORIGINS', _default_dev_origins)
 CSRF_TRUSTED_ORIGINS = [o for o in _csrf_trusted.split(',') if o]
 
-# Mailpit in dev (see docker-compose.yml); override via env in production.
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = os.environ.get('EMAIL_HOST', 'mailpit')
-EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '1025'))
-EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'false').lower() == 'true'
+# Mailpit in dev (see docker-compose.yml); Mailgun (via django-anymail) in
+# production when MAILGUN_API_KEY is set (see docker-compose.prod.yml).
+MAILGUN_API_KEY = os.environ.get('MAILGUN_API_KEY')
+if MAILGUN_API_KEY:
+    EMAIL_BACKEND = 'anymail.backends.mailgun.EmailBackend'
+    ANYMAIL = {
+        'MAILGUN_API_KEY': MAILGUN_API_KEY,
+        'MAILGUN_SENDER_DOMAIN': os.environ.get('MAILGUN_DOMAIN', ''),
+    }
+else:
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+    EMAIL_HOST = os.environ.get('EMAIL_HOST', 'mailpit')
+    EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '1025'))
+    EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'false').lower() == 'true'
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@freeleaf.local')
+
+# Production hardening — SECURE_PROXY_SSL_HEADER is safe in dev too (no-op
+# without a matching header from a trusted proxy). The cookie/HSTS settings
+# are gated on DEBUG so local dev over plain http keeps working.
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+X_FRAME_OPTIONS = 'DENY'
+if not DEBUG:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
 
 ROOT_URLCONF = 'config.urls'
 
@@ -154,6 +173,15 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+# Manifest storage requires collectstatic to have run (see Dockerfile.prod /
+# docker-compose.prod.yml) — falls back to plain storage in dev, where we
+# never run collectstatic and DEBUG-mode runserver serves static files itself.
+STATICFILES_STORAGE = (
+    'whitenoise.storage.CompressedManifestStaticFilesStorage'
+    if not DEBUG
+    else 'django.contrib.staticfiles.storage.StaticFilesStorage'
+)
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field

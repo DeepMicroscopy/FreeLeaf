@@ -5,4 +5,5 @@ psycopg[binary]>=3.3,<4
 python-dotenv>=1.2,<2
 gunicorn>=26,<27
 boto3>=1.43,<2
-django-anymail[mailgun]
+django-anymail[mailgun]>=11,<12
+whitenoise>=6,<7

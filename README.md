@@ -35,6 +35,18 @@ A fresh clone should build and start with no extra setup.
 
 > Always open the app at **http://localhost:5173**, not `http://127.0.0.1:5173`. Browsers treat the two as different sites, so cookies from the api (at `localhost:8000`) won't reliably carry over if you mix them — this bites hardest in Safari.
 
+## Production deployment
+
+```sh
+cp .env.prod.example .env.prod
+# fill in .env.prod: real secrets, your domain, Mailgun, ORCID production app
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+```
+
+This builds production images (gunicorn + collected/whitenoise-served static for the api, an nginx-served Vite build for the web) and runs a single public-facing `web` container that reverse-proxies `/api`, `/admin`, `/static`, and `/collab` to the internal services — everything is same-origin in production, which avoids the CORS/cross-site-cookie fragility dev's separate `:5173`/`:8000` origins have. Only `web` is meant to be internet-facing; terminate TLS in front of it (a managed load balancer, or your own Caddy/nginx with certs proxying to `web`'s port) — `apps/web/nginx.conf` only serves plain HTTP.
+
+`docker-compose.prod.yml` uses `name: freeleaf-prod` so it never shares containers/volumes with a dev stack running from the same checkout; its example port (`8001`) is chosen so both can run side by side during testing — map to `80`/`443` for a real deployment.
+
 ## Local development (without Docker)
 
 **api**

@@ -1,3 +1,10 @@
+# Explicit project name: without it, Compose derives the project name from
+# the directory, which is the same directory docker-compose.yml (dev) runs
+# from — the two would then share containers/networks/volumes by name and
+# silently clobber each other (found by testing: prod recreated dev's
+# running postgres/minio containers in place). Never run both without this.
+name: freeleaf-prod
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -25,9 +32,8 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     volumes:
       - minio-data:/data
-    # Only exposing the S3 API port if needed externally; Console port 9001 is removed
-    ports:
-      - "9000:9000" 
+    # No published port: the api container reaches minio over the internal
+    # Docker network (MINIO_ENDPOINT below); nothing external needs S3 access.
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 10s
@@ -51,13 +57,11 @@ services:
       FRONTEND_URL: ${FRONTEND_URL}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
       CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS}
-      # Point these to your production mail provider (e.g. SendGrid, Mailgun)
-      EMAIL_HOST: ${EMAIL_HOST}
-      EMAIL_PORT: ${EMAIL_PORT}
-      EMAIL_HOST_USER: ${EMAIL_HOST_USER}
-      EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD}
-      EMAIL_USE_TLS: "true"
-      ORCID_ENV: ${ORCID_ENV:-live}
+      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL}
+      # Mailgun via django-anymail — set to switch off Mailpit's dev SMTP backend.
+      MAILGUN_API_KEY: ${MAILGUN_API_KEY}
+      MAILGUN_DOMAIN: ${MAILGUN_DOMAIN}
+      ORCID_ENV: ${ORCID_ENV:-production}
       ORCID_CLIENT_ID: ${ORCID_CLIENT_ID}
       ORCID_CLIENT_SECRET: ${ORCID_CLIENT_SECRET}
       ORCID_REDIRECT_URI: ${ORCID_REDIRECT_URI}
@@ -67,11 +71,11 @@ services:
       MINIO_BUCKET: ${MINIO_BUCKET}
     # VOLUMES REMOVED (Code is baked straight into the image)
     ports:
-      - "127.0.0.1:8000:8000" # Only binds to localhost so reverse proxy can touch it
+      - "127.0.0.1:8002:8000" # localhost-only debug access; nginx reaches it via the internal network regardless
     command: >
       sh -c "python manage.py migrate --noinput &&
              python manage.py collectstatic --noinput &&
-             gunicorn myproject.wsgi:application --bind 0.0.0.0:8000 --workers 3"
+             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3"
     depends_on:
       postgres:
         condition: service_healthy
@@ -82,26 +86,31 @@ services:
     build:
       context: apps/collab
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:1234:1234"
+    # No published port: web's nginx reaches it at collab:1234 internally.
 
   compile:
     build:
       context: apps/compile
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:8100:8100"
+    # No published port: internal-only, reached by api once Phase 3 wires
+    # the compile trigger through (currently a health-only stub).
 
   web:
     build:
       context: .
-      dockerfile: apps/web/Dockerfile.prod # Should be an Nginx/Caddy stage serving static files
+      dockerfile: apps/web/Dockerfile.prod
+      args:
+        VITE_API_ORIGIN: "" # same-origin: nginx proxies /api under this domain
     restart: unless-stopped
     ports:
-      - "80:80"   # Exposed to the web
-      - "443:443" # Exposed to the web for SSL
+      - "8001:80" # 8001 in this repo's examples so it can run alongside dev's :5173 without clashing; map to :80/:443 for a real deployment
+      # No 443 mapping — apps/web/nginx.conf only listens on 80. Terminate
+      # TLS in front of this stack (a managed LB, or Caddy/another nginx with
+      # your certs proxying to this container's port) rather than here; see
+      # README's deployment note.
     depends_on:
       - api
+      - collab
 
 volumes:
   postgres-data:
