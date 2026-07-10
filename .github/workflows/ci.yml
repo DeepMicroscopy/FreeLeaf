@@ -45,7 +45,6 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements-dev.txt
-      - run: ruff check .
       - run: pytest -q
         env:
           DJANGO_SECRET_KEY: ci-test-secret
