@@ -3,3 +3,5 @@
 // whenever apps/api's schema changes).
 export { api, apiOrigin, ensureCsrfCookie } from "./client";
 export type { components, operations, paths } from "./generated";
+export { parseBibtex, serializeEntry, looksLikeBibtex } from "./bibtex";
+export type { BibEntry } from "./bibtex";

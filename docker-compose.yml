@@ -138,6 +138,14 @@ services:
     volumes:
       - ./apps/web:/repo/apps/web
       - /repo/apps/web/node_modules
+      # packages/shared has real runtime code too (not just types), not only
+      # the generated OpenAPI client — bind-mount it too so dev edits there
+      # are live, same as apps/web. Without this it's frozen at image-build
+      # time (this bit Phase 6's bibtex.ts: a real runtime export, unlike
+      # earlier phases' generated.ts changes which are type-only and erased
+      # at build time, so the gap never showed up before).
+      - ./packages/shared:/repo/packages/shared
+      - /repo/packages/shared/node_modules
     ports:
       - "5173:5173"
     depends_on:

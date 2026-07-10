@@ -1,4 +1,5 @@
-import { api } from "@freeleaf/shared";
+import { api, looksLikeBibtex, parseBibtex } from "@freeleaf/shared";
+import { autocompletion, completionKeymap } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { StreamLanguage } from "@codemirror/language";
 import { stex } from "@codemirror/legacy-modes/mode/stex";
@@ -10,7 +11,10 @@ import * as Y from "yjs";
 import { useEffect, useRef, useState } from "react";
 
 import { useAuth } from "../../lib/auth";
+import { useBibliography } from "../../lib/bibliography";
 import { Spinner } from "../ui/Spinner";
+import { useToast } from "../ui/Toast";
+import { citeCompletionSource } from "./citeCompletion";
 import styles from "./CodeMirrorEditor.module.css";
 
 type ConnectionStatus = "connecting" | "live" | "disconnected";
@@ -66,11 +70,31 @@ export function CodeMirrorEditor({
   onContentChanged?: () => void;
 }) {
   const { user } = useAuth();
+  const { entries, addEntries } = useBibliography();
+  const { show } = useToast();
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const changeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onContentChangedRef = useRef(onContentChanged);
   onContentChangedRef.current = onContentChanged;
+  const entriesRef = useRef(entries);
+  entriesRef.current = entries;
+
+  const importBibtexRef = useRef((_text: string) => {});
+  importBibtexRef.current = (text: string) => {
+    const parsed = parseBibtex(text);
+    if (parsed.length === 0) {
+      show("No BibTeX entries found in that content.", "error");
+      return;
+    }
+    const { added, conflicts } = addEntries(parsed);
+    if (added.length > 0) {
+      const suffix = conflicts.length > 0 ? `, ${conflicts.length} duplicate key(s) skipped` : "";
+      show(`Added ${added.length} reference${added.length === 1 ? "" : "s"}${suffix}.`);
+    } else if (conflicts.length > 0) {
+      show(`All ${conflicts.length} entries were already in the library — nothing added.`, "error");
+    }
+  };
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const [presence, setPresence] = useState<PresenceUser[]>([]);
@@ -129,10 +153,33 @@ export function CodeMirrorEditor({
             lineNumbers(),
             history(),
             StreamLanguage.define(stex),
-            keymap.of([...defaultKeymap, ...historyKeymap]),
+            autocompletion({ override: [citeCompletionSource(() => entriesRef.current)] }),
+            keymap.of([...defaultKeymap, ...historyKeymap, ...completionKeymap]),
             theme,
             EditorView.lineWrapping,
             EditorState.readOnly.of(readOnly),
+            EditorView.domEventHandlers({
+              paste: (event) => {
+                const text = event.clipboardData?.getData("text/plain") ?? "";
+                if (!looksLikeBibtex(text)) return false;
+                event.preventDefault();
+                importBibtexRef.current(text);
+                return true;
+              },
+              drop: (event) => {
+                const file = event.dataTransfer?.files?.[0];
+                if (!file) return false;
+                event.preventDefault();
+                void file.text().then((text) => {
+                  if (!looksLikeBibtex(text)) {
+                    show("That file doesn't look like BibTeX.", "error");
+                    return;
+                  }
+                  importBibtexRef.current(text);
+                });
+                return true;
+              },
+            }),
             yCollab(ytext, provider!.awareness, { undoManager: false }),
           ],
         });

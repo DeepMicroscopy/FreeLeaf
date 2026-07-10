@@ -7,6 +7,7 @@ import { LibraryTab } from "../components/workspace/LibraryTab";
 import { SettingsTab } from "../components/workspace/SettingsTab";
 import { ShareButton } from "../components/workspace/ShareButton";
 import { PageSpinner } from "../components/ui/Spinner";
+import { BibliographyProvider } from "../lib/bibliography";
 import { WorkspaceProvider, useWorkspace } from "../lib/workspace";
 import styles from "./ProjectWorkspace.module.css";
 
@@ -15,7 +16,9 @@ export function ProjectWorkspace() {
   if (!projectId) return <Navigate to="/projects" replace />;
   return (
     <WorkspaceProvider projectId={projectId}>
-      <WorkspaceShell />
+      <BibliographyProvider projectId={projectId}>
+        <WorkspaceShell />
+      </BibliographyProvider>
     </WorkspaceProvider>
   );
 }

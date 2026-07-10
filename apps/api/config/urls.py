@@ -21,6 +21,7 @@ from ninja import NinjaAPI
 from accounts.api import router as accounts_router
 from health.views import router as health_router
 from projects.api import router as projects_router
+from projects.bibliography_api import router as bibliography_router
 from projects.collab_api import internal_router as collab_internal_router
 from projects.collab_api import router as collab_router
 from projects.compile_api import router as compile_router
@@ -34,6 +35,7 @@ api.add_router("", files_router)
 api.add_router("", compile_router)
 api.add_router("", collab_router)
 api.add_router("", collab_internal_router)
+api.add_router("", bibliography_router)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
