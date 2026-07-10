@@ -63,11 +63,13 @@ export function CodeMirrorEditor({
   fileId,
   readOnly,
   onContentChanged,
+  onCompileShortcut,
 }: {
   projectId: string;
   fileId: string;
   readOnly: boolean;
   onContentChanged?: () => void;
+  onCompileShortcut?: () => void;
 }) {
   const { user } = useAuth();
   const { entries, addEntries } = useBibliography();
@@ -77,6 +79,8 @@ export function CodeMirrorEditor({
   const changeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onContentChangedRef = useRef(onContentChanged);
   onContentChangedRef.current = onContentChanged;
+  const onCompileShortcutRef = useRef(onCompileShortcut);
+  onCompileShortcutRef.current = onCompileShortcut;
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
 
@@ -154,7 +158,18 @@ export function CodeMirrorEditor({
             history(),
             StreamLanguage.define(stex),
             autocompletion({ override: [citeCompletionSource(() => entriesRef.current)] }),
-            keymap.of([...defaultKeymap, ...historyKeymap, ...completionKeymap]),
+            keymap.of([
+              {
+                key: "Mod-s",
+                run: () => {
+                  onCompileShortcutRef.current?.();
+                  return true;
+                },
+              },
+              ...defaultKeymap,
+              ...historyKeymap,
+              ...completionKeymap,
+            ]),
             theme,
             EditorView.lineWrapping,
             EditorState.readOnly.of(readOnly),

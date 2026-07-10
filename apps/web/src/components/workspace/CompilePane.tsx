@@ -15,6 +15,7 @@ const AUTO_COMPILE_DEBOUNCE_MS = 800;
 
 export interface CompilePaneHandle {
   scheduleAutoCompile: () => void;
+  triggerCompile: () => void;
 }
 
 export const CompilePane = forwardRef<CompilePaneHandle, { projectId: string; canWrite: boolean }>(
@@ -51,6 +52,10 @@ export const CompilePane = forwardRef<CompilePaneHandle, { projectId: string; ca
         scheduleAutoCompile: () => {
           if (timerRef.current) clearTimeout(timerRef.current);
           timerRef.current = setTimeout(compile, AUTO_COMPILE_DEBOUNCE_MS);
+        },
+        triggerCompile: () => {
+          if (timerRef.current) clearTimeout(timerRef.current);
+          compile();
         },
       }),
       [compile],

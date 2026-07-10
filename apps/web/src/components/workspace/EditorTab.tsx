@@ -17,6 +17,9 @@ export function EditorTab() {
   const handleContentChanged = useCallback(() => {
     compilePaneRef.current?.scheduleAutoCompile();
   }, []);
+  const handleCompileShortcut = useCallback(() => {
+    compilePaneRef.current?.triggerCompile();
+  }, []);
 
   if (!selectedFile) {
     return (
@@ -44,6 +47,7 @@ export function EditorTab() {
               fileId={selectedFile.id}
               readOnly={!canWrite}
               onContentChanged={handleContentChanged}
+              onCompileShortcut={handleCompileShortcut}
             />
           </div>
         </div>
