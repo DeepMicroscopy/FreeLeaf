@@ -598,6 +598,19 @@ export interface components {
             duration_ms?: number | null;
             /** Has Pdf */
             has_pdf: boolean;
+            /** Errors */
+            errors: components["schemas"]["DiagnosticOut"][];
+            /** Warnings */
+            warnings: components["schemas"]["DiagnosticOut"][];
+        };
+        /** DiagnosticOut */
+        DiagnosticOut: {
+            /** Message */
+            message: string;
+            /** File */
+            file?: string | null;
+            /** Line */
+            line?: number | null;
         };
     };
     responses: never;

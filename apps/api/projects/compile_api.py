@@ -18,6 +18,7 @@ from core import storage
 from core.session import get_current_user
 
 from .authz import get_authorized_project, require_role
+from .log_parser import Diagnostic, parse_log
 from .models import Compiler, CompileRun, FileType, ProjectSettings, Role
 from .paths import InvalidPathError, normalize_path
 
@@ -114,6 +115,12 @@ def update_settings(request, project_id: uuid.UUID, payload: ProjectSettingsIn):
     return _settings_out(s)
 
 
+class DiagnosticOut(Schema):
+    message: str
+    file: str | None = None
+    line: int | None = None
+
+
 class CompileRunOut(Schema):
     id: uuid.UUID
     compiler: str
@@ -123,6 +130,8 @@ class CompileRunOut(Schema):
     exit_code: int | None = None
     duration_ms: int | None = None
     has_pdf: bool
+    errors: list[DiagnosticOut]
+    warnings: list[DiagnosticOut]
 
 
 def _run_out(run: CompileRun) -> CompileRunOut:
@@ -135,7 +144,13 @@ def _run_out(run: CompileRun) -> CompileRunOut:
         exit_code=run.exit_code,
         duration_ms=run.duration_ms,
         has_pdf=bool(run.pdf_key),
+        errors=run.errors,
+        warnings=run.warnings,
     )
+
+
+def _diagnostic_dicts(diagnostics: list[Diagnostic]) -> list[dict]:
+    return [{"message": d.message, "file": d.file, "line": d.line} for d in diagnostics]
 
 
 @router.post("/projects/{project_id}/compile", response=CompileRunOut)
@@ -154,8 +169,10 @@ def trigger_compile(request, project_id: uuid.UUID):
         pdf_key = f"compiles/{project_id}/{run_id}.pdf"
         storage.put_object(pdf_key, base64.b64decode(result["pdf_base64"]), "application/pdf")
 
+    log_text = result.get("log") or ""
     log_key = f"compiles/{project_id}/{run_id}.log"
-    storage.put_object(log_key, (result.get("log") or "").encode(), "text/plain; charset=utf-8")
+    storage.put_object(log_key, log_text.encode(), "text/plain; charset=utf-8")
+    parsed_log = parse_log(log_text)
 
     synctex_key = None
     if result.get("synctex_base64"):
@@ -173,6 +190,8 @@ def trigger_compile(request, project_id: uuid.UUID):
         synctex_key=synctex_key,
         exit_code=result.get("exit_code"),
         duration_ms=result.get("duration_ms"),
+        errors=_diagnostic_dicts(parsed_log.errors),
+        warnings=_diagnostic_dicts(parsed_log.warnings),
     )
     return _run_out(run)
 

@@ -154,6 +154,28 @@ class TriggerCompileTests(ApiTestCase):
         self.assertEqual(pdf_response.status_code, 404)
 
     @patch("projects.compile_api.dispatch_compile")
+    def test_failed_compile_populates_parsed_errors(self, mock_dispatch):
+        mock_dispatch.return_value = {
+            "status": "failed",
+            "log": "(./main.tex\n! Undefined control sequence.\nl.3 \\bogus\n",
+            "pdf_base64": None,
+            "synctex_base64": None,
+            "duration_ms": 50,
+            "exit_code": 12,
+            "compiler": "pdflatex",
+        }
+        response = post_json(self.owner, f"/api/projects/{self.project_id}/compile")
+        body = response.json()
+        self.assertEqual(len(body["errors"]), 1)
+        self.assertEqual(body["errors"][0]["message"], "Undefined control sequence.")
+        self.assertEqual(body["errors"][0]["file"], "main.tex")
+        self.assertEqual(body["errors"][0]["line"], 3)
+        self.assertEqual(body["warnings"], [])
+
+        run = CompileRun.objects.get(id=body["id"])
+        self.assertEqual(run.errors[0]["message"], "Undefined control sequence.")
+
+    @patch("projects.compile_api.dispatch_compile")
     def test_compile_uses_the_projects_configured_compiler(self, mock_dispatch):
         mock_dispatch.return_value = {**FAKE_SUCCESS, "compiler": "xelatex"}
         patch_json(self.owner, f"/api/projects/{self.project_id}/settings", {"compiler": "xelatex"})

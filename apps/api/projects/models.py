@@ -123,6 +123,9 @@ class CompileRun(models.Model):
     synctex_key = models.CharField(max_length=255, null=True, blank=True)
     exit_code = models.IntegerField(null=True, blank=True)
     duration_ms = models.IntegerField(null=True, blank=True)
+    # Each item: {"message": str, "file": str | None, "line": int | None} — see log_parser.py.
+    errors = models.JSONField(default=list, blank=True)
+    warnings = models.JSONField(default=list, blank=True)
 
     class Meta:
         ordering = ["-started_at"]
