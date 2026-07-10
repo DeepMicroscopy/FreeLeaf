@@ -1,5 +1,4 @@
 import * as pdfjsLib from "pdfjs-dist";
-import type { PDFDocumentProxy } from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { useEffect, useRef, useState } from "react";
 
@@ -15,13 +14,13 @@ export function PdfViewer({ src }: { src: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    let doc: PDFDocumentProxy | null = null;
+    const loadingTask = pdfjsLib.getDocument({ url: src, withCredentials: true });
     setLoading(true);
     setError(null);
 
     (async () => {
       try {
-        doc = await pdfjsLib.getDocument({ url: src, withCredentials: true }).promise;
+        const doc = await loadingTask.promise;
         if (cancelled) return;
 
         const container = containerRef.current;
@@ -63,10 +62,7 @@ export function PdfViewer({ src }: { src: string }) {
 
     return () => {
       cancelled = true;
-      if (doc) {
-        // Safely bypasses the missing 'destroy' signature property check on modern types
-        (doc as any).destroy?.();
-      }
+      loadingTask.destroy();
     };
   }, [src]);
 
