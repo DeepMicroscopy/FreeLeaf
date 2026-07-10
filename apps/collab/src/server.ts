@@ -182,7 +182,12 @@ wss.on("connection", (ws, req) => {
   ws.on("error", () => ws.close());
 
   const url = new URL(req.url ?? "/", "http://internal");
-  const fileId = url.pathname.replace(/^\//, "");
+  // Last path segment, not just "strip the leading slash" — tolerates a
+  // reverse proxy forwarding an unstripped prefix (e.g. "/collab/<id>"
+  // instead of "/<id>"), which is exactly what bit prod once already (see
+  // apps/web/nginx.conf's /collab/ location comment).
+  const pathSegments = url.pathname.split("/").filter(Boolean);
+  const fileId = pathSegments[pathSegments.length - 1] ?? "";
   const token = url.searchParams.get("token") ?? "";
   const now = Date.now() / 1000;
 
