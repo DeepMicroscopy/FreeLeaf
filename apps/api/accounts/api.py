@@ -1,3 +1,4 @@
+import logging
 import secrets
 import uuid
 
@@ -15,6 +16,8 @@ from . import orcid
 from .auth import CsrfProtect, SessionAuth
 from .magic_link import MagicLinkError, request_magic_link, verify_magic_link
 from .models import User
+
+logger = logging.getLogger(__name__)
 
 router = Router()
 session_auth = SessionAuth()

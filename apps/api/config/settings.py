@@ -193,3 +193,30 @@ STATICFILES_STORAGE = (
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Logging — plain stdout so `docker compose logs api` (dev) or
+# `docker compose -f docker-compose.prod.yml logs api` (prod) shows it; no
+# separate log file/aggregator wired up. DJANGO_LOG_LEVEL controls verbosity
+# without a redeploy needed beyond restarting the container with the env var
+# set — DEBUG is very chatty (includes SQL), INFO is the practical default,
+# WARNING quiets it down once something's confirmed working.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': os.environ.get('DJANGO_LOG_LEVEL', 'INFO'),
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': os.environ.get('DJANGO_LOG_LEVEL', 'INFO'),
+            'propagate': False,
+        },
+    },
+}
