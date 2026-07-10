@@ -114,9 +114,27 @@ def orcid_login(request, next: str | None = None):
 
 @router.get("/auth/orcid/callback")
 def orcid_callback(request, code: str | None = None, state: str | None = None, error: str | None = None):
+    # Separate, specific error messages on purpose: a generic "failed or was
+    # cancelled" for every case makes this unfixable from the outside. Each
+    # branch here points at a different root cause.
     expected_state = request.session.pop("orcid_oauth_state", None)
-    if error or not code or not state or not expected_state or not secrets.compare_digest(state, expected_state):
-        raise HttpError(400, "ORCID sign-in failed or was cancelled.")
+
+    if error:
+        raise HttpError(400, f"ORCID returned an error: {error}")
+    if not code or not state:
+        raise HttpError(400, "ORCID did not return the expected code/state parameters.")
+    if not expected_state:
+        raise HttpError(
+            400,
+            "No sign-in session found for this callback. The session cookie set when "
+            "sign-in started didn't come back with this request — check that cookies "
+            "aren't blocked for this domain, that DJANGO_ALLOWED_HOSTS/CORS_ALLOWED_ORIGINS/"
+            "CSRF_TRUSTED_ORIGINS include this exact host, and that nothing (a CDN, a "
+            "caching reverse proxy) is caching the redirect response from /auth/orcid/login "
+            "— that response's Set-Cookie header must reach every real visitor, not just the first.",
+        )
+    if not secrets.compare_digest(state, expected_state):
+        raise HttpError(400, "ORCID sign-in state did not match — possible session mismatch or replay.")
 
     try:
         identity = orcid.exchange_code(code)
