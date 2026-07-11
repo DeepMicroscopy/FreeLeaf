@@ -44,6 +44,22 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # MinIO isn't a plain `services:` container: its image needs a
+      # `server /data` command argument (no default CMD), which the
+      # services schema has no field for — unlike docker-compose.yml's
+      # `command:` override. Run it directly instead and wait for its own
+      # healthcheck endpoint (same one docker-compose.yml uses).
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=freeleaf -e MINIO_ROOT_PASSWORD=freeleafsecret \
+            minio/minio server /data
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:9000/minio/health/live && exit 0
+            sleep 1
+          done
+          echo "MinIO did not become healthy in time" >&2
+          exit 1
       - run: pip install -r requirements-dev.txt
       - run: pytest -q
         env:
@@ -53,3 +69,7 @@ jobs:
           POSTGRES_PASSWORD: freeleaf
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
+          MINIO_ENDPOINT: http://localhost:9000
+          MINIO_ROOT_USER: freeleaf
+          MINIO_ROOT_PASSWORD: freeleafsecret
+          MINIO_BUCKET: freeleaf
