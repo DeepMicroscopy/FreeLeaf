@@ -18,6 +18,7 @@ import { Spinner } from "../ui/Spinner";
 import { useToast } from "../ui/Toast";
 import { citeCompletionSource } from "./citeCompletion";
 import { envCompletionSource } from "./envCompletion";
+import { packageCompletionSource } from "./packageCompletion";
 import { extractLabels, refCompletionSource } from "./refCompletion";
 import type { DuplicateChoice } from "./DuplicateDialog";
 import { DuplicateDialog } from "./DuplicateDialog";
@@ -35,6 +36,7 @@ import { computeTrackChangesDecorations, setTrackChangesDecorations, trackChange
 import {
   commentAnchorsField,
   computeCommentAnchorDecorations,
+  findCommentAnchorAt,
   setCommentAnchorDecorations,
 } from "./commentAnchorsExtension";
 import type { CommentAnchor } from "./commentAnchorsExtension";
@@ -125,6 +127,7 @@ export function CodeMirrorEditor({
   onOpenTableDesigner,
   commentAnchors,
   onAddComment,
+  onCommentAnchorClick,
 }: {
   projectId: string;
   fileId: string;
@@ -159,6 +162,11 @@ export function CodeMirrorEditor({
    * comment" from the popup menu — `from`/`to` are document character
    * offsets, `line` the 1-based line the selection starts on. */
   onAddComment?: (anchor: { from: number; to: number; text: string; line: number }) => void;
+  /** Called when the user plain-clicks (no modifier) inside a comment's
+   * highlighted marked-text range — doesn't intercept the click, so the
+   * cursor still lands there normally; just also reports which comment it
+   * was so the caller can scroll it into view in the Comments pane. */
+  onCommentAnchorClick?: (commentId: string) => void;
 }) {
   const { user } = useAuth();
   const { entries, addEntries, findNearDuplicate, findByKey } = useBibliography();
@@ -212,6 +220,8 @@ export function CodeMirrorEditor({
     const decorations = computeCommentAnchorDecorations(commentAnchorsRef.current ?? [], view.state.doc.length);
     view.dispatch({ effects: setCommentAnchorDecorations.of(decorations) });
   };
+  const onCommentAnchorClickRef = useRef(onCommentAnchorClick);
+  onCommentAnchorClickRef.current = onCommentAnchorClick;
   const onAddCommentRef = useRef(onAddComment);
   onAddCommentRef.current = onAddComment;
   const [commentMenu, setCommentMenu] = useState<{ x: number; y: number; from: number; to: number; text: string; line: number } | null>(null);
@@ -384,11 +394,13 @@ export function CodeMirrorEditor({
                       refCompletionSource(() => extractLabels(ytext.toString())),
                     ]
                   : []),
-                // Environment completion (\begin{...}) is a general LaTeX
-                // authoring aid, not a citation feature — always on,
-                // independent of the "Autocomplete suggestions" project
-                // setting (which is specifically about \cite{}/\ref{}).
+                // Environment and package completion (\begin{...},
+                // \usepackage{...}) are general LaTeX authoring aids, not
+                // citation features — always on, independent of the
+                // "Autocomplete suggestions" project setting (which is
+                // specifically about \cite{}/\ref{}).
                 envCompletionSource(),
+                packageCompletionSource(),
               ],
             }),
             keymap.of([
@@ -434,12 +446,25 @@ export function CodeMirrorEditor({
                 return false;
               },
               mousedown: (event, view) => {
-                if (!(event.metaKey || event.ctrlKey) || !onJumpToPdfRef.current) return false;
-                const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
-                if (pos == null) return false;
-                event.preventDefault();
-                onJumpToPdfRef.current(view.state.doc.lineAt(pos).number);
-                return true;
+                if (event.metaKey || event.ctrlKey) {
+                  if (!onJumpToPdfRef.current) return false;
+                  const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+                  if (pos == null) return false;
+                  event.preventDefault();
+                  onJumpToPdfRef.current(view.state.doc.lineAt(pos).number);
+                  return true;
+                }
+                // Plain click inside a comment's highlighted marked text —
+                // report which comment it is, but don't intercept the
+                // click, so the cursor still lands there normally too.
+                if (onCommentAnchorClickRef.current) {
+                  const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+                  if (pos != null) {
+                    const commentId = findCommentAnchorAt(view.state, pos);
+                    if (commentId) onCommentAnchorClickRef.current(commentId);
+                  }
+                }
+                return false;
               },
               contextmenu: (event, view) => {
                 if (!onAddCommentRef.current) return false;

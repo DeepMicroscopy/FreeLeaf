@@ -1,7 +1,7 @@
 import { api } from "@freeleaf/shared";
 import type { components } from "@freeleaf/shared";
 import { Check, MessageSquare, Trash2, Undo2, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
@@ -26,6 +26,7 @@ export function CommentsPane({
   pendingAnchor,
   onClearPendingAnchor,
   onCommentsChange,
+  focusedComment,
 }: {
   projectId: string;
   fileId: string;
@@ -38,6 +39,12 @@ export function CommentsPane({
   pendingAnchor?: PendingCommentAnchor | null;
   onClearPendingAnchor?: () => void;
   onCommentsChange?: (comments: CommentOut[]) => void;
+  /** Set when the user clicked a comment's highlighted marked text in the
+   * editor — scrolls that thread into view and briefly flashes it so it's
+   * obvious which comment the click was about. `token` increments on every
+   * click so clicking the same anchor again re-triggers the effect even
+   * though `id` is unchanged. */
+  focusedComment?: { id: string; token: number } | null;
 }) {
   const [comments, setComments] = useState<CommentOut[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,6 +52,8 @@ export function CommentsPane({
   const [posting, setPosting] = useState(false);
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyBody, setReplyBody] = useState("");
+  const [flashedId, setFlashedId] = useState<string | null>(null);
+  const itemRefs = useRef(new Map<string, HTMLLIElement>());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -62,6 +71,16 @@ export function CommentsPane({
   useEffect(() => {
     onCommentsChange?.(comments);
   }, [comments, onCommentsChange]);
+
+  useEffect(() => {
+    if (!focusedComment) return;
+    const el = itemRefs.current.get(focusedComment.id);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    setFlashedId(focusedComment.id);
+    const timer = setTimeout(() => setFlashedId(null), 1600);
+    return () => clearTimeout(timer);
+  }, [focusedComment?.id, focusedComment?.token]);
 
   const handlePost = useCallback(async () => {
     const body = newBody.trim();
@@ -173,7 +192,18 @@ export function CommentsPane({
       ) : (
         <ul className={styles.list}>
           {comments.map((c) => (
-            <li key={c.id} className={[styles.thread, c.resolved ? styles.resolved : ""].join(" ")}>
+            <li
+              key={c.id}
+              ref={(el) => {
+                if (el) itemRefs.current.set(c.id, el);
+                else itemRefs.current.delete(c.id);
+              }}
+              className={[
+                styles.thread,
+                c.resolved ? styles.resolved : "",
+                flashedId === c.id ? styles.flash : "",
+              ].join(" ")}
+            >
               <CommentCard
                 comment={c}
                 canResolve={canResolve}

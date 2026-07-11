@@ -55,6 +55,8 @@ export function EditorTab() {
   );
   const [comments, setComments] = useState<CommentOut[]>([]);
   const [pendingCommentAnchor, setPendingCommentAnchor] = useState<PendingCommentAnchor | null>(null);
+  const [focusedComment, setFocusedComment] = useState<{ id: string; token: number } | null>(null);
+  const focusCommentTokenRef = useRef(0);
 
   const toggleComments = useCallback(() => {
     setShowComments((prev) => {
@@ -86,9 +88,24 @@ export function EditorTab() {
     [projectId],
   );
 
+  // Clicking a comment's highlighted marked text in the editor scrolls that
+  // thread into view in the Comments pane (opening it if hidden) — the
+  // token lets clicking the *same* anchor again re-trigger the scroll/flash
+  // (same pattern as `jump`'s token above), since re-setting an unchanged
+  // id wouldn't otherwise be seen as a change.
+  const handleCommentAnchorClick = useCallback(
+    (commentId: string) => {
+      focusCommentTokenRef.current += 1;
+      setFocusedComment({ id: commentId, token: focusCommentTokenRef.current });
+      setShowComments(true);
+      localStorage.setItem(`freeleaf.showComments.${projectId}`, "1");
+    },
+    [projectId],
+  );
+
   const commentAnchors = comments
     .filter((c) => c.anchor_from != null && c.anchor_to != null)
-    .map((c) => ({ from: c.anchor_from!, to: c.anchor_to!, resolved: c.resolved }));
+    .map((c) => ({ id: c.id, from: c.anchor_from!, to: c.anchor_to!, resolved: c.resolved }));
 
   // A pending selection anchor belongs to whichever file it was marked on —
   // discard it on file switch so it can't get attached to the wrong file.
@@ -387,6 +404,7 @@ export function EditorTab() {
               onOpenTableDesigner={handleOpenTableDesigner}
               commentAnchors={commentAnchors}
               onAddComment={handleAddCommentFromSelection}
+              onCommentAnchorClick={handleCommentAnchorClick}
             />
           </div>
         </div>
@@ -406,6 +424,7 @@ export function EditorTab() {
                 pendingAnchor={pendingCommentAnchor}
                 onClearPendingAnchor={() => setPendingCommentAnchor(null)}
                 onCommentsChange={setComments}
+                focusedComment={focusedComment}
               />
             }
             right={

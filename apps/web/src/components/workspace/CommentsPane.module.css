@@ -76,6 +76,19 @@
   opacity: 0.6;
 }
 
+.flash {
+  animation: commentFlash 1.6s ease-out;
+}
+
+@keyframes commentFlash {
+  0% {
+    background: color-mix(in srgb, #eab308 35%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
 .reply {
   margin-left: var(--space-3);
   padding-left: var(--space-2);
