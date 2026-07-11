@@ -18,6 +18,13 @@ import { useToast } from "../ui/Toast";
 import { citeCompletionSource } from "./citeCompletion";
 import type { DuplicateChoice } from "./DuplicateDialog";
 import { DuplicateDialog } from "./DuplicateDialog";
+import { lintLatex } from "./polishingLint";
+import type { LintFinding } from "./polishingLint";
+import {
+  computePolishingLintDecorations,
+  polishingLintField,
+  setPolishingLintDecorations,
+} from "./polishingLintExtension";
 import { computeTrackChangesDecorations, setTrackChangesDecorations, trackChangesField } from "./trackChangesExtension";
 import styles from "./CodeMirrorEditor.module.css";
 
@@ -64,6 +71,11 @@ const theme = EditorView.theme({
     textDecorationColor: "#ef4444",
     opacity: 0.75,
   },
+  ".cm-lintFinding": {
+    textDecoration: "underline wavy",
+    textDecorationColor: "#f59e0b",
+    textUnderlineOffset: "3px",
+  },
 });
 
 function colorForUserId(id: string): { color: string; colorLight: string } {
@@ -90,6 +102,8 @@ export function CodeMirrorEditor({
   onKeystroke,
   onCursorLineChange,
   trackChangesBaseline,
+  polishingEnabled,
+  onLintFindings,
 }: {
   projectId: string;
   fileId: string;
@@ -106,6 +120,10 @@ export function CodeMirrorEditor({
    * means "don't show track-changes markup" (Writing/Polishing mode, or no
    * baseline picked yet). */
   trackChangesBaseline?: string | null;
+  /** Polishing mode's static lint checks (Plan.md §9 Phase 8) — see
+   * polishingLint.ts. */
+  polishingEnabled?: boolean;
+  onLintFindings?: (findings: LintFinding[]) => void;
 }) {
   const { user } = useAuth();
   const { entries, addEntries, findNearDuplicate, findByKey } = useBibliography();
@@ -135,6 +153,20 @@ export function CodeMirrorEditor({
     const decorations =
       baseline == null ? Decoration.none : computeTrackChangesDecorations(baseline, view.state.doc.toString());
     view.dispatch({ effects: setTrackChangesDecorations.of(decorations) });
+  };
+  const polishingEnabledRef = useRef(polishingEnabled);
+  polishingEnabledRef.current = polishingEnabled;
+  const onLintFindingsRef = useRef(onLintFindings);
+  onLintFindingsRef.current = onLintFindings;
+  const recomputePolishingLintRef = useRef(() => {});
+  recomputePolishingLintRef.current = () => {
+    const view = viewRef.current;
+    if (!view) return;
+    const findings = polishingEnabledRef.current ? lintLatex(view.state.doc.toString()) : [];
+    view.dispatch({
+      effects: setPolishingLintDecorations.of(computePolishingLintDecorations(findings, view.state.doc.length)),
+    });
+    onLintFindingsRef.current?.(findings);
   };
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
@@ -337,6 +369,7 @@ export function CodeMirrorEditor({
               onCursorLineChangeRef.current?.(update.state.doc.lineAt(update.state.selection.main.head).number);
             }),
             trackChangesField,
+            polishingLintField,
           ],
         });
 
@@ -344,6 +377,7 @@ export function CodeMirrorEditor({
         viewRef.current = new EditorView({ state, parent: hostRef.current! });
         setLoading(false);
         recomputeTrackChangesRef.current();
+        recomputePolishingLintRef.current();
 
         // Only schedule auto-compile for changes *after* the initial content
         // sync — otherwise just opening the file would trigger a compile.
@@ -356,7 +390,10 @@ export function CodeMirrorEditor({
           // a CodeMirror view.update() call), so dispatching another transaction
           // synchronously here hits CodeMirror's re-entrancy guard ("Calls to
           // EditorView.update are not allowed while an update is in progress").
-          setTimeout(() => recomputeTrackChangesRef.current(), 0);
+          setTimeout(() => {
+            recomputeTrackChangesRef.current();
+            recomputePolishingLintRef.current();
+          }, 0);
         });
       };
       provider.on("sync", onFirstSync);
@@ -396,6 +433,12 @@ export function CodeMirrorEditor({
     if (loading) return;
     recomputeTrackChangesRef.current();
   }, [trackChangesBaseline, loading]);
+
+  // Recomputes lint findings when Polishing mode is toggled on/off.
+  useEffect(() => {
+    if (loading) return;
+    recomputePolishingLintRef.current();
+  }, [polishingEnabled, loading]);
 
   return (
     <div className={styles.wrapper}>

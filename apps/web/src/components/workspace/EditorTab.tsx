@@ -14,12 +14,19 @@ import { CommentsPane } from "./CommentsPane";
 import { CompilePane } from "./CompilePane";
 import type { CompilePaneHandle } from "./CompilePane";
 import { ModeSwitcher } from "./ModeSwitcher";
+import type { LintFinding } from "./polishingLint";
 import { SplitPane } from "./SplitPane";
 import styles from "./EditorTab.module.css";
 
 type SnapshotOut = components["schemas"]["SnapshotOut"];
+type CompileRunOut = components["schemas"]["CompileRunOut"];
 
-const POLISHING_BANNER = "Polishing mode: the aggressive linter isn't implemented yet — edits apply directly, just like Writing mode.";
+interface PolishingFinding {
+  key: string;
+  line: number | null;
+  message: string;
+  tone: "error" | "warning" | "lint";
+}
 
 // Automated version-history checkpoints (Plan.md §9 Phase 8): a snapshot
 // after 5 minutes of no edits, or every 1000 keystrokes, whichever comes
@@ -181,6 +188,25 @@ export function EditorTab() {
     }
   }, [projectId, baselineId, show, refreshFiles, loadSnapshots]);
 
+  // Polishing mode's aggressively-surfaced checks (Plan.md §9 Phase 8):
+  // static lint findings (polishingLint.ts) plus the most recent compile
+  // run's already-parsed errors/warnings, merged into one list.
+  const [lintFindings, setLintFindings] = useState<LintFinding[]>([]);
+  const [latestRun, setLatestRun] = useState<CompileRunOut | null>(null);
+
+  const polishingFindings: PolishingFinding[] =
+    mode === "polishing"
+      ? [
+          ...lintFindings.map((f, i) => ({ key: `lint-${i}`, line: f.line, message: f.message, tone: "lint" as const })),
+          ...(latestRun?.errors ?? [])
+            .filter((d) => !d.file || d.file === selectedFile?.path)
+            .map((d, i) => ({ key: `err-${i}`, line: d.line ?? null, message: d.message, tone: "error" as const })),
+          ...(latestRun?.warnings ?? [])
+            .filter((d) => !d.file || d.file === selectedFile?.path)
+            .map((d, i) => ({ key: `warn-${i}`, line: d.line ?? null, message: d.message, tone: "warning" as const })),
+        ]
+      : [];
+
   if (!selectedFile) {
     return (
       <EmptyState
@@ -216,7 +242,28 @@ export function EditorTab() {
               </Button>
             </div>
           </div>
-          {mode === "polishing" && <div className={styles.modeBanner}>{POLISHING_BANNER}</div>}
+          {mode === "polishing" && (
+            <div className={styles.polishingPanel}>
+              {polishingFindings.length === 0 ? (
+                <div className={styles.polishingEmpty}>No issues found — nice and clean.</div>
+              ) : (
+                <ul className={styles.polishingList}>
+                  {polishingFindings.map((f) => (
+                    <li key={f.key} className={[styles.polishingItem, styles[`polishing-${f.tone}`]].join(" ")}>
+                      {f.line != null ? (
+                        <button className={styles.polishingLine} onClick={() => handleJumpToLine(f.line!)}>
+                          L{f.line}
+                        </button>
+                      ) : (
+                        <span className={styles.polishingLine}>—</span>
+                      )}
+                      <span className={styles.polishingMessage}>{f.message}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
           {mode === "reviewing" && (
             <div className={styles.trackChangesBar}>
               {snapshots.length === 0 ? (
@@ -268,6 +315,8 @@ export function EditorTab() {
               onKeystroke={canWrite ? handleKeystroke : undefined}
               onCursorLineChange={setCursorLine}
               trackChangesBaseline={mode === "reviewing" ? baselineContent : null}
+              polishingEnabled={mode === "polishing"}
+              onLintFindings={setLintFindings}
             />
           </div>
         </div>
@@ -292,6 +341,7 @@ export function EditorTab() {
                 projectId={projectId}
                 canWrite={canWrite}
                 onJumpToSource={handleJumpToSource}
+                onRunChanged={setLatestRun}
               />
             }
           />

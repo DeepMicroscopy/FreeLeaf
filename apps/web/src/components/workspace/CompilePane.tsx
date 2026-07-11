@@ -22,9 +22,20 @@ export interface CompilePaneHandle {
 
 export const CompilePane = forwardRef<
   CompilePaneHandle,
-  { projectId: string; canWrite: boolean; onJumpToSource?: (file: string, line: number) => void }
->(function CompilePane({ projectId, canWrite, onJumpToSource }, ref) {
-    const [run, setRun] = useState<CompileRunOut | null>(null);
+  {
+    projectId: string;
+    canWrite: boolean;
+    onJumpToSource?: (file: string, line: number) => void;
+    onRunChanged?: (run: CompileRunOut | null) => void;
+  }
+>(function CompilePane({ projectId, canWrite, onJumpToSource, onRunChanged }, ref) {
+    const [run, setRunState] = useState<CompileRunOut | null>(null);
+    const onRunChangedRef = useRef(onRunChanged);
+    onRunChangedRef.current = onRunChanged;
+    const setRun = useCallback((next: CompileRunOut | null) => {
+      setRunState(next);
+      onRunChangedRef.current?.(next);
+    }, []);
     const [compiling, setCompiling] = useState(false);
     const [loadingLast, setLoadingLast] = useState(true);
     const [viewMode, setViewMode] = useState<"pdf" | "log">("pdf");
