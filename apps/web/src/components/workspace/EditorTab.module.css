@@ -40,6 +40,42 @@
   border-bottom: 1px solid var(--border-subtle);
 }
 
+.trackChangesBar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: 6px var(--space-3);
+  background: var(--bg-inset);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.trackChangesHint {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.trackChangesLink {
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.baselineSelect {
+  font-size: 12px;
+  padding: 2px 6px;
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  max-width: 260px;
+}
+
 .paneBody {
   flex: 1;
   min-height: 0;

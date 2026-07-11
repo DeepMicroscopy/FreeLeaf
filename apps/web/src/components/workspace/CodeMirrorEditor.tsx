@@ -5,7 +5,7 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { StreamLanguage } from "@codemirror/language";
 import { stex } from "@codemirror/legacy-modes/mode/stex";
 import { EditorState } from "@codemirror/state";
-import { EditorView, keymap, lineNumbers } from "@codemirror/view";
+import { Decoration, EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { yCollab } from "y-codemirror.next";
 import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
@@ -18,6 +18,7 @@ import { useToast } from "../ui/Toast";
 import { citeCompletionSource } from "./citeCompletion";
 import type { DuplicateChoice } from "./DuplicateDialog";
 import { DuplicateDialog } from "./DuplicateDialog";
+import { computeTrackChangesDecorations, setTrackChangesDecorations, trackChangesField } from "./trackChangesExtension";
 import styles from "./CodeMirrorEditor.module.css";
 
 type ConnectionStatus = "connecting" | "live" | "disconnected";
@@ -52,6 +53,17 @@ const theme = EditorView.theme({
     backgroundColor: "var(--accent-soft-border) !important",
   },
   ".cm-scroller": { overflow: "auto" },
+  ".cm-trackInsert": {
+    backgroundColor: "color-mix(in srgb, #22c55e 20%, transparent)",
+    textDecoration: "underline",
+    textDecorationColor: "#22c55e",
+  },
+  ".cm-trackDelete": {
+    backgroundColor: "color-mix(in srgb, #ef4444 18%, transparent)",
+    textDecoration: "line-through",
+    textDecorationColor: "#ef4444",
+    opacity: 0.75,
+  },
 });
 
 function colorForUserId(id: string): { color: string; colorLight: string } {
@@ -77,6 +89,7 @@ export function CodeMirrorEditor({
   onActivity,
   onKeystroke,
   onCursorLineChange,
+  trackChangesBaseline,
 }: {
   projectId: string;
   fileId: string;
@@ -88,6 +101,11 @@ export function CodeMirrorEditor({
   onKeystroke?: () => void;
   onCursorLineChange?: (line: number) => void;
   jumpTarget?: JumpTarget;
+  /** Reviewing mode's diff-since-baseline (Plan.md §9 Phase 8) — raw text
+   * content of the chosen snapshot to diff the live document against. Null
+   * means "don't show track-changes markup" (Writing/Polishing mode, or no
+   * baseline picked yet). */
+  trackChangesBaseline?: string | null;
 }) {
   const { user } = useAuth();
   const { entries, addEntries, findNearDuplicate, findByKey } = useBibliography();
@@ -107,6 +125,17 @@ export function CodeMirrorEditor({
   onKeystrokeRef.current = onKeystroke;
   const onCursorLineChangeRef = useRef(onCursorLineChange);
   onCursorLineChangeRef.current = onCursorLineChange;
+  const trackChangesBaselineRef = useRef(trackChangesBaseline);
+  trackChangesBaselineRef.current = trackChangesBaseline;
+  const recomputeTrackChangesRef = useRef(() => {});
+  recomputeTrackChangesRef.current = () => {
+    const view = viewRef.current;
+    const baseline = trackChangesBaselineRef.current;
+    if (!view) return;
+    const decorations =
+      baseline == null ? Decoration.none : computeTrackChangesDecorations(baseline, view.state.doc.toString());
+    view.dispatch({ effects: setTrackChangesDecorations.of(decorations) });
+  };
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
   const addEntriesRef = useRef(addEntries);
@@ -307,12 +336,14 @@ export function CodeMirrorEditor({
               if (!update.selectionSet) return;
               onCursorLineChangeRef.current?.(update.state.doc.lineAt(update.state.selection.main.head).number);
             }),
+            trackChangesField,
           ],
         });
 
         viewRef.current?.destroy();
         viewRef.current = new EditorView({ state, parent: hostRef.current! });
         setLoading(false);
+        recomputeTrackChangesRef.current();
 
         // Only schedule auto-compile for changes *after* the initial content
         // sync — otherwise just opening the file would trigger a compile.
@@ -320,6 +351,12 @@ export function CodeMirrorEditor({
           onActivityRef.current?.();
           if (changeTimerRef.current) clearTimeout(changeTimerRef.current);
           changeTimerRef.current = setTimeout(() => onContentChangedRef.current?.(), 1500);
+          // Deferred: this fires *during* yCollab's own transaction application
+          // (Yjs's "update" event is emitted mid-transact, itself nested inside
+          // a CodeMirror view.update() call), so dispatching another transaction
+          // synchronously here hits CodeMirror's re-entrancy guard ("Calls to
+          // EditorView.update are not allowed while an update is in progress").
+          setTimeout(() => recomputeTrackChangesRef.current(), 0);
         });
       };
       provider.on("sync", onFirstSync);
@@ -350,6 +387,15 @@ export function CodeMirrorEditor({
     });
     view.focus();
   }, [jumpTarget, loading]);
+
+  // Recomputes track-changes markup when the chosen baseline changes (e.g.
+  // the user picks a different snapshot to compare against) without a
+  // content edit having happened — the ydoc "update" listener above only
+  // covers the other direction (content changed, baseline unchanged).
+  useEffect(() => {
+    if (loading) return;
+    recomputeTrackChangesRef.current();
+  }, [trackChangesBaseline, loading]);
 
   return (
     <div className={styles.wrapper}>

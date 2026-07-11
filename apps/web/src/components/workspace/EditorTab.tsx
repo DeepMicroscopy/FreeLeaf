@@ -1,9 +1,11 @@
 import { api, apiOrigin } from "@freeleaf/shared";
+import type { components } from "@freeleaf/shared";
 import { FileQuestion, MessageSquare } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
+import { useToast } from "../ui/Toast";
 import { useEditingMode } from "../../lib/editingMode";
 import { useWorkspace } from "../../lib/workspace";
 import { CodeMirrorEditor } from "./CodeMirrorEditor";
@@ -15,10 +17,9 @@ import { ModeSwitcher } from "./ModeSwitcher";
 import { SplitPane } from "./SplitPane";
 import styles from "./EditorTab.module.css";
 
-const MODE_BANNERS: Record<"reviewing" | "polishing", string> = {
-  reviewing: "Reviewing mode: track changes aren't implemented yet — edits apply directly, just like Writing mode.",
-  polishing: "Polishing mode: the aggressive linter isn't implemented yet — edits apply directly, just like Writing mode.",
-};
+type SnapshotOut = components["schemas"]["SnapshotOut"];
+
+const POLISHING_BANNER = "Polishing mode: the aggressive linter isn't implemented yet — edits apply directly, just like Writing mode.";
 
 // Automated version-history checkpoints (Plan.md §9 Phase 8): a snapshot
 // after 5 minutes of no edits, or every 1000 keystrokes, whichever comes
@@ -29,8 +30,9 @@ const KEYSTROKE_SNAPSHOT_THRESHOLD = 1000;
 const MIN_AUTO_SNAPSHOT_GAP_MS = 60 * 1000;
 
 export function EditorTab() {
-  const { projectId, files, selectedFileId, selectFile, canWrite } = useWorkspace();
+  const { projectId, files, selectedFileId, selectFile, canWrite, refreshFiles } = useWorkspace();
   const { mode } = useEditingMode();
+  const { show } = useToast();
   const selectedFile = files.find((f) => f.id === selectedFileId);
   const compilePaneRef = useRef<CompilePaneHandle>(null);
   const jumpTokenRef = useRef(0);
@@ -111,6 +113,74 @@ export function EditorTab() {
     [files, selectedFileId, selectFile],
   );
 
+  // Reviewing mode's track-changes diff (Plan.md §9 Phase 8): diffs the live
+  // file against a chosen snapshot "baseline" — see trackChangesExtension.ts
+  // for why this, not per-keystroke CRDT attribution, was the scoped-down
+  // approach here.
+  const [snapshots, setSnapshots] = useState<SnapshotOut[]>([]);
+  const [baselineId, setBaselineId] = useState<string | null>(null);
+  const [baselineContent, setBaselineContent] = useState<string | null>(null);
+  const [trackChangesBusy, setTrackChangesBusy] = useState(false);
+
+  const loadSnapshots = useCallback(async () => {
+    const { data } = await api.GET("/api/projects/{project_id}/snapshots", {
+      params: { path: { project_id: projectId } },
+    });
+    const list = data ?? [];
+    setSnapshots(list);
+    setBaselineId((prev) => (prev && list.some((s) => s.id === prev) ? prev : (list[0]?.id ?? null)));
+  }, [projectId]);
+
+  useEffect(() => {
+    if (mode !== "reviewing") return;
+    void loadSnapshots();
+  }, [mode, loadSnapshots]);
+
+  useEffect(() => {
+    if (mode !== "reviewing" || !baselineId || !selectedFile) {
+      setBaselineContent(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data } = await api.GET("/api/projects/{project_id}/snapshots/{snapshot_id}/file-content", {
+        params: { path: { project_id: projectId, snapshot_id: baselineId }, query: { path: selectedFile.path } },
+      });
+      if (!cancelled) setBaselineContent(data?.content ?? null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, baselineId, projectId, selectedFile]);
+
+  const handleMarkNewBaseline = useCallback(async () => {
+    setTrackChangesBusy(true);
+    const { data } = await api.POST("/api/projects/{project_id}/snapshots", {
+      params: { path: { project_id: projectId } },
+      body: { kind: "manual", label: "Reviewing baseline", description: "" },
+    });
+    setTrackChangesBusy(false);
+    if (data) {
+      show("Current state marked as the new baseline.");
+      await loadSnapshots();
+      setBaselineId(data.id);
+    }
+  }, [projectId, show, loadSnapshots]);
+
+  const handleRevertToBaseline = useCallback(async () => {
+    if (!baselineId) return;
+    setTrackChangesBusy(true);
+    const { data } = await api.POST("/api/projects/{project_id}/snapshots/{snapshot_id}/restore", {
+      params: { path: { project_id: projectId, snapshot_id: baselineId } },
+    });
+    setTrackChangesBusy(false);
+    if (data) {
+      show("Reverted to the baseline. A backup of the previous state was saved automatically.");
+      await refreshFiles();
+      await loadSnapshots();
+    }
+  }, [projectId, baselineId, show, refreshFiles, loadSnapshots]);
+
   if (!selectedFile) {
     return (
       <EmptyState
@@ -146,7 +216,45 @@ export function EditorTab() {
               </Button>
             </div>
           </div>
-          {mode !== "writing" && <div className={styles.modeBanner}>{MODE_BANNERS[mode]}</div>}
+          {mode === "polishing" && <div className={styles.modeBanner}>{POLISHING_BANNER}</div>}
+          {mode === "reviewing" && (
+            <div className={styles.trackChangesBar}>
+              {snapshots.length === 0 ? (
+                <span className={styles.trackChangesHint}>
+                  No saved version yet to compare against —{" "}
+                  <button className={styles.trackChangesLink} onClick={handleMarkNewBaseline} disabled={trackChangesBusy}>
+                    save one now
+                  </button>{" "}
+                  to start tracking changes.
+                </span>
+              ) : (
+                <>
+                  <span className={styles.trackChangesHint}>Comparing against:</span>
+                  <select
+                    className={styles.baselineSelect}
+                    value={baselineId ?? ""}
+                    onChange={(e) => setBaselineId(e.target.value)}
+                  >
+                    {snapshots.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {(s.label || (s.kind === "manual" ? "Named" : "Automatic")) + " · " + new Date(s.created_at).toLocaleString()}
+                      </option>
+                    ))}
+                  </select>
+                  {canWrite && (
+                    <>
+                      <Button variant="secondary" size="sm" onClick={handleMarkNewBaseline} loading={trackChangesBusy}>
+                        Mark current as new baseline
+                      </Button>
+                      <Button variant="danger" size="sm" onClick={handleRevertToBaseline} loading={trackChangesBusy}>
+                        Revert project to baseline
+                      </Button>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+          )}
           <div className={styles.paneBody}>
             <CodeMirrorEditor
               projectId={projectId}
@@ -159,6 +267,7 @@ export function EditorTab() {
               onActivity={canWrite ? handleActivity : undefined}
               onKeystroke={canWrite ? handleKeystroke : undefined}
               onCursorLineChange={setCursorLine}
+              trackChangesBaseline={mode === "reviewing" ? baselineContent : null}
             />
           </div>
         </div>
