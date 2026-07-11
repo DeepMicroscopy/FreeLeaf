@@ -1,6 +1,6 @@
 import { api } from "@freeleaf/shared";
 import type { components } from "@freeleaf/shared";
-import { Check, MessageSquare, Trash2, Undo2 } from "lucide-react";
+import { Check, MessageSquare, Trash2, Undo2, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "../ui/Button";
@@ -10,18 +10,34 @@ import styles from "./CommentsPane.module.css";
 
 type CommentOut = components["schemas"]["CommentOut"];
 
+export interface PendingCommentAnchor {
+  line: number;
+  from: number;
+  to: number;
+  text: string;
+}
+
 export function CommentsPane({
   projectId,
   fileId,
   canResolve,
   currentLine,
   onJumpToLine,
+  pendingAnchor,
+  onClearPendingAnchor,
+  onCommentsChange,
 }: {
   projectId: string;
   fileId: string;
   canResolve: boolean;
   currentLine: number;
   onJumpToLine: (line: number) => void;
+  /** A marked-text selection picked via the editor's right-click "Add
+   * comment" menu, waiting to be attached to the next top-level comment
+   * posted from this pane — see CodeMirrorEditor's `onAddComment`. */
+  pendingAnchor?: PendingCommentAnchor | null;
+  onClearPendingAnchor?: () => void;
+  onCommentsChange?: (comments: CommentOut[]) => void;
 }) {
   const [comments, setComments] = useState<CommentOut[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,20 +59,33 @@ export function CommentsPane({
     void load();
   }, [load]);
 
+  useEffect(() => {
+    onCommentsChange?.(comments);
+  }, [comments, onCommentsChange]);
+
   const handlePost = useCallback(async () => {
     const body = newBody.trim();
     if (!body) return;
     setPosting(true);
     const { data } = await api.POST("/api/projects/{project_id}/files/{file_id}/comments", {
       params: { path: { project_id: projectId, file_id: fileId } },
-      body: { body, anchor_line: currentLine },
+      body: pendingAnchor
+        ? {
+            body,
+            anchor_line: pendingAnchor.line,
+            anchor_from: pendingAnchor.from,
+            anchor_to: pendingAnchor.to,
+            anchor_text: pendingAnchor.text,
+          }
+        : { body, anchor_line: currentLine },
     });
     setPosting(false);
     if (data) {
       setNewBody("");
+      onClearPendingAnchor?.();
       void load();
     }
-  }, [projectId, fileId, currentLine, newBody, load]);
+  }, [projectId, fileId, currentLine, pendingAnchor, newBody, onClearPendingAnchor, load]);
 
   const handleReply = useCallback(
     async (parentId: string) => {
@@ -103,7 +132,20 @@ export function CommentsPane({
       </div>
 
       <div className={styles.newComment}>
-        <div className={styles.newCommentLine}>On line {currentLine}</div>
+        {pendingAnchor ? (
+          <div className={styles.pendingAnchor}>
+            <blockquote className={styles.pendingAnchorQuote}>“{pendingAnchor.text}”</blockquote>
+            <button
+              className={styles.pendingAnchorClear}
+              onClick={() => onClearPendingAnchor?.()}
+              title="Comment on the whole line instead"
+            >
+              <X size={12} aria-hidden="true" />
+            </button>
+          </div>
+        ) : (
+          <div className={styles.newCommentLine}>On line {currentLine}</div>
+        )}
         <textarea
           className={styles.textarea}
           placeholder="Add a comment…"
@@ -209,6 +251,7 @@ function CommentCard({
         </button>
         <span className={styles.time}>{new Date(comment.created_at).toLocaleString()}</span>
       </div>
+      {comment.anchor_text && <blockquote className={styles.anchorQuote}>“{comment.anchor_text}”</blockquote>}
       <div className={styles.body}>{comment.body}</div>
       <div className={styles.actions}>
         {comment.resolved ? (

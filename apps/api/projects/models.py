@@ -188,13 +188,27 @@ class Comment(models.Model):
     precisely. Only one level of replies is supported (a reply's `parent`
     must itself be a top-level comment, enforced in comments_api.py) —
     matches common review-tool UX (a thread + flat replies, not nested
-    reply-to-reply chains)."""
+    reply-to-reply chains).
+
+    A comment may optionally also anchor to a specific marked text range
+    (`anchor_from`/`anchor_to`, character offsets into the file's content at
+    creation time, `anchor_to` exclusive) rather than just the line —
+    same "captured at creation time, can drift" honesty as `anchor_line`,
+    just at character instead of line granularity. `anchor_text` is the
+    exact substring at creation time, kept only for display (quoting what
+    was commented on) — never re-verified against live content. Null on all
+    three when a comment is a plain whole-line comment (the original,
+    still-supported case) or a reply (replies inherit their parent's
+    anchor_line but don't carry their own range)."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="comments")
     file = models.ForeignKey(ProjectFile, on_delete=models.CASCADE, related_name="comments")
     parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.CASCADE, related_name="replies")
     anchor_line = models.PositiveIntegerField()
+    anchor_from = models.PositiveIntegerField(null=True, blank=True)
+    anchor_to = models.PositiveIntegerField(null=True, blank=True)
+    anchor_text = models.TextField(null=True, blank=True)
     body = models.TextField()
     created_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)
     created_at = models.DateTimeField(auto_now_add=True)

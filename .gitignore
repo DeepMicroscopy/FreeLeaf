@@ -14,3 +14,5 @@ staticfiles/
 .ruff_cache/
 *.tsbuildinfo
 .compile-jobs/
+docs/_site/
+docs/.jekyll-cache/

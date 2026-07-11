@@ -11,6 +11,7 @@ import { useWorkspace } from "../../lib/workspace";
 import { CodeMirrorEditor } from "./CodeMirrorEditor";
 import type { JumpTarget } from "./CodeMirrorEditor";
 import { CommentsPane } from "./CommentsPane";
+import type { PendingCommentAnchor } from "./CommentsPane";
 import { CompilePane } from "./CompilePane";
 import type { CompilePaneHandle } from "./CompilePane";
 import { ModeSwitcher } from "./ModeSwitcher";
@@ -23,6 +24,7 @@ import styles from "./EditorTab.module.css";
 
 type SnapshotOut = components["schemas"]["SnapshotOut"];
 type CompileRunOut = components["schemas"]["CompileRunOut"];
+type CommentOut = components["schemas"]["CommentOut"];
 
 interface PolishingFinding {
   key: string;
@@ -51,6 +53,8 @@ export function EditorTab() {
   const [showComments, setShowComments] = useState(
     () => localStorage.getItem(`freeleaf.showComments.${projectId}`) === "1",
   );
+  const [comments, setComments] = useState<CommentOut[]>([]);
+  const [pendingCommentAnchor, setPendingCommentAnchor] = useState<PendingCommentAnchor | null>(null);
 
   const toggleComments = useCallback(() => {
     setShowComments((prev) => {
@@ -68,6 +72,29 @@ export function EditorTab() {
     },
     [selectedFile],
   );
+
+  // Right-click "Add comment" on a text selection (CodeMirrorEditor) opens
+  // the Comments pane (if hidden) with that selection queued up so the next
+  // top-level comment posted from it anchors to the marked text instead of
+  // just the cursor's current line.
+  const handleAddCommentFromSelection = useCallback(
+    (anchor: PendingCommentAnchor) => {
+      setPendingCommentAnchor(anchor);
+      setShowComments(true);
+      localStorage.setItem(`freeleaf.showComments.${projectId}`, "1");
+    },
+    [projectId],
+  );
+
+  const commentAnchors = comments
+    .filter((c) => c.anchor_from != null && c.anchor_to != null)
+    .map((c) => ({ from: c.anchor_from!, to: c.anchor_to!, resolved: c.resolved }));
+
+  // A pending selection anchor belongs to whichever file it was marked on —
+  // discard it on file switch so it can't get attached to the wrong file.
+  useEffect(() => {
+    setPendingCommentAnchor(null);
+  }, [selectedFile?.id]);
 
   const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const keystrokeCountRef = useRef(0);
@@ -358,6 +385,8 @@ export function EditorTab() {
               polishingEnabled={mode === "polishing"}
               onLintFindings={setLintFindings}
               onOpenTableDesigner={handleOpenTableDesigner}
+              commentAnchors={commentAnchors}
+              onAddComment={handleAddCommentFromSelection}
             />
           </div>
         </div>
@@ -374,6 +403,9 @@ export function EditorTab() {
                 canResolve={canWrite}
                 currentLine={cursorLine}
                 onJumpToLine={handleJumpToLine}
+                pendingAnchor={pendingCommentAnchor}
+                onClearPendingAnchor={() => setPendingCommentAnchor(null)}
+                onCommentsChange={setComments}
               />
             }
             right={

@@ -1205,6 +1205,12 @@ export interface components {
             id: string;
             /** Anchor Line */
             anchor_line: number;
+            /** Anchor From */
+            anchor_from?: number | null;
+            /** Anchor To */
+            anchor_to?: number | null;
+            /** Anchor Text */
+            anchor_text?: string | null;
             /** Body */
             body: string;
             /** Created At */
@@ -1256,6 +1262,12 @@ export interface components {
              * @default 1
              */
             anchor_line: number;
+            /** Anchor From */
+            anchor_from?: number | null;
+            /** Anchor To */
+            anchor_to?: number | null;
+            /** Anchor Text */
+            anchor_text?: string | null;
             /** Body */
             body: string;
             /** Parent Id */

@@ -1,0 +1,12 @@
+title: FreeLeaf
+description: >-
+  The LaTeX editor you always wanted but never asked for.
+tagline: >-
+  Open, self-hostable, real-time collaborative LaTeX editing — ORCID, institutional SSO,
+  comments, track changes, version history, and a sandboxed TeX Live compile pipeline.
+url: "https://deepmicroscopy.github.io"
+baseurl: "/FreeLeaf"
+repository: DeepMicroscopy/FreeLeaf
+markdown: kramdown
+exclude:
+  - README.md

@@ -1,6 +1,7 @@
 import { api, looksLikeBibtex, parseBibtex } from "@freeleaf/shared";
 import type { BibEntry } from "@freeleaf/shared";
 import { autocompletion, completionKeymap } from "@codemirror/autocomplete";
+import { MessageSquarePlus } from "lucide-react";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { StreamLanguage } from "@codemirror/language";
 import { stex } from "@codemirror/legacy-modes/mode/stex";
@@ -31,6 +32,12 @@ import {
   setPolishingLintDecorations,
 } from "./polishingLintExtension";
 import { computeTrackChangesDecorations, setTrackChangesDecorations, trackChangesField } from "./trackChangesExtension";
+import {
+  commentAnchorsField,
+  computeCommentAnchorDecorations,
+  setCommentAnchorDecorations,
+} from "./commentAnchorsExtension";
+import type { CommentAnchor } from "./commentAnchorsExtension";
 import styles from "./CodeMirrorEditor.module.css";
 
 type ConnectionStatus = "connecting" | "live" | "disconnected";
@@ -81,6 +88,12 @@ const theme = EditorView.theme({
     textDecorationColor: "#f59e0b",
     textUnderlineOffset: "3px",
   },
+  ".cm-commentAnchor": {
+    backgroundColor: "color-mix(in srgb, #eab308 25%, transparent)",
+  },
+  ".cm-commentAnchorResolved": {
+    backgroundColor: "color-mix(in srgb, #eab308 10%, transparent)",
+  },
 });
 
 function colorForUserId(id: string): { color: string; colorLight: string } {
@@ -110,6 +123,8 @@ export function CodeMirrorEditor({
   polishingEnabled,
   onLintFindings,
   onOpenTableDesigner,
+  commentAnchors,
+  onAddComment,
 }: {
   projectId: string;
   fileId: string;
@@ -137,6 +152,13 @@ export function CodeMirrorEditor({
    * wrong content — it returns false (and does nothing) if the range has
    * changed since the designer was opened. */
   onOpenTableDesigner?: (match: TabularMatch, applyEdit: (newText: string) => boolean) => void;
+  /** Marked-text ranges to highlight for existing comments (Plan.md §9
+   * Phase 8 extension). */
+  commentAnchors?: CommentAnchor[];
+  /** Called when the user right-clicks a non-empty selection and picks "Add
+   * comment" from the popup menu — `from`/`to` are document character
+   * offsets, `line` the 1-based line the selection starts on. */
+  onAddComment?: (anchor: { from: number; to: number; text: string; line: number }) => void;
 }) {
   const { user } = useAuth();
   const { entries, addEntries, findNearDuplicate, findByKey } = useBibliography();
@@ -181,6 +203,18 @@ export function CodeMirrorEditor({
     });
     onLintFindingsRef.current?.(findings);
   };
+  const commentAnchorsRef = useRef(commentAnchors);
+  commentAnchorsRef.current = commentAnchors;
+  const recomputeCommentAnchorsRef = useRef(() => {});
+  recomputeCommentAnchorsRef.current = () => {
+    const view = viewRef.current;
+    if (!view) return;
+    const decorations = computeCommentAnchorDecorations(commentAnchorsRef.current ?? [], view.state.doc.length);
+    view.dispatch({ effects: setCommentAnchorDecorations.of(decorations) });
+  };
+  const onAddCommentRef = useRef(onAddComment);
+  onAddCommentRef.current = onAddComment;
+  const [commentMenu, setCommentMenu] = useState<{ x: number; y: number; from: number; to: number; text: string; line: number } | null>(null);
   const onOpenTableDesignerRef = useRef(onOpenTableDesigner);
   onOpenTableDesignerRef.current = onOpenTableDesigner;
   const handleTableGutterClickRef = useRef((_lineNumber: number) => {});
@@ -407,6 +441,21 @@ export function CodeMirrorEditor({
                 onJumpToPdfRef.current(view.state.doc.lineAt(pos).number);
                 return true;
               },
+              contextmenu: (event, view) => {
+                if (!onAddCommentRef.current) return false;
+                const { from, to } = view.state.selection.main;
+                if (from === to) return false;
+                event.preventDefault();
+                setCommentMenu({
+                  x: event.clientX,
+                  y: event.clientY,
+                  from,
+                  to,
+                  text: view.state.sliceDoc(from, to),
+                  line: view.state.doc.lineAt(from).number,
+                });
+                return true;
+              },
             }),
             yCollab(ytext, provider!.awareness, { undoManager: false }),
             EditorView.updateListener.of((update) => {
@@ -414,6 +463,7 @@ export function CodeMirrorEditor({
               onCursorLineChangeRef.current?.(update.state.doc.lineAt(update.state.selection.main.head).number);
             }),
             trackChangesField,
+            commentAnchorsField,
             polishingLintField,
             tableDesignerGutter((lineNumber) => handleTableGutterClickRef.current(lineNumber)),
           ],
@@ -424,6 +474,7 @@ export function CodeMirrorEditor({
         setLoading(false);
         recomputeTrackChangesRef.current();
         recomputePolishingLintRef.current();
+        recomputeCommentAnchorsRef.current();
 
         // Only schedule auto-compile for changes *after* the initial content
         // sync — otherwise just opening the file would trigger a compile.
@@ -486,6 +537,33 @@ export function CodeMirrorEditor({
     recomputePolishingLintRef.current();
   }, [polishingEnabled, loading]);
 
+  // Recomputes comment-anchor highlights when the comment list changes
+  // (loaded, added, resolved, deleted). Edits to the document itself don't
+  // need a recompute — CodeMirror's own decoration mapping moves existing
+  // marked ranges as the surrounding text changes.
+  useEffect(() => {
+    if (loading) return;
+    recomputeCommentAnchorsRef.current();
+  }, [commentAnchors, loading]);
+
+  // Dismisses the "Add comment" popup on outside click, Escape, or scroll.
+  useEffect(() => {
+    if (!commentMenu) return;
+    const dismiss = () => setCommentMenu(null);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") dismiss();
+    };
+    const scroller = hostRef.current?.querySelector(".cm-scroller");
+    document.addEventListener("mousedown", dismiss);
+    document.addEventListener("keydown", onKeyDown);
+    scroller?.addEventListener("scroll", dismiss);
+    return () => {
+      document.removeEventListener("mousedown", dismiss);
+      document.removeEventListener("keydown", onKeyDown);
+      scroller?.removeEventListener("scroll", dismiss);
+    };
+  }, [commentMenu]);
+
   return (
     <div className={styles.wrapper}>
       <div className={styles.statusBar}>
@@ -500,6 +578,29 @@ export function CodeMirrorEditor({
       )}
       {dupModal && (
         <DuplicateDialog existing={dupModal.existing} incoming={dupModal.incoming} onResolve={dupModal.resolve} />
+      )}
+      {commentMenu && (
+        <div
+          className={styles.commentMenu}
+          style={{ left: commentMenu.x, top: commentMenu.y }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <button
+            className={styles.commentMenuItem}
+            onClick={() => {
+              onAddCommentRef.current?.({
+                from: commentMenu.from,
+                to: commentMenu.to,
+                text: commentMenu.text,
+                line: commentMenu.line,
+              });
+              setCommentMenu(null);
+            }}
+          >
+            <MessageSquarePlus size={14} aria-hidden="true" />
+            Add comment
+          </button>
+        </div>
       )}
     </div>
   );

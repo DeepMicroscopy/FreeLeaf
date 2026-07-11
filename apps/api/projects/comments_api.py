@@ -36,6 +36,9 @@ class ReplyOut(Schema):
 class CommentOut(Schema):
     id: uuid.UUID
     anchor_line: int
+    anchor_from: int | None = None
+    anchor_to: int | None = None
+    anchor_text: str | None = None
     body: str
     created_at: str
     created_by_name: str | None = None
@@ -61,6 +64,9 @@ def _comment_out(comment: Comment, user, is_owner: bool) -> CommentOut:
     return CommentOut(
         id=comment.id,
         anchor_line=comment.anchor_line,
+        anchor_from=comment.anchor_from,
+        anchor_to=comment.anchor_to,
+        anchor_text=comment.anchor_text,
         body=comment.body,
         created_at=comment.created_at.isoformat(),
         created_by_name=_display_name(comment.created_by),
@@ -93,6 +99,9 @@ def list_comments(request, project_id: uuid.UUID, file_id: uuid.UUID):
 
 class CommentCreateIn(Schema):
     anchor_line: int = 1
+    anchor_from: int | None = None
+    anchor_to: int | None = None
+    anchor_text: str | None = None
     body: str
     parent_id: uuid.UUID | None = None
 
@@ -109,6 +118,11 @@ def create_comment(request, project_id: uuid.UUID, file_id: uuid.UUID, payload: 
 
     parent = None
     anchor_line = max(1, payload.anchor_line)
+    anchor_from = payload.anchor_from
+    anchor_to = payload.anchor_to
+    anchor_text = payload.anchor_text
+    if anchor_from is None or anchor_to is None or anchor_to <= anchor_from:
+        anchor_from = anchor_to = anchor_text = None
     if payload.parent_id is not None:
         parent = f.comments.filter(id=payload.parent_id).first()
         if parent is None:
@@ -116,9 +130,18 @@ def create_comment(request, project_id: uuid.UUID, file_id: uuid.UUID, payload: 
         if parent.parent_id is not None:
             raise HttpError(400, "Replies can't themselves be replied to.")
         anchor_line = parent.anchor_line
+        anchor_from = anchor_to = anchor_text = None
 
     comment = Comment.objects.create(
-        project=project, file=f, parent=parent, anchor_line=anchor_line, body=body, created_by=user,
+        project=project,
+        file=f,
+        parent=parent,
+        anchor_line=anchor_line,
+        anchor_from=anchor_from,
+        anchor_to=anchor_to,
+        anchor_text=anchor_text,
+        body=body,
+        created_by=user,
     )
     is_owner = membership.role == Role.OWNER
     return _comment_out(comment, user, is_owner)
