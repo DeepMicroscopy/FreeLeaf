@@ -29,8 +29,11 @@ export const trackChangesField = StateField.define<DecorationSet>({
 });
 
 class RemovedTextWidget extends WidgetType {
-  constructor(readonly text: string) {
+  readonly text: string;
+
+  constructor(text: string) {
     super();
+    this.text = text;
   }
 
   eq(other: RemovedTextWidget): boolean {
