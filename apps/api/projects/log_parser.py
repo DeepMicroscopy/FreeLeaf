@@ -25,6 +25,22 @@ _ON_INPUT_LINE_RE = re.compile(r"on input line (\d+)")
 _BOX_WARNING_RE = re.compile(r"^(Overfull|Underfull) \\([hv])box .*?(?:at lines? (\d+)(?:--(\d+))?)?\s*$")
 _FILE_TOKEN_RE = re.compile(r"\((?P<open>\.{1,2}/[^\s()]+|/[^\s()]+)|(?P<close>\))")
 
+# latexmk reruns the engine (pdflatex/xelatex) several times per compile to
+# resolve citations/references/labels, and our captured "log" is its stdout
+# for *all* of those reruns concatenated (see apps/compile/sandbox.py — it's
+# `docker logs`, not the single-run .log file). Scanning the whole thing
+# would surface e.g. "Citation undefined" warnings from an early pass even
+# once a later pass resolves them. Each engine invocation announces itself
+# with a "This is pdfTeX/XeTeX/LuaTeX, Version ..." banner, so only the
+# segment after the *last* one reflects the compile's final, authoritative
+# state.
+_RUN_START_RE = re.compile(r"^This is \S*TeX,", re.MULTILINE)
+
+
+def _last_engine_run(log: str) -> str:
+    starts = [m.start() for m in _RUN_START_RE.finditer(log)]
+    return log[starts[-1]:] if starts else log
+
 # Only these look like source-ish files worth surfacing as "file" in a
 # diagnostic — system package/class files clutter the UI more than help it,
 # but we still need to push/pop them on the stack to track nesting correctly.
@@ -49,7 +65,7 @@ def _normalize_file(path: str) -> str:
 
 
 def parse_log(log: str) -> ParsedLog:
-    lines = log.splitlines()
+    lines = _last_engine_run(log).splitlines()
     result = ParsedLog()
     file_stack: list[str] = []
 

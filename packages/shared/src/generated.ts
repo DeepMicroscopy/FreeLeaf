@@ -620,6 +620,65 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Snapshots */
+        get: operations["projects_versions_api_list_snapshots"];
+        put?: never;
+        /** Create Snapshot */
+        post: operations["projects_versions_api_create_snapshot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/snapshots/{snapshot_id}/file-content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Snapshot File Content */
+        get: operations["projects_versions_api_get_snapshot_file_content"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/snapshots/{snapshot_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Snapshot
+         * @description Makes the project's files match the target snapshot exactly:
+         *     existing files are overwritten, files missing since the snapshot are
+         *     recreated, and files that didn't exist at snapshot time are deleted.
+         *     A safety snapshot of the *current* state is taken first — nothing is
+         *     ever truly lost, since restoring is itself always just a restore away.
+         */
+        post: operations["projects_versions_api_restore_snapshot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -917,6 +976,52 @@ export interface components {
             last_login_at?: string | null;
             /** Project Count */
             project_count: number;
+        };
+        /** SnapshotOut */
+        SnapshotOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Label */
+            label: string;
+            /** Description */
+            description: string;
+            /** Created At */
+            created_at: string;
+            /** Created By Name */
+            created_by_name?: string | null;
+        };
+        /** SnapshotCreateIn */
+        SnapshotCreateIn: {
+            /**
+             * Kind
+             * @default manual
+             */
+            kind: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+        };
+        /** SnapshotFileOut */
+        SnapshotFileOut: {
+            /** Content */
+            content: string;
+        };
+        /** RestoreOut */
+        RestoreOut: {
+            restored_to: components["schemas"]["SnapshotOut"];
+            safety_snapshot?: components["schemas"]["SnapshotOut"] | null;
         };
     };
     responses: never;
@@ -1938,6 +2043,102 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminUserOut"][];
+                };
+            };
+        };
+    };
+    projects_versions_api_list_snapshots: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SnapshotOut"][];
+                };
+            };
+        };
+    };
+    projects_versions_api_create_snapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SnapshotCreateIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SnapshotOut"];
+                };
+            };
+        };
+    };
+    projects_versions_api_get_snapshot_file_content: {
+        parameters: {
+            query: {
+                path: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                snapshot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SnapshotFileOut"];
+                };
+            };
+        };
+    };
+    projects_versions_api_restore_snapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                snapshot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestoreOut"];
                 };
             };
         };

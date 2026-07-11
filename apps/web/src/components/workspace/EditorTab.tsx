@@ -1,6 +1,6 @@
-import { apiOrigin } from "@freeleaf/shared";
+import { api, apiOrigin } from "@freeleaf/shared";
 import { FileQuestion } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { EmptyState } from "../ui/EmptyState";
 import { useWorkspace } from "../../lib/workspace";
@@ -11,12 +11,51 @@ import type { CompilePaneHandle } from "./CompilePane";
 import { SplitPane } from "./SplitPane";
 import styles from "./EditorTab.module.css";
 
+// Automated version-history checkpoints (Plan.md §9 Phase 8): a snapshot
+// after 5 minutes of no edits, or every 1000 keystrokes, whichever comes
+// first. The backend dedupes identical-content auto-snapshots on its own,
+// but a client-side minimum gap avoids firing both triggers in a burst.
+const INACTIVITY_SNAPSHOT_MS = 5 * 60 * 1000;
+const KEYSTROKE_SNAPSHOT_THRESHOLD = 1000;
+const MIN_AUTO_SNAPSHOT_GAP_MS = 60 * 1000;
+
 export function EditorTab() {
   const { projectId, files, selectedFileId, selectFile, canWrite } = useWorkspace();
   const selectedFile = files.find((f) => f.id === selectedFileId);
   const compilePaneRef = useRef<CompilePaneHandle>(null);
   const jumpTokenRef = useRef(0);
   const [jump, setJump] = useState<{ fileId: string } & JumpTarget | null>(null);
+
+  const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const keystrokeCountRef = useRef(0);
+  const lastAutoSnapshotAtRef = useRef(0);
+
+  const triggerAutoSnapshot = useCallback(() => {
+    const now = Date.now();
+    if (now - lastAutoSnapshotAtRef.current < MIN_AUTO_SNAPSHOT_GAP_MS) return;
+    lastAutoSnapshotAtRef.current = now;
+    keystrokeCountRef.current = 0;
+    void api.POST("/api/projects/{project_id}/snapshots", {
+      params: { path: { project_id: projectId } },
+      body: { kind: "auto" },
+    });
+  }, [projectId]);
+
+  const handleActivity = useCallback(() => {
+    if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+    inactivityTimerRef.current = setTimeout(triggerAutoSnapshot, INACTIVITY_SNAPSHOT_MS);
+  }, [triggerAutoSnapshot]);
+
+  const handleKeystroke = useCallback(() => {
+    keystrokeCountRef.current += 1;
+    if (keystrokeCountRef.current >= KEYSTROKE_SNAPSHOT_THRESHOLD) triggerAutoSnapshot();
+  }, [triggerAutoSnapshot]);
+
+  useEffect(() => {
+    return () => {
+      if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+    };
+  }, []);
   const handleContentChanged = useCallback(() => {
     compilePaneRef.current?.scheduleAutoCompile();
   }, []);
@@ -72,6 +111,8 @@ export function EditorTab() {
               onCompileShortcut={handleCompileShortcut}
               onJumpToPdf={handleJumpToPdf}
               jumpTarget={jump && jump.fileId === selectedFile.id ? jump : undefined}
+              onActivity={canWrite ? handleActivity : undefined}
+              onKeystroke={canWrite ? handleKeystroke : undefined}
             />
           </div>
         </div>

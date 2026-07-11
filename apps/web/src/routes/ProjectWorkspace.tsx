@@ -4,6 +4,7 @@ import { NavLink, Navigate, Route, Routes, useParams } from "react-router-dom";
 
 import { EditorTab } from "../components/workspace/EditorTab";
 import { FileTree } from "../components/workspace/FileTree";
+import { HistoryTab } from "../components/workspace/HistoryTab";
 import { LibraryTab } from "../components/workspace/LibraryTab";
 import { SettingsTab } from "../components/workspace/SettingsTab";
 import { ShareButton } from "../components/workspace/ShareButton";
@@ -49,6 +50,9 @@ function WorkspaceShell() {
           <NavLink to={`${base}/settings`} className={({ isActive }) => tabClass(isActive)}>
             Settings
           </NavLink>
+          <NavLink to={`${base}/history`} className={({ isActive }) => tabClass(isActive)}>
+            History
+          </NavLink>
         </nav>
         <div className={styles.headerActions}>
           <a
@@ -74,6 +78,7 @@ function WorkspaceShell() {
             <Route path="editor" element={<EditorTab />} />
             <Route path="library" element={<LibraryTab />} />
             <Route path="settings" element={<SettingsTab />} />
+            <Route path="history" element={<HistoryTab />} />
           </Routes>
         </main>
       </div>

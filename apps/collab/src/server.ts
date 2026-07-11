@@ -8,6 +8,7 @@ import { WebSocket, WebSocketServer } from "ws";
 
 import { Room } from "./room.js";
 import { InvalidCollabToken, decodeCollabTokenUnsafe, verifyCollabToken } from "./token.js";
+import { persistFileContent } from "./apiClient.js";
 
 const PORT = Number(process.env.PORT ?? 1234);
 const COLLAB_SHARED_SECRET = process.env.COLLAB_SHARED_SECRET ?? "dev-insecure-collab-secret";
@@ -187,6 +188,48 @@ async function handleFlushRequest(req: IncomingMessage, res: ServerResponse) {
   res.end(JSON.stringify({ ok: true, flushed: Boolean(room) }));
 }
 
+function readBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let data = "";
+    req.on("data", (chunk) => (data += chunk));
+    req.on("end", () => resolve(data));
+    req.on("error", reject);
+  });
+}
+
+// Lets api overwrite a file's content wholesale (version-history restore,
+// Plan.md §9 Phase 8). If a room is currently open, applies a real Yjs
+// delete+insert transaction so it merges and broadcasts to connected
+// clients instead of silently getting clobbered by their next flush;
+// otherwise writes straight to storage, same as api's own internal PUT.
+async function handleReplaceRequest(req: IncomingMessage, res: ServerResponse) {
+  const provided = req.headers["x-collab-secret"];
+  if (provided !== COLLAB_SHARED_SECRET) {
+    res.writeHead(401).end();
+    return;
+  }
+  const fileId = (req.url ?? "").replace(/^\/replace\//, "");
+  let content: string;
+  try {
+    const body = JSON.parse(await readBody(req)) as { content?: unknown };
+    if (typeof body.content !== "string") throw new Error("content must be a string");
+    content = body.content;
+  } catch (err) {
+    res.writeHead(400, { "content-type": "application/json" });
+    res.end(JSON.stringify({ detail: `invalid request: ${err instanceof Error ? err.message : err}` }));
+    return;
+  }
+
+  const room = rooms.get(fileId);
+  if (room) {
+    await room.replaceContent(content);
+  } else {
+    await persistFileContent(fileId, content);
+  }
+  res.writeHead(200, { "content-type": "application/json" });
+  res.end(JSON.stringify({ ok: true, hadOpenRoom: Boolean(room) }));
+}
+
 const server = createServer((req, res) => {
   if (req.url === "/health") {
     res.writeHead(200, { "content-type": "application/json" });
@@ -195,6 +238,10 @@ const server = createServer((req, res) => {
   }
   if (req.method === "POST" && req.url?.startsWith("/flush/")) {
     void handleFlushRequest(req, res);
+    return;
+  }
+  if (req.method === "POST" && req.url?.startsWith("/replace/")) {
+    void handleReplaceRequest(req, res);
     return;
   }
   res.writeHead(404).end();

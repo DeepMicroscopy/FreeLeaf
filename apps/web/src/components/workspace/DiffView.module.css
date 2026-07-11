@@ -1,0 +1,67 @@
+.diff {
+  display: flex;
+  gap: 1px;
+  background: var(--border-default);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+.column {
+  flex: 1 1 50%;
+  min-width: 0;
+  background: var(--bg-surface);
+  overflow-x: auto;
+}
+
+.columnLabel {
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-inset);
+  border-bottom: 1px solid var(--border-default);
+  position: sticky;
+  top: 0;
+}
+
+.lines {
+  padding: var(--space-2) 0;
+}
+
+.line {
+  display: flex;
+  padding: 0 var(--space-3);
+  white-space: pre;
+}
+
+.lineText {
+  white-space: pre;
+}
+
+.same {
+  color: var(--text-primary);
+}
+
+.added {
+  background: color-mix(in srgb, #22c55e 18%, transparent);
+}
+
+.removed {
+  background: color-mix(in srgb, #ef4444 18%, transparent);
+}
+
+.blank {
+  background: var(--bg-inset);
+  opacity: 0.5;
+}
+
+.unchanged {
+  padding: var(--space-4);
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-align: center;
+}

@@ -74,6 +74,8 @@ export function CodeMirrorEditor({
   onCompileShortcut,
   onJumpToPdf,
   jumpTarget,
+  onActivity,
+  onKeystroke,
 }: {
   projectId: string;
   fileId: string;
@@ -81,6 +83,8 @@ export function CodeMirrorEditor({
   onContentChanged?: () => void;
   onCompileShortcut?: () => void;
   onJumpToPdf?: (line: number) => void;
+  onActivity?: () => void;
+  onKeystroke?: () => void;
   jumpTarget?: JumpTarget;
 }) {
   const { user } = useAuth();
@@ -95,6 +99,10 @@ export function CodeMirrorEditor({
   onCompileShortcutRef.current = onCompileShortcut;
   const onJumpToPdfRef = useRef(onJumpToPdf);
   onJumpToPdfRef.current = onJumpToPdf;
+  const onActivityRef = useRef(onActivity);
+  onActivityRef.current = onActivity;
+  const onKeystrokeRef = useRef(onKeystroke);
+  onKeystrokeRef.current = onKeystroke;
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
   const addEntriesRef = useRef(addEntries);
@@ -277,6 +285,10 @@ export function CodeMirrorEditor({
                 });
                 return true;
               },
+              keydown: () => {
+                onKeystrokeRef.current?.();
+                return false;
+              },
               mousedown: (event, view) => {
                 if (!(event.metaKey || event.ctrlKey) || !onJumpToPdfRef.current) return false;
                 const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
@@ -297,6 +309,7 @@ export function CodeMirrorEditor({
         // Only schedule auto-compile for changes *after* the initial content
         // sync — otherwise just opening the file would trigger a compile.
         ydoc!.on("update", () => {
+          onActivityRef.current?.();
           if (changeTimerRef.current) clearTimeout(changeTimerRef.current);
           changeTimerRef.current = setTimeout(() => onContentChangedRef.current?.(), 1500);
         });

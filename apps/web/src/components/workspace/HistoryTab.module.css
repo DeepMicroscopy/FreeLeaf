@@ -1,0 +1,196 @@
+.layout {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+
+.centered {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.list {
+  width: 300px;
+  flex: none;
+  border-right: 1px solid var(--border-default);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.listHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.listTitle {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.saveForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-inset);
+}
+
+.saveInput,
+.saveTextarea {
+  font: inherit;
+  font-size: 13px;
+  padding: var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  resize: vertical;
+}
+
+.saveActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.snapshotList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.snapshotItem {
+  width: 100%;
+  text-align: left;
+  padding: var(--space-3);
+  border: none;
+  border-bottom: 1px solid var(--border-default);
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.snapshotItem:hover {
+  background: var(--bg-hover);
+}
+
+.snapshotItemActive {
+  background: var(--accent-soft-border);
+}
+
+.snapshotRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.kindBadge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--bg-inset);
+  color: var(--text-tertiary);
+}
+
+.kindManual {
+  background: var(--accent-soft-border);
+  color: var(--accent);
+}
+
+.snapshotLabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.snapshotMeta {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.snapshotDesc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.detail {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.detailHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.detailPath {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.confirmCard {
+  width: 420px;
+  max-width: calc(100vw - 32px);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  box-shadow: var(--shadow-md);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.confirmTitle {
+  margin: 0;
+  font-size: 15px;
+}
+
+.confirmBody {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.confirmActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}

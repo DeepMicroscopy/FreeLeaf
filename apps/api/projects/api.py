@@ -168,6 +168,18 @@ def import_project_zip(request, name: str, file: UploadedFile = File(...)):
     return _project_out(project, membership.role)
 
 
+def build_project_zip_bytes(project) -> bytes:
+    """Zip of every non-folder file's current content, keyed by `path`.
+    Shared by /export and version-history snapshot creation (versions_api.py)
+    — same "folders aren't preserved as empty entries" simplification as
+    /import's own file-only handling."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for f in project.files.exclude(type=FileType.FOLDER):
+            zf.writestr(f.path, storage.get_object(f.storage_key))
+    return buf.getvalue()
+
+
 @router.get("/projects/{project_id}/export")
 def export_project_zip(request, project_id: uuid.UUID):
     """Download the project's current files as a .zip — the counterpart to
@@ -177,13 +189,8 @@ def export_project_zip(request, project_id: uuid.UUID):
     user = get_current_user(request)
     project, _membership = get_authorized_project(user, project_id)
 
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for f in project.files.exclude(type=FileType.FOLDER):
-            zf.writestr(f.path, storage.get_object(f.storage_key))
-
     safe_name = re.sub(r"[^A-Za-z0-9 ._-]", "_", project.name).strip() or "project"
-    response = HttpResponse(buf.getvalue(), content_type="application/zip")
+    response = HttpResponse(build_project_zip_bytes(project), content_type="application/zip")
     response["Content-Disposition"] = f'attachment; filename="{safe_name}.zip"'
     return response
 

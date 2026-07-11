@@ -70,6 +70,23 @@ LaTeX Warning: There were undefined references.
 Output written on /work/out/main.pdf (1 page, 23564 bytes).
 """
 
+MULTI_RUN_RESOLVED_CITATION_LOG = """\
+This is pdfTeX, Version 3.141592653-2.6-1.40.24 (TeX Live 2022/Debian) (preloaded format=pdflatex)
+entering extended mode
+(./main.tex
+(/work/out/main.aux)
+LaTeX Warning: Citation `shannon1948' on page 1 undefined on input line 5.
+LaTeX Warning: There were undefined references.
+Output written on /work/out/main.pdf (1 page, 20000 bytes).
+This is BibTeX, Version 0.99d
+The top-level auxiliary file: main.aux
+This is pdfTeX, Version 3.141592653-2.6-1.40.24 (TeX Live 2022/Debian) (preloaded format=pdflatex)
+entering extended mode
+(./main.tex
+(/work/out/main.aux)
+Output written on /work/out/main.pdf (1 page, 23564 bytes).
+"""
+
 OVERFULL_HBOX_LOG = """\
 This is pdfTeX, Version 3.141592653-2.6-1.40.24 (TeX Live 2022/Debian) (preloaded format=pdflatex)
 entering extended mode
@@ -127,3 +144,11 @@ class ParseLogTests(SimpleTestCase):
         parsed = parse_log(UNDEFINED_CONTROL_SEQUENCE_LOG + "\n! A second error.\n")
         self.assertEqual(len(parsed.errors), 2)
         self.assertEqual(parsed.errors[1].message, "A second error.")
+
+    def test_warning_resolved_by_a_later_rerun_is_not_reported(self):
+        # latexmk reruns pdflatex after bibtex resolves citations; only the
+        # last run's output should count, not the "Citation undefined" from
+        # the very first pass.
+        parsed = parse_log(MULTI_RUN_RESOLVED_CITATION_LOG)
+        self.assertEqual(parsed.warnings, [])
+        self.assertEqual(parsed.errors, [])

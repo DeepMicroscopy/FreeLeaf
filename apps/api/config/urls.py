@@ -27,6 +27,7 @@ from projects.collab_api import internal_router as collab_internal_router
 from projects.collab_api import router as collab_router
 from projects.compile_api import router as compile_router
 from projects.files_api import router as files_router
+from projects.versions_api import router as versions_router
 
 api = NinjaAPI(title="FreeLeaf API")
 api.add_router("", health_router)
@@ -38,6 +39,7 @@ api.add_router("", collab_router)
 api.add_router("", collab_internal_router)
 api.add_router("", bibliography_router)
 api.add_router("", admin_router)
+api.add_router("", versions_router)
 
 urlpatterns = [
     path('admin/', admin.site.urls),

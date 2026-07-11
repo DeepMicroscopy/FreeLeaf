@@ -54,6 +54,18 @@ export class Room {
     }
   }
 
+  /** Replaces the whole document (used by version-history restore, Plan.md
+   * §9 Phase 8) via a proper Yjs delete+insert transaction rather than a raw
+   * overwrite — this way it merges correctly and broadcasts to any clients
+   * connected to this room right now, the same as a normal edit would. */
+  async replaceContent(newContent: string): Promise<void> {
+    this.ydoc.transact(() => {
+      this.ytext.delete(0, this.ytext.length);
+      this.ytext.insert(0, newContent);
+    });
+    await this.flush();
+  }
+
   async destroy(): Promise<void> {
     console.log(`[collab] room destroyed: ${this.fileId}`);
     clearInterval(this.persistTimer);

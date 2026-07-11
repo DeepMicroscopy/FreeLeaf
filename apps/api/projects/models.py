@@ -144,3 +144,37 @@ class CompileRun(models.Model):
 
     def __str__(self):
         return f"CompileRun({self.project_id}, {self.status})"
+
+
+class SnapshotKind(models.TextChoices):
+    AUTO = "auto", "Automatic"
+    MANUAL = "manual", "Manual"
+
+
+class ProjectSnapshot(models.Model):
+    """A version-history checkpoint (Plan.md §9 Phase 8): a zip of every
+    file's content at one point in time, so the Time Travel UI can diff or
+    restore an individual file without needing per-file delta storage —
+    LaTeX projects are small enough that a full copy per snapshot is cheap,
+    and this reuses the same zip format as /export and /import."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="snapshots")
+    created_at = models.DateTimeField(auto_now_add=True)
+    # Null for automatic snapshots taken with no specific actor in view (e.g.
+    # the pre-restore safety snapshot) or if the creating user is deleted.
+    created_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)
+    kind = models.CharField(max_length=16, choices=SnapshotKind.choices)
+    label = models.CharField(max_length=200, blank=True)
+    description = models.TextField(blank=True)
+    archive_key = models.CharField(max_length=255)
+    # SHA-256 of the archive's content, so an automatic snapshot can cheaply
+    # skip itself when nothing has changed since the last one (comparing
+    # against this column, not re-fetching + re-hashing the previous zip).
+    content_hash = models.CharField(max_length=64, default="")
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"ProjectSnapshot({self.project_id}, {self.kind}, {self.created_at})"
