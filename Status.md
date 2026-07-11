@@ -404,3 +404,37 @@ New phase, added to PLAN.md §9 at the user's request — see that file for the 
 **A second real bug, caught only by rebuilding the actual prod images:** `apps/api/Dockerfile.prod` purges build-only system packages (gcc, libpq-dev) after `pip install` to slim the image, and initially lacked the `xmlsec`/`python3-saml` system dependencies (`pkg-config libxml2-dev libxmlsec1-dev`, verified against `python-xmlsec`'s own install docs) entirely — would have broken the *production* build the same way the dev build had already been fixed to need them. Fixed by adding those to the dev `Dockerfile` and, separately, to `Dockerfile.prod`'s install step — keeping `libxmlsec1-openssl` (the actual runtime shared library) *unpurged* while still purging the dev headers/pkg-config. Verified by actually building both prod images (`docker build -f apps/web/Dockerfile.prod` and `-f apps/api/Dockerfile.prod`) and confirming `import onelogin.saml2.auth; import ldap3; import xmlsec` still succeeds inside the final, already-purged production image — not just the dev container.
 
 27 new backend tests (provider registry, LDAP login success/failure/repeat, SAML ACS success/error paths, admin CRUD including secret round-tripping and the delete-keeps-users guarantee), all passing; 170 backend tests total, zero regressions.
+
+## GitHub Actions CI: fixed a long-standing, silent failure: RESOLVED
+
+Asked to "make sure the GitHub CI runs" — checked, and it had actually been **red for many commits** (`gh run list` showed several consecutive failures going back well before this session's work). Root cause: the `api` job's workflow only ever declared a `postgres` service container — `minio` was never added, so any test touching file storage (the large majority: project files, compile outputs, zip export, snapshots, etc.) failed with `botocore.exceptions.EndpointConnectionError: ... minio:9000`. `113 failed, 30 passed` on the last red run.
+
+**Why it wasn't a one-line fix:** MinIO's image has no default `CMD` (it just prints help and exits) — it needs `server /data` as a command argument, same as `docker-compose.yml`'s explicit `command:` override — but GitHub Actions' `services:` block has no field for overriding a service container's command, only `image`/`env`/`ports`/`options`. Worked around by starting MinIO directly via a `docker run -d ... minio server /data` step instead of a `services:` entry, polling its real `/minio/health/live` endpoint before the test step runs.
+
+Verified two ways before pushing: reproduced the exact failure in fully isolated fresh containers (Postgres + no MinIO → same 113 failures), then the fix (fresh Postgres + fresh MinIO, identical `pytest -q` invocation → 170 passed) — then pushed and watched the real GitHub Actions run go green end to end (`gh run watch`), not just trusted the local repro.
+
+## Autocomplete polish: brace-closing + `\begin{}` environment completion: DONE
+
+Two follow-up requests after the SSO work: (1) selecting a `\cite{}`/`\ref{}` completion should close the `}` for you, and (2) autocomplete for `\begin{document}`/`\begin{figure}`/`\begin{table}` etc.
+
+**Brace-closing**, new shared `completionUtils.ts` (`applyAndCloseBrace`), used by both `citeCompletion.ts` and `refCompletion.ts`: inserts the selected key and appends `}` — unless one's already sitting immediately after the cursor (e.g. completing the second key in an already-closed `\cite{a, b|}`), in which case nothing extra is added, so multi-key citations aren't double-closed.
+
+**New `envCompletion.ts`:** typing `\begin{` opens a completion list of common environments (`document`, `figure`/`figure*`, `table`/`table*`, `tabular`/`tabularx`/`longtable`, `itemize`, `enumerate`, `equation`/`equation*`, `align`/`align*`, `center`, `abstract`, `quote`, `verbatim`, `minipage`, etc.). Selecting one does more than close a brace — it inserts the matching `\end{name}` too, with the cursor left on a blank indented line in between, matching the current line's indentation — the standard "complete `\begin`, get a skeleton" behavior expected of a LaTeX editor. Only inserts the skeleton when there's no `}` immediately after the cursor (a genuinely new `\begin{`); if one's already there (editing an existing environment's name), it just replaces the name so an already-present `\end{}` elsewhere isn't duplicated.
+
+**Deliberately not gated by the existing "Autocomplete suggestions" project setting** — that setting's own description is specifically about `\cite{}`/`\ref{}` (verified its exact label/hint text before deciding), so bundling environment completion under it would let disabling citation autocomplete silently break an unrelated feature. `autocompletion()`'s `override` list and `completionKeymap` are now always active; only the cite/ref sources within it are conditional on the setting.
+
+Verified live: `\begin{fig` → list shows `figure`/`figure*` → selecting `figure` inserts a correctly-indented `\begin{figure}` / blank line / `\end{figure}` skeleton with cursor on the blank line (screenshotted); same for `table`/`tabular`-family and `document`; `\ref{fig:x` → selecting a label correctly closes the brace.
+
+## Table Designer (Phase 10): DONE
+
+A gutter icon (⊞) appears on any line starting a supported `\begin{tabular}`-family environment; clicking it opens an interactive grid editor (`TableDesignerDialog.tsx`) for cell text, per-column alignment, and horizontal/vertical borders, then serializes changes back to LaTeX on save, replacing the original environment's text in place.
+
+**`tableDesigner.ts`** — hand-rolled, brace-depth-aware tokenizer for `tabular`/`tabularx`/`longtable` bodies (distinguishes `\\` row separators, `\hline`, `&` cell separators, and literal cell text like `\textbf{Bold}` while tracking `{}` nesting), plus a serializer back to LaTeX. Same "best-effort, not a full parser" discipline as `log_parser.py`/`polishingLint.ts`: explicitly *rejects* (rather than mangles) `\multicolumn`, `\multirow`, `\cline`, booktabs rules, nested environments, non-l/c/r column types, mismatched cell counts. Verified standalone via `tsx` with 33 checks (happy paths, round-trips, every rejection case) before any UI was built on it.
+
+**`tableDesignerGutter.ts`** — CodeMirror gutter extension detecting supported `\begin{tabular...}` lines per-render.
+
+**Concurrency guard**: since documents are Yjs-backed, the dialog's save re-verifies `view.state.sliceDoc(from, to)` still matches the original text immediately before applying the edit, refusing rather than blindly overwriting if the doc changed underneath while the dialog was open (same pattern as version-history restore).
+
+Verified live end-to-end (Playwright): typed a `\begin{tabular}{|l|c|}...\end{tabular}` → gutter icon appeared → opened dialog, cells pre-filled correctly (`["Name","Score","Alice","90"]`) → edited a cell, added a row, saved → resulting document text exactly correct (edit + new row + all borders preserved), "Table updated." toast shown. Then typed a second, unsupported table containing `\multicolumn` → its own gutter icon appeared (detection works for a second `tabular` block later in the same doc) → clicking it shows the "isn't editable here" message and the dialog does **not** open, construct left untouched.
+
+Two real bugs caught before/during live verification: a `<td>` styled with `display: flex` (broke table-cell layout — fixed via a wrapper `<div>`), and a missing `borderBottom` on the last row (the "toggle border below last row" control existed but wasn't visually wired up).

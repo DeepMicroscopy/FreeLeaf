@@ -16,11 +16,15 @@ import { useBibliography } from "../../lib/bibliography";
 import { Spinner } from "../ui/Spinner";
 import { useToast } from "../ui/Toast";
 import { citeCompletionSource } from "./citeCompletion";
+import { envCompletionSource } from "./envCompletion";
 import { extractLabels, refCompletionSource } from "./refCompletion";
 import type { DuplicateChoice } from "./DuplicateDialog";
 import { DuplicateDialog } from "./DuplicateDialog";
 import { lintLatex } from "./polishingLint";
 import type { LintFinding } from "./polishingLint";
+import { findTabularEnvironments } from "./tableDesigner";
+import type { TabularMatch } from "./tableDesigner";
+import { tableDesignerGutter } from "./tableDesignerGutter";
 import {
   computePolishingLintDecorations,
   polishingLintField,
@@ -105,6 +109,7 @@ export function CodeMirrorEditor({
   trackChangesBaseline,
   polishingEnabled,
   onLintFindings,
+  onOpenTableDesigner,
 }: {
   projectId: string;
   fileId: string;
@@ -125,6 +130,13 @@ export function CodeMirrorEditor({
    * polishingLint.ts. */
   polishingEnabled?: boolean;
   onLintFindings?: (findings: LintFinding[]) => void;
+  /** Table Designer (Plan.md §9 Phase 10) — called when the user clicks the
+   * gutter icon on a `\begin{tabular}`-family line. `applyEdit` re-checks
+   * the target range still matches what was parsed before writing, so a
+   * concurrent edit elsewhere in the file can't cause it to clobber the
+   * wrong content — it returns false (and does nothing) if the range has
+   * changed since the designer was opened. */
+  onOpenTableDesigner?: (match: TabularMatch, applyEdit: (newText: string) => boolean) => void;
 }) {
   const { user } = useAuth();
   const { entries, addEntries, findNearDuplicate, findByKey } = useBibliography();
@@ -168,6 +180,26 @@ export function CodeMirrorEditor({
       effects: setPolishingLintDecorations.of(computePolishingLintDecorations(findings, view.state.doc.length)),
     });
     onLintFindingsRef.current?.(findings);
+  };
+  const onOpenTableDesignerRef = useRef(onOpenTableDesigner);
+  onOpenTableDesignerRef.current = onOpenTableDesigner;
+  const handleTableGutterClickRef = useRef((_lineNumber: number) => {});
+  handleTableGutterClickRef.current = (lineNumber: number) => {
+    const view = viewRef.current;
+    if (!view || !onOpenTableDesignerRef.current) return;
+    const currentText = view.state.doc.toString();
+    const match = findTabularEnvironments(currentText).find((m) => m.beginLine === lineNumber);
+    if (!match) return;
+    onOpenTableDesignerRef.current(match, (newText: string) => {
+      const liveView = viewRef.current;
+      if (!liveView) return false;
+      // Re-verify the target range is unchanged since the designer opened —
+      // if something else edited it meanwhile (this file has no lock, and
+      // Yjs merges concurrent edits), refuse rather than clobber it.
+      if (liveView.state.sliceDoc(match.from, match.to) !== match.raw) return false;
+      liveView.dispatch({ changes: { from: match.from, to: match.to, insert: newText } });
+      return true;
+    });
   };
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
@@ -310,16 +342,21 @@ export function CodeMirrorEditor({
             lineNumbers(),
             history(),
             StreamLanguage.define(stex),
-            ...(citeAutocompleteEnabled
-              ? [
-                  autocompletion({
-                    override: [
+            autocompletion({
+              override: [
+                ...(citeAutocompleteEnabled
+                  ? [
                       citeCompletionSource(() => entriesRef.current),
                       refCompletionSource(() => extractLabels(ytext.toString())),
-                    ],
-                  }),
-                ]
-              : []),
+                    ]
+                  : []),
+                // Environment completion (\begin{...}) is a general LaTeX
+                // authoring aid, not a citation feature — always on,
+                // independent of the "Autocomplete suggestions" project
+                // setting (which is specifically about \cite{}/\ref{}).
+                envCompletionSource(),
+              ],
+            }),
             keymap.of([
               {
                 key: "Mod-s",
@@ -330,7 +367,7 @@ export function CodeMirrorEditor({
               },
               ...defaultKeymap,
               ...historyKeymap,
-              ...(citeAutocompleteEnabled ? completionKeymap : []),
+              ...completionKeymap,
             ]),
             theme,
             EditorView.lineWrapping,
@@ -378,6 +415,7 @@ export function CodeMirrorEditor({
             }),
             trackChangesField,
             polishingLintField,
+            tableDesignerGutter((lineNumber) => handleTableGutterClickRef.current(lineNumber)),
           ],
         });
 

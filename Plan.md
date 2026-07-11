@@ -207,6 +207,13 @@ Additionally, some polishing in phase 8:
 - **Test infrastructure (no real institutional IdP available):** a disposable test SAML IdP (`kristophjunge/test-saml-idp`, SimpleSAMLphp-based) and a disposable OpenLDAP container added to `docker-compose.yml` for live verification of both flows end-to-end, standing in for a real university's Shibboleth IdP / AD server. Flagged clearly: this verifies the *integration* works correctly against the SAML 2.0 spec and standard LDAP bind semantics, not against any specific real institution's quirks — a final pass against a real IdP is recommended once one is available.
 - **Acceptance:** an admin can register a SAML provider and an LDAP provider through the admin UI; a user can complete sign-in through each against the respective test server and lands in a real session; secrets are never exposed via any read API; disabling a provider removes it from the login picker without deleting existing linked users.
 
+### Phase 10 — Table designer
+- **Goal:** a spreadsheet-like interactive UI for building/editing `tabular`-family LaTeX tables, so authors don't have to hand-write column specs, `&`/`\\` separators, and `\hline`s.
+- **Discovery affordance:** a small table icon in the editor gutter on the line where a `\begin{tabular}` (and `tabular*`/`tabularx`/`longtable`) starts, clicking it opens the Table Designer for that table.
+- **Table Designer UI:** an interactive grid — add/remove rows and columns, edit cell text directly, set per-column alignment (`l`/`c`/`r`), toggle borders (`|` between columns, `\hline` between rows). Opens pre-populated by parsing the table currently between `\begin{tabular}{...}` and `\end{tabular}`; saving serializes the grid back to LaTeX and replaces that exact range in the (Yjs-shared) document, so co-editors see the update live like any other edit.
+- **Scope, stated up front:** targets the common case — simple grids with basic alignment/borders — not a full LaTeX table parser. Constructs like `\multicolumn`/`\multirow`, nested tables, or custom column types (`p{}`, `m{}`, etc.) are out of scope for a first version; same "best-effort, not a real parser" discipline already used for `log_parser.py`/`polishingLint.ts`. A table using anything outside that scope should be left untouched (detected and reported as "not editable here") rather than silently mangled.
+- **Acceptance:** clicking the gutter icon on a simple existing table opens the designer pre-filled with its actual contents; editing cells/rows/columns/alignment and saving updates the source correctly and round-trips (re-opening shows the same grid); a table using an out-of-scope construct is left alone with a clear message, never corrupted.
+
 ---
 
 ## 10. Repository layout (target)

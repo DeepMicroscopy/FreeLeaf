@@ -1,5 +1,7 @@
 import type { CompletionContext, CompletionResult } from "@codemirror/autocomplete";
 
+import { applyAndCloseBrace } from "./completionUtils";
+
 // Matches while the cursor is inside an unclosed \ref{...} (or a variant
 // command) — same shape as citeCompletion.ts's CITE_COMMAND_RE.
 const REF_COMMAND_RE = /\\(?:ref|eqref|pageref|nameref|[Cc]ref)\{([^{}]*)$/;
@@ -87,6 +89,7 @@ export function refCompletionSource(getLabels: () => LabelInfo[]) {
         label: l.key,
         detail: l.description || undefined,
         type: "text",
+        apply: applyAndCloseBrace,
       })),
       filter: true,
     };

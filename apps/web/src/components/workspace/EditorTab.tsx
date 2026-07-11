@@ -16,6 +16,9 @@ import type { CompilePaneHandle } from "./CompilePane";
 import { ModeSwitcher } from "./ModeSwitcher";
 import type { LintFinding } from "./polishingLint";
 import { SplitPane } from "./SplitPane";
+import { serializeTabular } from "./tableDesigner";
+import type { TabularMatch, TableGridModel } from "./tableDesigner";
+import { TableDesignerDialog } from "./TableDesignerDialog";
 import styles from "./EditorTab.module.css";
 
 type SnapshotOut = components["schemas"]["SnapshotOut"];
@@ -207,6 +210,42 @@ export function EditorTab() {
         ]
       : [];
 
+  // Table Designer (Plan.md §9 Phase 10): opened from a gutter icon inside
+  // CodeMirrorEditor, which does the actual tabular parsing (it owns the
+  // live document) and hands back the parsed match plus a scoped `applyEdit`
+  // that re-verifies the target range is unchanged before writing.
+  const [tableDesigner, setTableDesigner] = useState<{
+    match: TabularMatch;
+    applyEdit: (newText: string) => boolean;
+  } | null>(null);
+
+  const handleOpenTableDesigner = useCallback(
+    (match: TabularMatch, applyEdit: (newText: string) => boolean) => {
+      if (!match.supported) {
+        show(`This table isn't editable here: ${match.reason}`, "error");
+        return;
+      }
+      setTableDesigner({ match, applyEdit });
+    },
+    [show],
+  );
+
+  const handleSaveTable = useCallback(
+    (newModel: TableGridModel) => {
+      if (!tableDesigner) return;
+      const newText = serializeTabular(tableDesigner.match.envName, newModel);
+      const ok = tableDesigner.applyEdit(newText);
+      setTableDesigner(null);
+      show(
+        ok
+          ? "Table updated."
+          : "This table changed elsewhere while you were editing — please reopen the Table Designer.",
+        ok ? "default" : "error",
+      );
+    },
+    [tableDesigner, show],
+  );
+
   if (!selectedFile) {
     return (
       <EmptyState
@@ -222,6 +261,7 @@ export function EditorTab() {
   }
 
   return (
+    <>
     <SplitPane
       storageKey="freeleaf.editor.split"
       left={
@@ -317,6 +357,7 @@ export function EditorTab() {
               trackChangesBaseline={mode === "reviewing" ? baselineContent : null}
               polishingEnabled={mode === "polishing"}
               onLintFindings={setLintFindings}
+              onOpenTableDesigner={handleOpenTableDesigner}
             />
           </div>
         </div>
@@ -355,6 +396,15 @@ export function EditorTab() {
         )
       }
     />
+    {tableDesigner && (
+      <TableDesignerDialog
+        envName={tableDesigner.match.envName}
+        model={tableDesigner.match.model!}
+        onSave={handleSaveTable}
+        onCancel={() => setTableDesigner(null)}
+      />
+    )}
+    </>
   );
 }
 

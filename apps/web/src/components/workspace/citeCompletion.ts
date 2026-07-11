@@ -1,6 +1,8 @@
 import type { BibEntry } from "@freeleaf/shared";
 import type { CompletionContext, CompletionResult } from "@codemirror/autocomplete";
 
+import { applyAndCloseBrace } from "./completionUtils";
+
 // Matches while the cursor is inside an unclosed \cite{...} (or a variant
 // command), capturing everything typed so far inside the braces so we can
 // find the *current* comma-separated key (supports `\cite{a, b|}`).
@@ -27,6 +29,7 @@ export function citeCompletionSource(getEntries: () => BibEntry[]) {
         label: entry.key,
         detail: [entry.fields.title, entry.fields.author].filter(Boolean).join(" — ").slice(0, 70),
         type: "text",
+        apply: applyAndCloseBrace,
       })),
       filter: true,
     };
