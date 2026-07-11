@@ -731,6 +731,127 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/sso/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Public Providers */
+        get: operations["accounts_sso_api_list_public_providers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/ldap/{slug}/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ldap Login */
+        post: operations["accounts_sso_api_ldap_login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/saml/{slug}/metadata": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Saml Metadata */
+        get: operations["accounts_sso_api_saml_metadata"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/saml/{slug}/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Saml Login */
+        get: operations["accounts_sso_api_saml_login"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/saml/{slug}/acs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Saml Acs */
+        post: operations["accounts_sso_api_saml_acs"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/sso-providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Providers */
+        get: operations["accounts_sso_admin_api_list_providers"];
+        put?: never;
+        /** Create Provider */
+        post: operations["accounts_sso_admin_api_create_provider"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/sso-providers/{provider_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Provider */
+        delete: operations["accounts_sso_admin_api_delete_provider"];
+        options?: never;
+        head?: never;
+        /** Update Provider */
+        patch: operations["accounts_sso_admin_api_update_provider"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1147,6 +1268,180 @@ export interface components {
              * @default true
              */
             resolved: boolean;
+        };
+        /** SsoProviderPublicOut */
+        SsoProviderPublicOut: {
+            /** Slug */
+            slug: string;
+            /** Name */
+            name: string;
+            /** Kind */
+            kind: string;
+        };
+        /** LdapLoginIn */
+        LdapLoginIn: {
+            /** Username */
+            username: string;
+            /** Password */
+            password: string;
+        };
+        /** SsoProviderAdminOut */
+        SsoProviderAdminOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Slug */
+            slug: string;
+            /** Kind */
+            kind: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Created At */
+            created_at: string;
+            /** Updated At */
+            updated_at: string;
+            /** Saml Idp Entity Id */
+            saml_idp_entity_id: string;
+            /** Saml Idp Sso Url */
+            saml_idp_sso_url: string;
+            /** Saml Idp X509 Cert */
+            saml_idp_x509_cert: string;
+            /** Saml Email Attribute */
+            saml_email_attribute: string;
+            /** Saml Display Name Attribute */
+            saml_display_name_attribute: string;
+            /** Ldap Server Uri */
+            ldap_server_uri: string;
+            /** Ldap Bind Dn */
+            ldap_bind_dn: string;
+            /** Ldap Has Bind Password */
+            ldap_has_bind_password: boolean;
+            /** Ldap User Search Base */
+            ldap_user_search_base: string;
+            /** Ldap User Search Filter */
+            ldap_user_search_filter: string;
+            /** Ldap Email Attribute */
+            ldap_email_attribute: string;
+            /** Ldap Display Name Attribute */
+            ldap_display_name_attribute: string;
+            /** Ldap Use Starttls */
+            ldap_use_starttls: boolean;
+        };
+        /** SsoProviderCreateIn */
+        SsoProviderCreateIn: {
+            /** Name */
+            name: string;
+            /** Slug */
+            slug: string;
+            /** Kind */
+            kind: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Saml Idp Entity Id
+             * @default
+             */
+            saml_idp_entity_id: string;
+            /**
+             * Saml Idp Sso Url
+             * @default
+             */
+            saml_idp_sso_url: string;
+            /**
+             * Saml Idp X509 Cert
+             * @default
+             */
+            saml_idp_x509_cert: string;
+            /**
+             * Saml Email Attribute
+             * @default email
+             */
+            saml_email_attribute: string;
+            /**
+             * Saml Display Name Attribute
+             * @default displayName
+             */
+            saml_display_name_attribute: string;
+            /**
+             * Ldap Server Uri
+             * @default
+             */
+            ldap_server_uri: string;
+            /**
+             * Ldap Bind Dn
+             * @default
+             */
+            ldap_bind_dn: string;
+            /**
+             * Ldap Bind Password
+             * @default
+             */
+            ldap_bind_password: string;
+            /**
+             * Ldap User Search Base
+             * @default
+             */
+            ldap_user_search_base: string;
+            /**
+             * Ldap User Search Filter
+             * @default (uid=%(user)s)
+             */
+            ldap_user_search_filter: string;
+            /**
+             * Ldap Email Attribute
+             * @default mail
+             */
+            ldap_email_attribute: string;
+            /**
+             * Ldap Display Name Attribute
+             * @default displayName
+             */
+            ldap_display_name_attribute: string;
+            /**
+             * Ldap Use Starttls
+             * @default false
+             */
+            ldap_use_starttls: boolean;
+        };
+        /** SsoProviderUpdateIn */
+        SsoProviderUpdateIn: {
+            /** Name */
+            name?: string | null;
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Saml Idp Entity Id */
+            saml_idp_entity_id?: string | null;
+            /** Saml Idp Sso Url */
+            saml_idp_sso_url?: string | null;
+            /** Saml Idp X509 Cert */
+            saml_idp_x509_cert?: string | null;
+            /** Saml Email Attribute */
+            saml_email_attribute?: string | null;
+            /** Saml Display Name Attribute */
+            saml_display_name_attribute?: string | null;
+            /** Ldap Server Uri */
+            ldap_server_uri?: string | null;
+            /** Ldap Bind Dn */
+            ldap_bind_dn?: string | null;
+            /** Ldap Bind Password */
+            ldap_bind_password?: string | null;
+            /** Ldap User Search Base */
+            ldap_user_search_base?: string | null;
+            /** Ldap User Search Filter */
+            ldap_user_search_filter?: string | null;
+            /** Ldap Email Attribute */
+            ldap_email_attribute?: string | null;
+            /** Ldap Display Name Attribute */
+            ldap_display_name_attribute?: string | null;
+            /** Ldap Use Starttls */
+            ldap_use_starttls?: boolean | null;
         };
     };
     responses: never;
@@ -2363,6 +2658,204 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    accounts_sso_api_list_public_providers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SsoProviderPublicOut"][];
+                };
+            };
+        };
+    };
+    accounts_sso_api_ldap_login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LdapLoginIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserOut"];
+                };
+            };
+        };
+    };
+    accounts_sso_api_saml_metadata: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    accounts_sso_api_saml_login: {
+        parameters: {
+            query?: {
+                next?: string | null;
+            };
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    accounts_sso_api_saml_acs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    accounts_sso_admin_api_list_providers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SsoProviderAdminOut"][];
+                };
+            };
+        };
+    };
+    accounts_sso_admin_api_create_provider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SsoProviderCreateIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SsoProviderAdminOut"];
+                };
+            };
+        };
+    };
+    accounts_sso_admin_api_delete_provider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    accounts_sso_admin_api_update_provider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SsoProviderUpdateIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SsoProviderAdminOut"];
+                };
             };
         };
     };

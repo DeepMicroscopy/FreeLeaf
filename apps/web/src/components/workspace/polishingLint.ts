@@ -18,6 +18,13 @@
  *  - "Orphaned heading" means "no body content before the next heading or
  *    end of document" — a document-structure proxy, not real page-layout
  *    analysis (which would need the rendered PDF, not just the source).
+ *  - The symbol checks skip the *argument* of identifier-taking commands
+ *    (`\cite{...}`, `\ref{...}`, `\label{...}`, `\includegraphics{...}`,
+ *    `\href{url}{...}`, etc.) — a citation key like `smith_2020` or a path
+ *    like `fig_1.png` isn't prose, and underscores/etc. there are normal,
+ *    not typos. Only the first `{...}` group after the command is skipped
+ *    (so `\href{url_with_underscore}{normal prose}`'s second argument is
+ *    still checked).
  */
 
 export interface LintFinding {
@@ -40,6 +47,28 @@ const AMPERSAND_ENV_NAMES = new Set([
   "tabular", "tabular*", "tabularx", "array", "matrix", "pmatrix", "bmatrix",
   "vmatrix", "Vmatrix", "align", "align*", "alignat", "alignat*", "longtable",
 ]);
+
+// Commands whose (first) argument is an identifier/path/URL, not prose —
+// symbol checks (_, ^, &, #) don't apply inside it. Only the first `{...}`
+// group is skipped, so e.g. \href's second (prose) argument still is.
+const IDENTIFIER_ARG_RE =
+  /\\(cite\w*|parencite|autocite|textcite|ref|eqref|pageref|nameref|[Cc]ref|label|includegraphics|input|include|usepackage|documentclass|bibliography|bibliographystyle|href|url)\*?(\[[^\]]*\])?\{/g;
+
+function findIdentifierArgRanges(line: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  IDENTIFIER_ARG_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = IDENTIFIER_ARG_RE.exec(line))) {
+    const braceStart = m.index + m[0].length;
+    const closeIdx = line.indexOf("}", braceStart);
+    if (closeIdx !== -1) ranges.push([braceStart, closeIdx]);
+  }
+  return ranges;
+}
+
+function isExcluded(ranges: Array<[number, number]>, pos: number): boolean {
+  return ranges.some(([s, e]) => pos >= s && pos < e);
+}
 
 function findCommentIndex(line: string): number {
   for (let i = 0; i < line.length; i++) {
@@ -108,6 +137,7 @@ export function lintLatex(text: string): LintFinding[] {
     }
 
     // Inline math toggle and per-character unescaped-symbol checks.
+    const identifierRanges = findIdentifierArgRanges(line);
     for (let i = 0; i < line.length; i++) {
       const ch = line[i];
       const escaped = line[i - 1] === "\\";
@@ -116,6 +146,7 @@ export function lintLatex(text: string): LintFinding[] {
         continue;
       }
       if (escaped) continue;
+      if (isExcluded(identifierRanges, i)) continue;
 
       if (ch === "&") {
         const top = envStack[envStack.length - 1];

@@ -9,8 +9,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # 2. Install runtime & build-time system dependencies cleanly
+# libxmlsec1-openssl is the *runtime* lib python3-saml's `xmlsec` extension
+# links against (SAML sign-in, Plan.md §9 Phase 9) — kept, not purged below.
+# pkg-config/libxml2-dev/libxmlsec1-dev are build-only headers for compiling
+# that extension, same treatment as gcc/libpq-dev.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 gcc libpq-dev \
+    libxmlsec1-openssl pkg-config libxml2-dev libxmlsec1-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # 3. Copy requirements over safely on its own Docker layer
@@ -18,7 +23,7 @@ COPY requirements.txt .
 
 # 4. Install Python packages, then purge compiler dependencies to slim down the image
 RUN pip install -r requirements.txt \
-    && apt-get purge -y --auto-remove gcc libpq-dev
+    && apt-get purge -y --auto-remove gcc libpq-dev pkg-config libxml2-dev libxmlsec1-dev
 
 # 5. Copy the rest of your source code
 COPY . .

@@ -14,6 +14,7 @@ interface AuthContextValue {
   // "email me a link" entry point on the generic login page anymore.
   requestMagicLink: (email: string, shareLinkToken: string, next?: string) => Promise<void>;
   verifyMagicLink: (token: string) => Promise<CurrentUser>;
+  ldapLogin: (slug: string, username: string, password: string) => Promise<CurrentUser>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -51,13 +52,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return data;
   }, []);
 
+  const ldapLogin = useCallback(async (slug: string, username: string, password: string) => {
+    const { data, error } = await api.POST("/api/auth/ldap/{slug}/login", {
+      params: { path: { slug } },
+      body: { username, password },
+    });
+    if (error || !data) throw new Error((error as { detail?: string })?.detail ?? "Invalid username or password.");
+    setUser(data);
+    return data;
+  }, []);
+
   const logout = useCallback(async () => {
     await api.POST("/api/auth/logout");
     setUser(null);
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, requestMagicLink, verifyMagicLink, logout, refresh }}>
+    <AuthContext.Provider value={{ user, loading, requestMagicLink, verifyMagicLink, ldapLogin, logout, refresh }}>
       {children}
     </AuthContext.Provider>
   );
@@ -71,5 +82,10 @@ export function useAuth(): AuthContextValue {
 
 export function orcidLoginUrl(next?: string): string {
   const url = `${apiOrigin()}/api/auth/orcid/login`;
+  return next ? `${url}?next=${encodeURIComponent(next)}` : url;
+}
+
+export function samlLoginUrl(slug: string, next?: string): string {
+  const url = `${apiOrigin()}/api/auth/saml/${slug}/login`;
   return next ? `${url}?next=${encodeURIComponent(next)}` : url;
 }

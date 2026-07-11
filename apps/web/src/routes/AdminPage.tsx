@@ -4,6 +4,7 @@ import { ArrowLeft, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 
+import { SsoProvidersPanel } from "../components/admin/SsoProvidersPanel";
 import { PageSpinner } from "../components/ui/Spinner";
 import styles from "./AdminPage.module.css";
 
@@ -11,6 +12,7 @@ type AdminUserOut = components["schemas"]["AdminUserOut"];
 
 export function AdminPage() {
   const [users, setUsers] = useState<AdminUserOut[] | null>(null);
+  const [tab, setTab] = useState<"users" | "sso">("users");
 
   useEffect(() => {
     api.GET("/api/admin/users").then(({ data }) => setUsers(data ?? []));
@@ -24,12 +26,28 @@ export function AdminPage() {
         </NavLink>
         <h1 className={styles.title}>
           <ShieldCheck size={18} aria-hidden="true" />
-          Admin — Users
+          Admin
         </h1>
+        <nav className={styles.tabs}>
+          <button
+            className={[styles.tab, tab === "users" ? styles.tabActive : ""].join(" ")}
+            onClick={() => setTab("users")}
+          >
+            Users
+          </button>
+          <button
+            className={[styles.tab, tab === "sso" ? styles.tabActive : ""].join(" ")}
+            onClick={() => setTab("sso")}
+          >
+            SSO Providers
+          </button>
+        </nav>
       </header>
 
       <main className={styles.main}>
-        {users === null ? (
+        {tab === "sso" ? (
+          <SsoProvidersPanel />
+        ) : users === null ? (
           <PageSpinner />
         ) : (
           <table className={styles.table}>

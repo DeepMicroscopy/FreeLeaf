@@ -79,6 +79,9 @@ services:
       # even in a split-subdomain deployment. See .env.prod.example.
       COLLAB_SHARED_SECRET: ${COLLAB_SHARED_SECRET}
       COLLAB_WS_URL: ${COLLAB_WS_URL}
+      # Institutional SSO (Plan.md §9 Phase 9) — the api's own public origin,
+      # used to build each SAML provider's entity ID/ACS URL. See .env.prod.example.
+      SAML_SP_BASE_URL: ${SAML_SP_BASE_URL}
     # VOLUMES REMOVED (Code is baked straight into the image)
     ports:
       - "127.0.0.1:8002:8000" # localhost-only debug access; nginx reaches it via the internal network regardless

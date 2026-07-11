@@ -16,6 +16,7 @@ import { useBibliography } from "../../lib/bibliography";
 import { Spinner } from "../ui/Spinner";
 import { useToast } from "../ui/Toast";
 import { citeCompletionSource } from "./citeCompletion";
+import { extractLabels, refCompletionSource } from "./refCompletion";
 import type { DuplicateChoice } from "./DuplicateDialog";
 import { DuplicateDialog } from "./DuplicateDialog";
 import { lintLatex } from "./polishingLint";
@@ -310,7 +311,14 @@ export function CodeMirrorEditor({
             history(),
             StreamLanguage.define(stex),
             ...(citeAutocompleteEnabled
-              ? [autocompletion({ override: [citeCompletionSource(() => entriesRef.current)] })]
+              ? [
+                  autocompletion({
+                    override: [
+                      citeCompletionSource(() => entriesRef.current),
+                      refCompletionSource(() => extractLabels(ytext.toString())),
+                    ],
+                  }),
+                ]
               : []),
             keymap.of([
               {

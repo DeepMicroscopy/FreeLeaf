@@ -7,3 +7,6 @@ gunicorn>=26,<27
 boto3>=1.43,<2
 django-anymail[mailgun]>=11,<12
 whitenoise>=6,<7
+ldap3>=2.9,<3
+python3-saml>=1.16,<2
+cryptography>=44,<45

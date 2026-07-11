@@ -38,6 +38,29 @@ services:
       - "8025:8025" # web UI
       - "1025:1025" # SMTP
 
+  # Disposable test identity providers (Plan.md §9 Phase 9) — stand-ins for
+  # a real institution's LDAP/AD directory and Shibboleth IdP, since none
+  # is available yet. Verifies the SP-side integration against real LDAP
+  # bind semantics and a real SAML 2.0 exchange; NOT a substitute for a
+  # final pass against an actual institutional IdP once one exists.
+  openldap:
+    image: osixia/openldap:1.5.0
+    environment:
+      LDAP_ORGANISATION: FreeLeaf Test University
+      LDAP_DOMAIN: freeleaf-test.edu
+      LDAP_ADMIN_PASSWORD: admin
+    ports:
+      - "389:389"
+
+  saml-idp:
+    image: kristophjunge/test-saml-idp:latest
+    environment:
+      SIMPLESAMLPHP_SP_ENTITY_ID: ${SAML_SP_BASE_URL:-http://localhost:8000}/api/auth/saml/test-uni/metadata
+      SIMPLESAMLPHP_SP_ASSERTION_CONSUMER_SERVICE: ${SAML_SP_BASE_URL:-http://localhost:8000}/api/auth/saml/test-uni/acs
+      SIMPLESAMLPHP_SP_SINGLE_LOGOUT_SERVICE: ${SAML_SP_BASE_URL:-http://localhost:8000}/api/auth/saml/test-uni/sls
+    ports:
+      - "8080:8080"
+
   api:
     build:
       context: apps/api
@@ -74,6 +97,10 @@ services:
       # network one.
       COLLAB_SHARED_SECRET: ${COLLAB_SHARED_SECRET:-dev-insecure-collab-secret}
       COLLAB_WS_URL: ${COLLAB_WS_URL:-ws://localhost:1234}
+      # Institutional SSO (Plan.md §9 Phase 9) — SAML_SP_BASE_URL must match
+      # the same variable used to configure the test saml-idp service above,
+      # since the IdP is told our entity ID/ACS URL up front.
+      SAML_SP_BASE_URL: ${SAML_SP_BASE_URL:-http://localhost:8000}
     volumes:
       - ./apps/api:/app
     ports:
