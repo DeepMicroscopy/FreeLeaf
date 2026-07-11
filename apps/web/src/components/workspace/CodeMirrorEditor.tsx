@@ -76,6 +76,7 @@ export function CodeMirrorEditor({
   jumpTarget,
   onActivity,
   onKeystroke,
+  onCursorLineChange,
 }: {
   projectId: string;
   fileId: string;
@@ -85,6 +86,7 @@ export function CodeMirrorEditor({
   onJumpToPdf?: (line: number) => void;
   onActivity?: () => void;
   onKeystroke?: () => void;
+  onCursorLineChange?: (line: number) => void;
   jumpTarget?: JumpTarget;
 }) {
   const { user } = useAuth();
@@ -103,6 +105,8 @@ export function CodeMirrorEditor({
   onActivityRef.current = onActivity;
   const onKeystrokeRef = useRef(onKeystroke);
   onKeystrokeRef.current = onKeystroke;
+  const onCursorLineChangeRef = useRef(onCursorLineChange);
+  onCursorLineChangeRef.current = onCursorLineChange;
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
   const addEntriesRef = useRef(addEntries);
@@ -299,6 +303,10 @@ export function CodeMirrorEditor({
               },
             }),
             yCollab(ytext, provider!.awareness, { undoManager: false }),
+            EditorView.updateListener.of((update) => {
+              if (!update.selectionSet) return;
+              onCursorLineChangeRef.current?.(update.state.doc.lineAt(update.state.selection.main.head).number);
+            }),
           ],
         });
 

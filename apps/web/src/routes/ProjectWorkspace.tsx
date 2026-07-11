@@ -10,6 +10,7 @@ import { SettingsTab } from "../components/workspace/SettingsTab";
 import { ShareButton } from "../components/workspace/ShareButton";
 import { PageSpinner } from "../components/ui/Spinner";
 import { BibliographyProvider } from "../lib/bibliography";
+import { EditingModeProvider } from "../lib/editingMode";
 import { WorkspaceProvider, useWorkspace } from "../lib/workspace";
 import styles from "./ProjectWorkspace.module.css";
 
@@ -19,7 +20,9 @@ export function ProjectWorkspace() {
   return (
     <WorkspaceProvider projectId={projectId}>
       <BibliographyProvider projectId={projectId}>
-        <WorkspaceShell />
+        <EditingModeProvider projectId={projectId}>
+          <WorkspaceShell />
+        </EditingModeProvider>
       </BibliographyProvider>
     </WorkspaceProvider>
   );

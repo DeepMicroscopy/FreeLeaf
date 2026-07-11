@@ -178,3 +178,34 @@ class ProjectSnapshot(models.Model):
 
     def __str__(self):
         return f"ProjectSnapshot({self.project_id}, {self.kind}, {self.created_at})"
+
+
+class Comment(models.Model):
+    """A comment anchored to a line in a file (Plan.md §9 Phase 8). Anchoring
+    is deliberately just a line number captured at creation time, not a Yjs
+    relative position — simple, and honest that it can drift if lines are
+    inserted above it later, rather than pretending to track edits
+    precisely. Only one level of replies is supported (a reply's `parent`
+    must itself be a top-level comment, enforced in comments_api.py) —
+    matches common review-tool UX (a thread + flat replies, not nested
+    reply-to-reply chains)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="comments")
+    file = models.ForeignKey(ProjectFile, on_delete=models.CASCADE, related_name="comments")
+    parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.CASCADE, related_name="replies")
+    anchor_line = models.PositiveIntegerField()
+    body = models.TextField()
+    created_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+    resolved = models.BooleanField(default=False)
+    resolved_by = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"Comment({self.project_id}, {self.file_id}, line {self.anchor_line})"

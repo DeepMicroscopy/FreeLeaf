@@ -254,7 +254,7 @@ Phase 7's polish bullet list names "version history/snapshots," but PLAN.md §9 
 
 ## Phase 8 — Comments and Versioning: IN PROGRESS
 
-Per PLAN.md §9: editing modes (Writing/Reviewing/Polishing), tracked-changes diff markup, a comments pane (add/reply/resolve), the polishing-mode linter (micro-typography, missing `~` before citations, etc.), and full version control (automated snapshots, named versions, time-travel UI with restore). Also bundles a small warnings fix. Version control + the warnings fix are DONE — see entries below. Not yet started: editing modes, track changes, comments pane, polishing linter.
+Per PLAN.md §9: editing modes (Writing/Reviewing/Polishing), tracked-changes diff markup, a comments pane (add/reply/resolve), the polishing-mode linter (micro-typography, missing `~` before citations, etc.), and full version control (automated snapshots, named versions, time-travel UI with restore). Also bundles a small warnings fix. Version control, the warnings fix, the editing-mode selector, and the comments pane are DONE — see entries below. Not yet started: track changes, polishing linter.
 
 ## Admin user management: DONE (site-settings/ORCID whitelist: dropped)
 
@@ -307,3 +307,39 @@ See `PLAN.md §9` for full remaining scope (version history/snapshots — now do
 **Automated snapshots.** Implemented client-side (no job queue/cron exists in this stack, and PLAN.md doesn't call for adding one): `EditorTab.tsx` tracks real keydown events (1000 keystrokes → immediate auto-snapshot) and resets a 5-minute inactivity timer on every Yjs update (fires → auto-snapshot), with a 60s client-side minimum gap between auto-snapshots as a defensive floor. Only wired when `canWrite` — viewers never trigger snapshot attempts.
 
 Verified live end-to-end via Playwright against a real owner session: created a project, typed content, saved a named version ("First draft"), edited further, opened the diff view and confirmed the added paragraph rendered correctly aligned and highlighted on only the "Current" side, clicked "Restore to this version," confirmed the safety-snapshot dialog copy, restored, and confirmed both that a new "Automatic snapshot" entry appeared (with the correct "Automatic backup before restoring to ..." description) and that the editor's live content reverted to exactly the saved version — including diffing the restored state against itself afterward and confirming "No differences from the current file content."
+
+## Editing mode selector (Writing/Reviewing/Polishing): DONE
+
+Foundation piece for the rest of Phase 8 — track changes (Reviewing) and the aggressive linter (Polishing) both need somewhere to hook into; this ships the mode mechanism and switcher UI itself, honestly, without pretending the mode-specific behaviors exist yet.
+
+**Scope decision.** Asked the user how to sequence the remaining Phase 8 work (editing modes / comments pane / track changes, each a substantial feature on its own); they chose editing modes first as the foundation.
+
+**Design: per-user, per-project preference, not project state.** `apps/web/src/lib/editingMode.tsx` — `EditingModeProvider`/`useEditingMode()`, mode persisted to `localStorage` keyed by project id (same pattern as `SplitPane`'s `storageKey`), deliberately *not* synced via Yjs/`ProjectSettings` — each collaborator can be in a different mode simultaneously (one person writing while another reviews), so it has no business being shared state.
+
+**UI:** new `ModeSwitcher.tsx`, a 3-way segmented control in the editor pane header next to the file path. Writing mode is the existing, fully-functional default (nothing changed). Reviewing and Polishing are selectable and persist correctly, but since their actual mechanics (track-changes diff markup; the polishing linter) aren't built yet, selecting either shows an explicit, honest banner ("Reviewing mode: track changes aren't implemented yet — edits apply directly, just like Writing mode.") rather than silently doing nothing or half-implementing a stub.
+
+Verified live via Playwright: switched Writing → Reviewing → Polishing (banners appear/disappear correctly each time), reloaded the page and confirmed the selected mode (Polishing) persisted via `localStorage`, switched back to Writing and confirmed the banner disappears.
+
+## Prod build fix: stale lockfile + a latent type error `tsc --noEmit` was silently missing: RESOLVED
+
+**Bug report:** production `web` build failing with `ERR_PNPM_OUTDATED_LOCKFILE` on `pnpm install --frozen-lockfile`.
+
+**Root cause #1:** `pnpm-lock.yaml` lives at the repo root, which isn't bind-mounted into the `web` dev container (only `apps/web` and `packages/shared` are). Adding the `diff` dependency (for the version-history diff view) via `pnpm add diff` inside the container updated `apps/web/package.json` (bind-mounted, persisted to host) but the lockfile write happened in the container's own copy of the repo root and never reached the host — leaving `pnpm-lock.yaml` silently stale. Fixed with `pnpm install` from the host repo root (host `pnpm@9.15.0` matches root `package.json`'s `packageManager` exactly); verified with `pnpm install --frozen-lockfile`.
+
+**Root cause #2, uncovered by fixing #1:** the real prod build (`tsc -b && vite build`) then failed on an actual type error in `EditorTab.tsx` (a `POST /snapshots` call missing required `label`/`description` fields) that had been present the whole time. It was invisible because `apps/web/tsconfig.json` has `"files": []` and only `references` — a valid TS project-references setup, but it means plain `tsc --noEmit` (what this session had been "verifying" with after every change) type-checks *zero files* and always exits 0. Fixed the actual type error; going forward, real verification needs `tsc -b`, not `tsc --noEmit` — saved to memory.
+
+**Found and fixed while investigating:** the `collab` service's Docker image was stale — new version-history code (`/replace/:fileId`) had been added to its source earlier in this session but the container was never rebuilt (it's not bind-mounted, unlike `web`/`api`), so the endpoint didn't exist in the running service at all. The earlier "verified" restore test had passed only because it incidentally exercised a fallback code path, not the actual new logic. Rebuilt (`docker compose build collab && docker compose up -d collab`) and re-verified the live-collaboration-aware restore path specifically — with a genuine two-browser-context Playwright test (one context keeps a file open in the editor the whole time; a second context triggers the restore) confirming the open editor updates in real time via the real Yjs transaction, not just on reload.
+
+All three fixes verified: `pnpm install --frozen-lockfile` succeeds, a full `docker build -f apps/web/Dockerfile.prod .` succeeds end-to-end, and the two-context live-restore test passes.
+
+## Comments pane (add/reply/resolve): DONE
+
+**Model.** New `Comment` (project + file FKs, `anchor_line`, `body`, `created_by`, `resolved`/`resolved_by`/`resolved_at`, self-referencing `parent`). Anchoring is deliberately just a line number captured at creation time, not a Yjs relative position — simple and honest that it can drift if lines are inserted above it later, rather than pretending to track edits precisely (same "best-effort, not a real parser" trade-off philosophy as `log_parser.py`'s file-tracking). Only one level of replies is supported (a reply's `parent` must itself be a top-level comment, enforced server-side) — matches common review-tool UX (a thread + flat replies, not nested reply-to-reply chains).
+
+**New `apps/api/projects/comments_api.py`:** `GET`/`POST /projects/{id}/files/{file_id}/comments` (any member — Plan.md doesn't restrict who can comment, only who can *resolve*), `PATCH /projects/{id}/comments/{id}/resolve` (owner/editor only, matching Plan.md's explicit "Editors and owners may resolve comments"), `DELETE /projects/{id}/comments/{id}` (comment's own author, or an owner). 18 new backend tests, all passing (143 total across the whole backend now).
+
+**Frontend:** new `CommentsPane.tsx`, toggled via a message-square icon button next to the mode switcher — "a new pane right to the text and left to the pdf view" is implemented as a second, inner `SplitPane` nested inside the existing editor/PDF split (only when comments are toggled on; the default 2-pane layout is untouched otherwise). New top-level comments anchor to the editor's *current cursor line* (tracked live via a new `onCursorLineChange` prop on `CodeMirrorEditor`, a CodeMirror `updateListener`); clicking a comment's line number jumps the editor there, reusing the exact same `jumpTarget` mechanism already built for SyncTeX backward-search. Resolve/reopen and delete buttons are conditionally rendered per the backend's `can_delete`/role information, not just hidden via a client-side guess.
+
+**Known, deliberate limitation:** no real-time push — other collaborators only see new comments/replies/resolutions after their own next fetch (mount, or their own action), not live-pushed like the document text itself. Comments are metadata about the document rather than the document's live-typing surface, so a dedicated Yjs room for them wasn't judged worth the added complexity for this increment; noting it as a known follow-up rather than pretending it's live.
+
+Verified live via Playwright: toggled the pane on, added a comment anchored to the editor's current line, confirmed clicking its line link jumps the cursor there, replied, resolved (badge appears with resolver name), reopened (badge clears), deleted (removes its reply too), and toggled the pane back off.
