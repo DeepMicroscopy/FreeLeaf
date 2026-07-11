@@ -159,6 +159,59 @@
   outline-offset: -2px;
 }
 
+.cellWrap {
+  display: flex;
+  flex-direction: column;
+}
+
+.spanControls,
+.mergeControls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px 4px;
+}
+
+.mergeControls {
+  justify-content: flex-end;
+}
+
+.mergeButton,
+.splitButton {
+  border: 1px solid var(--border-default);
+  background: var(--bg-inset);
+  color: var(--text-tertiary);
+  border-radius: 4px;
+  width: 18px;
+  height: 18px;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  flex: none;
+}
+
+.mergeButton:hover,
+.splitButton:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.splitButton:hover {
+  color: #ef4444;
+  border-color: #ef4444;
+}
+
+.widthInput {
+  width: 40px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  padding: 2px 4px;
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  background: var(--bg-inset);
+  color: var(--text-primary);
+}
+
 .actions {
   display: flex;
   justify-content: flex-end;
