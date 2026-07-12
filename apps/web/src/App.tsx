@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 
 import { ToastProvider } from "./components/ui/Toast";
 import { AuthProvider, useAuth } from "./lib/auth";
+import { SiteInfoProvider } from "./lib/siteInfo";
 import { PageSpinner } from "./components/ui/Spinner";
 import { AdminPage } from "./routes/AdminPage";
 import { JoinPage } from "./routes/JoinPage";
@@ -117,11 +118,13 @@ function AppRoutes() {
 function App() {
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <ToastProvider>
-          <AppRoutes />
-        </ToastProvider>
-      </AuthProvider>
+      <SiteInfoProvider>
+        <AuthProvider>
+          <ToastProvider>
+            <AppRoutes />
+          </ToastProvider>
+        </AuthProvider>
+      </SiteInfoProvider>
     </BrowserRouter>
   );
 }

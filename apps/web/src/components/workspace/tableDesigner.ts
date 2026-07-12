@@ -229,6 +229,21 @@ function tokenizeBody(body: string): Token[] {
       i += 2;
       continue;
     }
+    // `\%` is a literal percent sign, same rationale as `\&` above.
+    if (ch === "\\" && body[i + 1] === "%") {
+      buf += "\\%";
+      i += 2;
+      continue;
+    }
+    // An unescaped `%` starts a LaTeX comment running to end of line —
+    // regardless of brace depth, since it's not structural tabular syntax.
+    // The newline itself is swallowed too (real LaTeX comments eat the
+    // trailing newline so they don't introduce a paragraph break).
+    if (ch === "%") {
+      const nl = body.indexOf("\n", i);
+      i = nl === -1 ? body.length : nl + 1;
+      continue;
+    }
     // A `\\` row separator (and `\hline`/booktabs rules below) are only
     // structural at depth 0 — inside a cell's own braces (e.g.
     // `\thead{a\\b}`), `\\` is just a literal line break within that cell.

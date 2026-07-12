@@ -55,6 +55,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/site-info": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Site Info */
+        get: operations["accounts_api_site_info"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/logout": {
         parameters: {
             query?: never;
@@ -981,6 +998,11 @@ export interface components {
              */
             is_admin: boolean;
         };
+        /** SiteInfoOut */
+        SiteInfoOut: {
+            /** Site Name */
+            site_name: string;
+        };
         /** AnonymousLoginIn */
         AnonymousLoginIn: {
             /** Display Name */
@@ -1265,11 +1287,15 @@ export interface components {
             orcid_enabled: boolean;
             /** Orcid Configured */
             orcid_configured: boolean;
+            /** Site Name */
+            site_name: string;
         };
         /** SiteSettingsIn */
         SiteSettingsIn: {
             /** Orcid Enabled */
             orcid_enabled: boolean;
+            /** Site Name */
+            site_name: string;
         };
         /** SnapshotOut */
         SnapshotOut: {
@@ -1663,6 +1689,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserOut"] | null;
+                };
+            };
+        };
+    };
+    accounts_api_site_info: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteInfoOut"];
                 };
             };
         };

@@ -10,6 +10,7 @@ import { PageSpinner } from "../components/ui/Spinner";
 import { EmptyState } from "../components/ui/EmptyState";
 import { OrcidMark } from "../components/auth/OrcidMark";
 import { orcidLoginUrl, useAuth } from "../lib/auth";
+import { useSiteInfo } from "../lib/siteInfo";
 import loginStyles from "./LoginPage.module.css";
 import styles from "./JoinPage.module.css";
 
@@ -18,6 +19,7 @@ type MagicLinkState = "idle" | "sending" | "sent";
 export function JoinPage() {
   const { token } = useParams<{ token: string }>();
   const { user, loading, refresh, requestMagicLink } = useAuth();
+  const { siteName } = useSiteInfo();
   const navigate = useNavigate();
 
   const [joining, setJoining] = useState(false);
@@ -102,7 +104,7 @@ export function JoinPage() {
           </span>
           <h1 className={loginStyles.title}>You're invited</h1>
         </div>
-        <p className={loginStyles.tagline}>Join this FreeLeaf project to start collaborating.</p>
+        <p className={loginStyles.tagline}>Join this {siteName} project to start collaborating.</p>
 
         {joinError && <p className={styles.error}>{joinError}</p>}
 

@@ -9,6 +9,7 @@ import { TextField } from "../components/ui/TextField";
 import { PageSpinner } from "../components/ui/Spinner";
 import { OrcidMark } from "../components/auth/OrcidMark";
 import { orcidLoginUrl } from "../lib/auth";
+import { useSiteInfo } from "../lib/siteInfo";
 import loginStyles from "./LoginPage.module.css";
 
 type SetupStatusOut = components["schemas"]["SetupStatusOut"];
@@ -20,6 +21,7 @@ type SetupStatusOut = components["schemas"]["SetupStatusOut"];
  * complete sign-in through it (or a one-time bootstrap email link) —
  * whichever identity finishes that becomes the site's first admin. */
 export function SetupWizardPage() {
+  const { siteName } = useSiteInfo();
   const [status, setStatus] = useState<SetupStatusOut | null>(null);
   const [togglingOrcid, setTogglingOrcid] = useState(false);
   const [email, setEmail] = useState("");
@@ -61,7 +63,7 @@ export function SetupWizardPage() {
           <span className={loginStyles.logo} aria-hidden="true">
             🍃
           </span>
-          <h1 className={loginStyles.title}>Welcome to FreeLeaf</h1>
+          <h1 className={loginStyles.title}>Welcome to {siteName}</h1>
         </div>
         <p className={loginStyles.tagline}>
           <ShieldCheck size={14} aria-hidden="true" style={{ verticalAlign: -2 }} /> No admin account exists yet on

@@ -113,14 +113,20 @@ class SiteSettingsOut(Schema):
     # informational: toggling `orcid_enabled` on with no credentials set
     # would just produce a broken "Sign in with ORCID" button.
     orcid_configured: bool
+    site_name: str
 
 
 class SiteSettingsIn(Schema):
     orcid_enabled: bool
+    site_name: str
 
 
 def _site_settings_out(s: SiteSettings) -> SiteSettingsOut:
-    return SiteSettingsOut(orcid_enabled=s.orcid_enabled, orcid_configured=bool(orcid.CLIENT_ID and orcid.CLIENT_SECRET))
+    return SiteSettingsOut(
+        orcid_enabled=s.orcid_enabled,
+        orcid_configured=bool(orcid.CLIENT_ID and orcid.CLIENT_SECRET),
+        site_name=s.site_name,
+    )
 
 
 @router.get("/admin/site-settings", response=SiteSettingsOut)
@@ -139,6 +145,10 @@ def update_site_settings(request, payload: SiteSettingsIn):
     # an admin can't accidentally lock everyone, including themselves, out.
     if not payload.orcid_enabled and not SsoProvider.objects.filter(enabled=True).exists():
         raise HttpError(400, "Can't disable ORCID while no institutional SSO provider is enabled — nobody would be able to sign in.")
+    site_name = payload.site_name.strip()
+    if not site_name:
+        raise HttpError(400, "Site name can't be blank.")
     s.orcid_enabled = payload.orcid_enabled
-    s.save(update_fields=["orcid_enabled"])
+    s.site_name = site_name
+    s.save(update_fields=["orcid_enabled", "site_name"])
     return _site_settings_out(s)

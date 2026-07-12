@@ -2,6 +2,8 @@ import { api } from "@freeleaf/shared";
 import type { components } from "@freeleaf/shared";
 import { useCallback, useEffect, useState } from "react";
 
+import { Button } from "../ui/Button";
+import { TextField } from "../ui/TextField";
 import { PageSpinner } from "../ui/Spinner";
 import { useToast } from "../ui/Toast";
 import { OrcidMark } from "../auth/OrcidMark";
@@ -13,10 +15,13 @@ export function SiteSettingsPanel() {
   const { show } = useToast();
   const [settings, setSettings] = useState<SiteSettingsOut | null>(null);
   const [saving, setSaving] = useState(false);
+  const [siteName, setSiteName] = useState("");
+  const [savingName, setSavingName] = useState(false);
 
   const load = useCallback(async () => {
     const { data } = await api.GET("/api/admin/site-settings");
     setSettings(data ?? null);
+    if (data) setSiteName(data.site_name);
   }, []);
 
   useEffect(() => {
@@ -27,7 +32,7 @@ export function SiteSettingsPanel() {
     if (!settings) return;
     setSaving(true);
     const { data, error } = await api.PUT("/api/admin/site-settings", {
-      body: { orcid_enabled: !settings.orcid_enabled },
+      body: { orcid_enabled: !settings.orcid_enabled, site_name: settings.site_name },
     });
     setSaving(false);
     if (data) {
@@ -38,10 +43,46 @@ export function SiteSettingsPanel() {
     }
   }
 
+  async function saveSiteName() {
+    if (!settings || !siteName.trim()) return;
+    setSavingName(true);
+    const { data, error } = await api.PUT("/api/admin/site-settings", {
+      body: { orcid_enabled: settings.orcid_enabled, site_name: siteName.trim() },
+    });
+    setSavingName(false);
+    if (data) {
+      setSettings(data);
+      setSiteName(data.site_name);
+      show("Site name updated.");
+    } else if (error) {
+      show((error as { detail?: string }).detail ?? "Couldn't update site settings.", "error");
+    }
+  }
+
   if (!settings) return <PageSpinner />;
 
   return (
     <div className={styles.panel}>
+      <section className={styles.card}>
+        <div className={styles.cardHeader}>
+          <div>
+            <h3 className={styles.cardTitle}>Site name</h3>
+            <p className={styles.cardHint}>Shown next to the leaf icon throughout the app, instead of "FreeLeaf".</p>
+          </div>
+        </div>
+        <div className={styles.nameRow}>
+          <TextField
+            label="Site name"
+            value={siteName}
+            onChange={(e) => setSiteName(e.target.value)}
+            maxLength={100}
+          />
+          <Button onClick={() => void saveSiteName()} loading={savingName} disabled={!siteName.trim()}>
+            Save
+          </Button>
+        </div>
+      </section>
+
       <section className={styles.card}>
         <div className={styles.cardHeader}>
           <OrcidMark />

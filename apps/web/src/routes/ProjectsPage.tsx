@@ -11,12 +11,14 @@ import { EmptyState } from "../components/ui/EmptyState";
 import { PageSpinner } from "../components/ui/Spinner";
 import { useToast } from "../components/ui/Toast";
 import { useAuth } from "../lib/auth";
+import { useSiteInfo } from "../lib/siteInfo";
 import styles from "./ProjectsPage.module.css";
 
 type ProjectOut = components["schemas"]["ProjectOut"];
 
 export function ProjectsPage() {
   const { user, logout } = useAuth();
+  const { siteName } = useSiteInfo();
   const { show } = useToast();
   const navigate = useNavigate();
 
@@ -128,7 +130,7 @@ export function ProjectsPage() {
       <header className={styles.header}>
         <div className={styles.brand}>
           <span aria-hidden="true">🍃</span>
-          <span className={styles.brandName}>FreeLeaf</span>
+          <span className={styles.brandName}>{siteName}</span>
         </div>
         <div className={styles.userMenu}>
           <span className={styles.userName}>{user?.display_name ?? user?.email ?? "Anonymous"}</span>

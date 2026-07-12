@@ -35,6 +35,18 @@
   color: var(--text-secondary);
 }
 
+.nameRow {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.nameRow > *:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
 .footnote {
   margin: var(--space-3) 0 0;
   font-size: 12px;

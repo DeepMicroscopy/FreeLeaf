@@ -61,6 +61,17 @@ def me(request):
     return _user_out(user) if user else None
 
 
+class SiteInfoOut(Schema):
+    site_name: str
+
+
+@router.get("/site-info", response=SiteInfoOut)
+def site_info(request):
+    # Public and unauthenticated on purpose — the login/setup pages need it
+    # before anyone's signed in, and it's not sensitive (just branding).
+    return SiteInfoOut(site_name=SiteSettings.load().site_name)
+
+
 @router.post("/auth/logout", auth=csrf_protect)
 def logout(request):
     log_out(request)

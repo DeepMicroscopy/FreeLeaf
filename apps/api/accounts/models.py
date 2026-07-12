@@ -57,6 +57,9 @@ class SiteSettings(models.Model):
     fixed known primary key the caller has to remember."""
 
     orcid_enabled = models.BooleanField(default=True)
+    # Shown next to the leaf icon in place of the literal "FreeLeaf" text —
+    # the icon itself isn't configurable, just the name beside it.
+    site_name = models.CharField(max_length=100, default="FreeLeaf")
 
     @classmethod
     def load(cls) -> "SiteSettings":

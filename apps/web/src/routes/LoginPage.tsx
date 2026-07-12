@@ -8,6 +8,7 @@ import { useNavigate } from "react-router-dom";
 import { TextField } from "../components/ui/TextField";
 import { Button } from "../components/ui/Button";
 import { orcidLoginUrl, samlLoginUrl, useAuth } from "../lib/auth";
+import { useSiteInfo } from "../lib/siteInfo";
 import { OrcidMark } from "../components/auth/OrcidMark";
 import styles from "./LoginPage.module.css";
 
@@ -15,6 +16,7 @@ type SsoProviderPublicOut = components["schemas"]["SsoProviderPublicOut"];
 
 export function LoginPage() {
   const { ldapLogin } = useAuth();
+  const { siteName } = useSiteInfo();
   const navigate = useNavigate();
   const [providers, setProviders] = useState<SsoProviderPublicOut[]>([]);
   const [orcidAvailable, setOrcidAvailable] = useState(true);
@@ -51,7 +53,7 @@ export function LoginPage() {
           <span className={styles.logo} aria-hidden="true">
             🍃
           </span>
-          <h1 className={styles.title}>FreeLeaf</h1>
+          <h1 className={styles.title}>{siteName}</h1>
         </div>
         <p className={styles.tagline}>
           Open, self-hostable, collaborative LaTeX editing.
