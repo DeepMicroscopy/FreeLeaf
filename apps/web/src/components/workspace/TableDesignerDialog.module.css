@@ -129,8 +129,9 @@
 }
 
 .rowControlCell {
-  padding: 3px;
+  padding: 6px 3px 3px;
   white-space: nowrap;
+  vertical-align: top;
 }
 
 .rowControlInner {
@@ -142,6 +143,7 @@
 .dataCell {
   padding: 0;
   border: 1px solid transparent;
+  vertical-align: top;
 }
 
 .cellInput {

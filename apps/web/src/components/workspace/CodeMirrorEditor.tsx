@@ -336,6 +336,9 @@ export function CodeMirrorEditor({
 
     let provider: WebsocketProvider | null = null;
     let ydoc: Y.Doc | null = null;
+    let tokenRefreshInterval: ReturnType<typeof setInterval> | null = null;
+    let handleVisibility: (() => void) | null = null;
+    let handleWake: (() => void) | null = null;
 
     (async () => {
       const [{ data }, { data: settingsData }] = await Promise.all([
@@ -352,6 +355,49 @@ export function CodeMirrorEditor({
       provider = new WebsocketProvider(data.ws_url, fileId, ydoc, {
         params: { token: data.token },
       });
+
+      // The collab token is deliberately short-lived (60s — "only needs to
+      // live long enough to open the WS connection", see collab_api.py) but
+      // y-websocket bakes it into `params` once and reuses that same object
+      // for every automatic reconnect it ever makes, for the lifetime of
+      // this provider — it never refetches. Left alone, any reconnect more
+      // than ~60s after the page loaded (a laptop sleep/wake being the most
+      // reliable way to trigger one) fails forever: the server correctly
+      // rejects the stale token, and y-websocket has no way to know a fresh
+      // one exists, so it just retries the same dead token indefinitely.
+      //
+      // `provider.url` is a *getter* that re-encodes `provider.params` on
+      // every read (see y-websocket's source), so mutating `params.token`
+      // in place is enough — the next reconnect attempt (automatic or
+      // forced below) picks up whatever token is currently in there.
+      const refreshCollabToken = async () => {
+        if (cancelled) return;
+        const { data: fresh } = await api.GET("/api/projects/{project_id}/files/{file_id}/collab-token", {
+          params: { path: { project_id: projectId, file_id: fileId } },
+        });
+        if (fresh && !cancelled && provider) provider.params.token = fresh.token;
+      };
+      tokenRefreshInterval = setInterval(() => void refreshCollabToken(), 40_000);
+
+      // Belt-and-suspenders for the common real-world trigger (laptop
+      // sleep/wake, or a backgrounded/throttled tab): as soon as the page
+      // is visible/back online again, get a fresh token immediately and,
+      // if the socket isn't already connected, force a reconnect right
+      // away rather than waiting on y-websocket's own ~30s stale-connection
+      // detection before it even tries.
+      handleWake = () => {
+        void refreshCollabToken().then(() => {
+          if (!cancelled && provider && !provider.wsconnected) {
+            provider.disconnect();
+            provider.connect();
+          }
+        });
+      };
+      handleVisibility = () => {
+        if (document.visibilityState === "visible") handleWake?.();
+      };
+      document.addEventListener("visibilitychange", handleVisibility);
+      window.addEventListener("online", handleWake);
 
       const { color, colorLight } = colorForUserId(user?.id ?? "anonymous");
       provider.awareness.setLocalStateField("user", {
@@ -524,6 +570,9 @@ export function CodeMirrorEditor({
     return () => {
       cancelled = true;
       if (changeTimerRef.current) clearTimeout(changeTimerRef.current);
+      if (tokenRefreshInterval) clearInterval(tokenRefreshInterval);
+      if (handleVisibility) document.removeEventListener("visibilitychange", handleVisibility);
+      if (handleWake) window.removeEventListener("online", handleWake);
       viewRef.current?.destroy();
       viewRef.current = null;
       provider?.destroy();
