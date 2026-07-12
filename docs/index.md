@@ -22,6 +22,7 @@ description: Open, self-hostable, real-time collaborative LaTeX editing.
 </section>
 
 <nav class="feature-grid">
+  <a href="#sovereignty">Digital sovereignty</a>
   <a href="#collaboration">Real-time collaboration</a>
   <a href="#citations">Citations &amp; references</a>
   <a href="#comments">Comments on marked text</a>
@@ -31,6 +32,17 @@ description: Open, self-hostable, real-time collaborative LaTeX editing.
   <a href="#history">Version history</a>
   <a href="#signin">Flexible sign-in</a>
 </nav>
+
+<section class="feature-solo" id="sovereignty">
+  <h2>Digital sovereignty, not vendor lock-in</h2>
+  <p>
+    Self-host it on your own institution's servers and it's genuinely yours: documents,
+    database, and object storage all live under your own infrastructure and jurisdiction —
+    not a third party's cloud, terms of service, or pricing changes. No account required to
+    read your data, no dependency on someone else's roadmap or uptime. Point it at your own
+    domain and SSO, and your research stays under your own control end to end.
+  </p>
+</section>
 
 <section class="feature" id="collaboration">
   <div class="feature-text">

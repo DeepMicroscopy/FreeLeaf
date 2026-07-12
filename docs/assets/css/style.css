@@ -175,6 +175,24 @@ main {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.10);
 }
 
+.feature-solo {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 56px 0;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+
+.feature-solo h2 {
+  font-size: 26px;
+  margin: 0 0 12px;
+}
+
+.feature-solo p {
+  color: var(--text-secondary);
+  font-size: 16px;
+}
+
 @media (max-width: 760px) {
   .feature, .feature.reverse {
     grid-template-columns: 1fr;

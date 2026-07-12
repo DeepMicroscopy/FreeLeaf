@@ -1,6 +1,7 @@
 # FreeLeaf
 
 An open and free, self-hostable, collaborative LaTeX editing platform (an Overleaf alternative).
+Self-host it on your own infrastructure for full digital sovereignty over your documents and data — no third-party cloud, no account with someone else's ToS standing between you and your own research.
 
 Full spec: [`Plan.md`](./Plan.md). Working conventions for contributors/agents: [`CLAUDE.md`](./CLAUDE.md).
 
@@ -69,6 +70,12 @@ pnpm --filter web dev
 
 - api: `cd apps/api && python manage.py <cmd>` · test `pytest -q` · lint `ruff check .`
 - web: `pnpm --filter web <script>` · lint `pnpm lint` · typecheck `pnpm typecheck`
+
+## Promo video
+
+`python3 scripts/make_promo_video.py` renders a narrated, screenshot-driven promo video (for
+sharing on LinkedIn, etc.) from the screenshots in `docs/assets/img`. Requires `ffmpeg` and
+macOS's `say` for narration. `--dry-run` prints the scene/narration plan without rendering.
 
 ## Security
 
