@@ -50,6 +50,13 @@ function formatRelativeTime(ts: number): string {
   return `${days}d ago`;
 }
 
+const CHECK_ICON =
+  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" ' +
+  'stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+const X_ICON =
+  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" ' +
+  'stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+
 /** Hover popover: author + relative time always; Accept/Reject buttons only
  * for callers who pass `canModerate: true` (owner/editor — a reviewer can
  * make suggestions but not resolve their own or anyone else's, matching a
@@ -70,21 +77,34 @@ export function suggestionHoverTooltip(
         end: span.to,
         above: true,
         create() {
+          const { color } = colorForUserId(span.authorId);
+
           const dom = document.createElement("div");
           dom.className = "cm-suggestionTooltip";
 
-          const info = document.createElement("div");
-          info.className = "cm-suggestionTooltipInfo";
-          const kindLabel = span.kind === "ins" ? "Suggested insertion" : "Suggested deletion";
-          info.textContent = `${kindLabel} · ${span.authorName} · ${formatRelativeTime(span.ts)}`;
-          dom.appendChild(info);
+          const kind = document.createElement("div");
+          kind.className = "cm-suggestionTooltipKind";
+          kind.textContent = span.kind === "ins" ? "Suggested insertion" : "Suggested deletion";
+          dom.appendChild(kind);
+
+          const author = document.createElement("div");
+          author.className = "cm-suggestionTooltipAuthor";
+          const dot = document.createElement("span");
+          dot.className = "cm-suggestionTooltipDot";
+          dot.style.backgroundColor = color;
+          author.appendChild(dot);
+          const authorName = document.createElement("strong");
+          authorName.textContent = span.authorName;
+          author.appendChild(authorName);
+          author.appendChild(document.createTextNode(` · ${formatRelativeTime(span.ts)}`));
+          dom.appendChild(author);
 
           if (canModerate()) {
             const actions = document.createElement("div");
             actions.className = "cm-suggestionTooltipActions";
 
             const acceptBtn = document.createElement("button");
-            acceptBtn.textContent = "Accept";
+            acceptBtn.innerHTML = `${CHECK_ICON}<span>Accept</span>`;
             acceptBtn.className = "cm-suggestionTooltipAccept";
             acceptBtn.onclick = (e) => {
               e.preventDefault();
@@ -93,7 +113,7 @@ export function suggestionHoverTooltip(
             };
 
             const rejectBtn = document.createElement("button");
-            rejectBtn.textContent = "Reject";
+            rejectBtn.innerHTML = `${X_ICON}<span>Reject</span>`;
             rejectBtn.className = "cm-suggestionTooltipReject";
             rejectBtn.onclick = (e) => {
               e.preventDefault();

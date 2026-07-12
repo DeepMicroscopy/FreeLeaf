@@ -42,9 +42,12 @@ A fresh clone should build and start with no extra setup.
 cp .env.prod.example .env.prod
 # fill in .env.prod: real secrets, your domain, Mailgun, ORCID production app
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+docker compose -f docker-compose.prod.yml build texlive
 ```
 
 This builds production images (gunicorn + collected/whitenoise-served static for the api, an nginx-served Vite build for the web) and runs a single public-facing `web` container that reverse-proxies `/api`, `/admin`, `/static`, and `/collab` to the internal services — everything is same-origin in production, which avoids the CORS/cross-site-cookie fragility dev's separate `:5173`/`:8000` origins have. Only `web` is meant to be internet-facing; terminate TLS in front of it (a managed load balancer, or your own Caddy/nginx with certs proxying to `web`'s port) — `apps/web/nginx.conf` only serves plain HTTP.
+
+**The second command is not optional.** `texlive` (the sandboxed compile worker image, built from `docker/texlive/Dockerfile`) is deliberately excluded from the profile the first command builds — it's never run as a long-lived container, only spawned per compile job by `compile` via the Docker Engine API, referencing the image by a plain local tag (`freeleaf-texlive:latest`, no registry). `up -d --build` skips it entirely, so compiles will fail with no image found until you build it explicitly, on the same Docker host `compile` runs on. Re-run this build any time `docker/texlive/Dockerfile` changes — nothing rebuilds it for you automatically.
 
 `docker-compose.prod.yml` uses `name: freeleaf-prod` so it never shares containers/volumes with a dev stack running from the same checkout; its example port (`8001`) is chosen so both can run side by side during testing — map to `80`/`443` for a real deployment.
 
