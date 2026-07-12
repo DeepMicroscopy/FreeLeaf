@@ -3,8 +3,10 @@
  * symbols." This is a best-effort scanner, not a real LaTeX parser — same
  * "best-effort, not a real parser" trade-off as log_parser.py's file
  * tracking. In particular:
- *  - Math-mode tracking only recognizes inline `$...$` (simple toggle, not
- *    `$$`) and a fixed list of common math environments/`\[...\]` — enough
+ *  - Math-mode tracking recognizes inline `$...$` (simple toggle, not `$$`),
+ *    `\(...\)` and `\[...\]` (explicit set/reset, not a toggle — an
+ *    unbalanced pair can't leave the state as wrongly "stuck" as a naive
+ *    toggle could), and a fixed list of common math environments — enough
  *    to avoid flagging `_`/`^` inside normal math, not a full parser.
  *  - `$` itself is deliberately NOT checked for escaping: a document with
  *    literal currency signs and one with genuine math both produce dollar
@@ -143,6 +145,14 @@ export function lintLatex(text: string): LintFinding[] {
       const escaped = line[i - 1] === "\\";
       if (ch === "$" && !escaped) {
         inMath = !inMath;
+        continue;
+      }
+      if (escaped && (ch === "(" || ch === "[")) {
+        inMath = true;
+        continue;
+      }
+      if (escaped && (ch === ")" || ch === "]")) {
+        inMath = false;
         continue;
       }
       if (escaped) continue;

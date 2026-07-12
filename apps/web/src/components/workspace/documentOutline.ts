@@ -14,6 +14,13 @@ export interface OutlineEntry {
 
 export interface FigureTableEntry {
   kind: "figure" | "table";
+  /** 1-based, counted separately per kind in document order — matches
+   * LaTeX's own `figure`/`table` counters for the common case (an `article`-
+   * style document with no `\setcounter`/per-chapter resets). Doesn't
+   * attempt to track chapter-qualified numbering ("Figure 2.1") in
+   * `report`/`book`-class documents — same "best-effort, not a full
+   * parser" scope as the rest of this scanner. */
+  number: number;
   /** The environment's `\caption{...}` text, if it has one. */
   caption: string | null;
   /** A short plain-text snippet of the environment's body, used when there's no caption. */
@@ -66,11 +73,17 @@ const CAPTION_RE = /\\caption\*?\s*(?:\[[^\]]*\])?\{/;
 
 export function parseFiguresAndTables(text: string): FigureTableEntry[] {
   const entries: FigureTableEntry[] = [];
+  // `figure*`/`table*` (the two-column-spanning float variants) still
+  // increment the same shared `figure`/`table` counter as their ordinary
+  // counterparts, so both share the one counter per kind here too.
+  let figureCount = 0;
+  let tableCount = 0;
   FIGURE_TABLE_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = FIGURE_TABLE_RE.exec(text))) {
     const envName = m[1];
     const kind: "figure" | "table" = envName.startsWith("figure") ? "figure" : "table";
+    const number = kind === "figure" ? ++figureCount : ++tableCount;
     const afterBegin = m.index + m[0].length;
     const endRe = new RegExp(`\\\\end\\{${envName.replace("*", "\\*")}\\}`);
     const endMatch = endRe.exec(text.slice(afterBegin));
@@ -86,7 +99,7 @@ export function parseFiguresAndTables(text: string): FigureTableEntry[] {
     }
 
     const snippet = body.replace(/\s+/g, " ").trim().slice(0, 80);
-    entries.push({ kind, caption, snippet, line: lineAt(text, m.index) });
+    entries.push({ kind, number, caption, snippet, line: lineAt(text, m.index) });
 
     // Resume scanning right after this environment — nested figure/table
     // environments aren't valid LaTeX anyway, and this avoids matching

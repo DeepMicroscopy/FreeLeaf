@@ -82,7 +82,7 @@ export function FiguresTablesPanel() {
       {entries.map((e, i) => (
         <li key={i}>
           <button className={styles.entry} onClick={() => jumpToLine(e.line)} title={`Line ${e.line}`}>
-            <span className={styles.entryKind}>{e.kind === "figure" ? "Fig." : "Tab."}</span>
+            <span className={styles.entryKind}>{e.kind === "figure" ? `Figure ${e.number}` : `Table ${e.number}`}</span>
             <span className={styles.entryText}>{e.caption ?? (e.snippet || "(empty)")}</span>
           </button>
         </li>
