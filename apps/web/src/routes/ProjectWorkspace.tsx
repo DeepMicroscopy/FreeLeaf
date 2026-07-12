@@ -3,11 +3,11 @@ import { ArrowLeft, Download } from "lucide-react";
 import { NavLink, Navigate, Route, Routes, useParams } from "react-router-dom";
 
 import { EditorTab } from "../components/workspace/EditorTab";
-import { FileTree } from "../components/workspace/FileTree";
 import { HistoryTab } from "../components/workspace/HistoryTab";
 import { LibraryTab } from "../components/workspace/LibraryTab";
 import { SettingsTab } from "../components/workspace/SettingsTab";
 import { ShareButton } from "../components/workspace/ShareButton";
+import { WorkspaceSidebar } from "../components/workspace/WorkspaceSidebar";
 import { PageSpinner } from "../components/ui/Spinner";
 import { BibliographyProvider } from "../lib/bibliography";
 import { EditingModeProvider } from "../lib/editingMode";
@@ -73,7 +73,7 @@ function WorkspaceShell() {
 
       <div className={styles.body}>
         <aside className={styles.sidebar}>
-          <FileTree />
+          <WorkspaceSidebar />
         </aside>
         <main className={styles.main}>
           <Routes>

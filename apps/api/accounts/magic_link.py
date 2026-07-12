@@ -14,7 +14,7 @@ from .models import MagicLink, User
 TOKEN_TTL_MINUTES = 15
 
 
-def request_magic_link(email: str, next_path: str | None = None) -> None:
+def request_magic_link(email: str, next_path: str | None = None, callback_path: str = "/auth/magic-link") -> None:
     email = email.strip().lower()
     token = secrets.token_urlsafe(32)
     MagicLink.objects.create(
@@ -26,7 +26,12 @@ def request_magic_link(email: str, next_path: str | None = None) -> None:
     next_path = safe_next_path(next_path)
     if next_path:
         params["next"] = next_path
-    link = f"{settings.FRONTEND_URL}/auth/magic-link?{urlencode(params)}"
+    # `callback_path` defaults to the regular invite-accept callback; the
+    # first-run setup wizard (Plan.md §9 Phase 11, see setup_api.py) points
+    # it at a separate `/setup/verify` page instead, so its bootstrap link
+    # can never be confused with — or verified through — the regular,
+    # invite-gated magic-link flow.
+    link = f"{settings.FRONTEND_URL}{callback_path}?{urlencode(params)}"
     send_mail(
         subject="Your FreeLeaf sign-in link",
         message=f"Sign in to FreeLeaf: {link}\n\nThis link expires in {TOKEN_TTL_MINUTES} minutes and can only be used once.",

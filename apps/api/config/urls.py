@@ -20,6 +20,7 @@ from ninja import NinjaAPI
 
 from accounts.admin_api import router as admin_router
 from accounts.api import router as accounts_router
+from accounts.setup_api import router as setup_router
 from accounts.sso_admin_api import router as sso_admin_router
 from accounts.sso_api import router as sso_router
 from health.views import router as health_router
@@ -46,6 +47,7 @@ api.add_router("", versions_router)
 api.add_router("", comments_router)
 api.add_router("", sso_router)
 api.add_router("", sso_admin_router)
+api.add_router("", setup_router)
 
 urlpatterns = [
     path('admin/', admin.site.urls),

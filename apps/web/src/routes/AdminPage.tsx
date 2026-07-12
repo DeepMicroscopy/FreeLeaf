@@ -4,6 +4,7 @@ import { ArrowLeft, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 
+import { SiteSettingsPanel } from "../components/admin/SiteSettingsPanel";
 import { SsoProvidersPanel } from "../components/admin/SsoProvidersPanel";
 import { PageSpinner } from "../components/ui/Spinner";
 import styles from "./AdminPage.module.css";
@@ -12,7 +13,7 @@ type AdminUserOut = components["schemas"]["AdminUserOut"];
 
 export function AdminPage() {
   const [users, setUsers] = useState<AdminUserOut[] | null>(null);
-  const [tab, setTab] = useState<"users" | "sso">("users");
+  const [tab, setTab] = useState<"users" | "sso" | "site">("users");
 
   useEffect(() => {
     api.GET("/api/admin/users").then(({ data }) => setUsers(data ?? []));
@@ -41,11 +42,19 @@ export function AdminPage() {
           >
             SSO Providers
           </button>
+          <button
+            className={[styles.tab, tab === "site" ? styles.tabActive : ""].join(" ")}
+            onClick={() => setTab("site")}
+          >
+            Site Settings
+          </button>
         </nav>
       </header>
 
       <main className={styles.main}>
-        {tab === "sso" ? (
+        {tab === "site" ? (
+          <SiteSettingsPanel />
+        ) : tab === "sso" ? (
           <SsoProvidersPanel />
         ) : users === null ? (
           <PageSpinner />

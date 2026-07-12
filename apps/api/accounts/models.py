@@ -50,6 +50,24 @@ class User(models.Model):
         return self.display_name or self.email or self.orcid_id or str(self.id)
 
 
+class SiteSettings(models.Model):
+    """Singleton row of instance-wide, admin-configurable settings (Plan.md
+    §9 Phase 11) — fetched via `load()`, which lazily creates the single
+    row on first access rather than needing a migration data fixture or a
+    fixed known primary key the caller has to remember."""
+
+    orcid_enabled = models.BooleanField(default=True)
+
+    @classmethod
+    def load(cls) -> "SiteSettings":
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+
 class SsoProviderKind(models.TextChoices):
     SAML = "saml", "SAML (Shibboleth)"
     LDAP = "ldap", "LDAP / Active Directory"

@@ -17,7 +17,7 @@ from core.urlsafety import safe_next_path
 from . import orcid
 from .auth import CsrfProtect, SessionAuth
 from .magic_link import MagicLinkError, request_magic_link, verify_magic_link
-from .models import User
+from .models import SiteSettings, User
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +128,8 @@ def magic_link_verify(request, payload: MagicLinkVerifyIn):
 
 @router.get("/auth/orcid/login")
 def orcid_login(request, next: str | None = None):
+    if not SiteSettings.load().orcid_enabled:
+        raise HttpError(403, "ORCID sign-in is disabled on this instance.")
     state = secrets.token_urlsafe(24)
     request.session["orcid_oauth_state"] = state
     safe_next = safe_next_path(next)
@@ -160,6 +162,8 @@ def orcid_callback(request, code: str | None = None, state: str | None = None, e
         error,
     )
 
+    if not SiteSettings.load().orcid_enabled:
+        raise HttpError(403, "ORCID sign-in is disabled on this instance.")
     if error:
         raise HttpError(400, f"ORCID returned an error: {error}")
     if not code or not state:
@@ -190,6 +194,17 @@ def orcid_callback(request, code: str | None = None, state: str | None = None, e
     if not created and identity.name and user.display_name != identity.name:
         user.display_name = identity.name
         user.save(update_fields=["display_name"])
+
+    # First-run bootstrap (Plan.md §9 Phase 11): if no admin exists yet on
+    # this instance, whoever signs in next becomes one. Safe to do
+    # unconditionally here (unlike magic-link, which needs a separate
+    # ungated endpoint — see setup_api.py's docstring) because ORCID
+    # sign-in was already a generally-available, ungated action from the
+    # login page; this doesn't change who could reach this code path, only
+    # what happens once they do.
+    if not user.is_admin and not User.objects.filter(is_admin=True).exists():
+        user.is_admin = True
+        user.save(update_fields=["is_admin"])
 
     log_in(request, user)
     next_path = request.session.pop("orcid_next", None)

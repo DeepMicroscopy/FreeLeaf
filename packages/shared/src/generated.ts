@@ -620,6 +620,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/site-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Site Settings */
+        get: operations["accounts_admin_api_get_site_settings"];
+        /** Update Site Settings */
+        put: operations["accounts_admin_api_update_site_settings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/snapshots": {
         parameters: {
             query?: never;
@@ -850,6 +868,74 @@ export interface paths {
         head?: never;
         /** Update Provider */
         patch: operations["accounts_sso_admin_api_update_provider"];
+        trace?: never;
+    };
+    "/api/setup/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Setup Status */
+        get: operations["accounts_setup_api_setup_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/setup/orcid-enabled": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Setup Set Orcid Enabled */
+        put: operations["accounts_setup_api_setup_set_orcid_enabled"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/setup/request-admin-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request Admin Link */
+        post: operations["accounts_setup_api_request_admin_link"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/setup/verify-admin-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Verify Admin Link */
+        post: operations["accounts_setup_api_verify_admin_link"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
 }
@@ -1149,6 +1235,18 @@ export interface components {
             last_login_at?: string | null;
             /** Project Count */
             project_count: number;
+        };
+        /** SiteSettingsOut */
+        SiteSettingsOut: {
+            /** Orcid Enabled */
+            orcid_enabled: boolean;
+            /** Orcid Configured */
+            orcid_configured: boolean;
+        };
+        /** SiteSettingsIn */
+        SiteSettingsIn: {
+            /** Orcid Enabled */
+            orcid_enabled: boolean;
         };
         /** SnapshotOut */
         SnapshotOut: {
@@ -1454,6 +1552,32 @@ export interface components {
             ldap_display_name_attribute?: string | null;
             /** Ldap Use Starttls */
             ldap_use_starttls?: boolean | null;
+        };
+        /** SetupStatusOut */
+        SetupStatusOut: {
+            /** Needs Setup */
+            needs_setup: boolean;
+            /** Orcid Available */
+            orcid_available: boolean;
+            /** Orcid Configured */
+            orcid_configured: boolean;
+            /** Orcid Enabled */
+            orcid_enabled: boolean;
+        };
+        /** SetupOrcidIn */
+        SetupOrcidIn: {
+            /** Orcid Enabled */
+            orcid_enabled: boolean;
+        };
+        /** RequestAdminLinkIn */
+        RequestAdminLinkIn: {
+            /** Email */
+            email: string;
+        };
+        /** VerifyAdminLinkIn */
+        VerifyAdminLinkIn: {
+            /** Token */
+            token: string;
         };
     };
     responses: never;
@@ -2479,6 +2603,50 @@ export interface operations {
             };
         };
     };
+    accounts_admin_api_get_site_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteSettingsOut"];
+                };
+            };
+        };
+    };
+    accounts_admin_api_update_site_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SiteSettingsIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteSettingsOut"];
+                };
+            };
+        };
+    };
     projects_versions_api_list_snapshots: {
         parameters: {
             query?: never;
@@ -2867,6 +3035,96 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SsoProviderAdminOut"];
+                };
+            };
+        };
+    };
+    accounts_setup_api_setup_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupStatusOut"];
+                };
+            };
+        };
+    };
+    accounts_setup_api_setup_set_orcid_enabled: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupOrcidIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupStatusOut"];
+                };
+            };
+        };
+    };
+    accounts_setup_api_request_admin_link: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestAdminLinkIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    accounts_setup_api_verify_admin_link: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerifyAdminLinkIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserOut"];
                 };
             };
         };

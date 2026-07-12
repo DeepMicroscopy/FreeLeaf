@@ -17,6 +17,7 @@ export function LoginPage() {
   const { ldapLogin } = useAuth();
   const navigate = useNavigate();
   const [providers, setProviders] = useState<SsoProviderPublicOut[]>([]);
+  const [orcidAvailable, setOrcidAvailable] = useState(true);
   const [ldapSlug, setLdapSlug] = useState<string | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -25,6 +26,7 @@ export function LoginPage() {
 
   useEffect(() => {
     api.GET("/api/auth/sso/providers").then(({ data }) => setProviders(data ?? []));
+    api.GET("/api/setup/status").then(({ data }) => setOrcidAvailable(data?.orcid_available ?? false));
   }, []);
 
   async function handleLdapSubmit(e: FormEvent) {
@@ -55,14 +57,18 @@ export function LoginPage() {
           Open, self-hostable, collaborative LaTeX editing.
         </p>
 
-        <a className={styles.orcidButton} href={orcidLoginUrl()}>
-          <OrcidMark />
-          Sign in with ORCID
-        </a>
+        {orcidAvailable && (
+          <a className={styles.orcidButton} href={orcidLoginUrl()}>
+            <OrcidMark />
+            Sign in with ORCID
+          </a>
+        )}
 
         {providers.length > 0 && (
           <>
-            <div className={styles.divider}>or sign in with your institution</div>
+            <div className={styles.divider}>
+              {orcidAvailable ? "or sign in with your institution" : "sign in with your institution"}
+            </div>
             {providers.map((p) =>
               p.kind === "saml" ? (
                 <a key={p.slug} className={styles.orcidButton} href={samlLoginUrl(p.slug)}>

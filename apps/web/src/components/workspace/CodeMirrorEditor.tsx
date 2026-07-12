@@ -5,12 +5,13 @@ import { MessageSquarePlus } from "lucide-react";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { StreamLanguage } from "@codemirror/language";
 import { stex } from "@codemirror/legacy-modes/mode/stex";
+import { openSearchPanel, search, searchKeymap } from "@codemirror/search";
 import { EditorState } from "@codemirror/state";
 import { Decoration, EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { yCollab } from "y-codemirror.next";
 import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 
 import { useAuth } from "../../lib/auth";
 import { useBibliography } from "../../lib/bibliography";
@@ -96,6 +97,48 @@ const theme = EditorView.theme({
   ".cm-commentAnchorResolved": {
     backgroundColor: "color-mix(in srgb, #eab308 10%, transparent)",
   },
+  ".cm-searchMatch": {
+    backgroundColor: "color-mix(in srgb, #eab308 30%, transparent)",
+  },
+  ".cm-searchMatch-selected": {
+    backgroundColor: "color-mix(in srgb, #f59e0b 55%, transparent)",
+  },
+  ".cm-panels": {
+    backgroundColor: "var(--bg-surface)",
+    color: "var(--text-primary)",
+  },
+  ".cm-panel.cm-search": {
+    padding: "6px 8px",
+    borderTop: "1px solid var(--border-default)",
+    display: "flex",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: "6px",
+  },
+  ".cm-panel.cm-search label": {
+    fontSize: "12px",
+    color: "var(--text-secondary)",
+  },
+  ".cm-textfield": {
+    background: "var(--bg-inset)",
+    color: "var(--text-primary)",
+    border: "1px solid var(--border-default)",
+    borderRadius: "4px",
+    padding: "3px 6px",
+    fontSize: "13px",
+  },
+  ".cm-button": {
+    background: "var(--bg-inset)",
+    color: "var(--text-primary)",
+    border: "1px solid var(--border-default)",
+    borderRadius: "4px",
+    padding: "3px 8px",
+    fontSize: "12px",
+    cursor: "pointer",
+  },
+  ".cm-button:hover": {
+    borderColor: "var(--accent)",
+  },
 });
 
 function colorForUserId(id: string): { color: string; colorLight: string } {
@@ -110,25 +153,14 @@ export interface JumpTarget {
   token: number;
 }
 
-export function CodeMirrorEditor({
-  projectId,
-  fileId,
-  readOnly,
-  onContentChanged,
-  onCompileShortcut,
-  onJumpToPdf,
-  jumpTarget,
-  onActivity,
-  onKeystroke,
-  onCursorLineChange,
-  trackChangesBaseline,
-  polishingEnabled,
-  onLintFindings,
-  onOpenTableDesigner,
-  commentAnchors,
-  onAddComment,
-  onCommentAnchorClick,
-}: {
+export interface CodeMirrorEditorHandle {
+  /** Opens CodeMirror's built-in find/replace panel (Plan.md §9 Phase 11) —
+   * exposed imperatively so a toolbar button outside the editor can trigger
+   * it, same pattern as `CompilePaneHandle`. */
+  openSearch: () => void;
+}
+
+interface CodeMirrorEditorProps {
   projectId: string;
   fileId: string;
   readOnly: boolean;
@@ -167,13 +199,48 @@ export function CodeMirrorEditor({
    * cursor still lands there normally; just also reports which comment it
    * was so the caller can scroll it into view in the Comments pane. */
   onCommentAnchorClick?: (commentId: string) => void;
-}) {
+  /** Fires with the file's full current text shortly after it changes
+   * (debounced) and once right after the initial Yjs sync — the sidebar's
+   * Outline/Figures & Tables tabs (Plan.md §9 Phase 11) scan this rather
+   * than reaching into the editor's own Yjs document. */
+  onDocTextChange?: (text: string) => void;
+}
+
+export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEditorProps>(function CodeMirrorEditor(
+  {
+    projectId,
+    fileId,
+    readOnly,
+    onContentChanged,
+    onCompileShortcut,
+    onJumpToPdf,
+    jumpTarget,
+    onActivity,
+    onKeystroke,
+    onCursorLineChange,
+    trackChangesBaseline,
+    polishingEnabled,
+    onLintFindings,
+    onOpenTableDesigner,
+    commentAnchors,
+    onAddComment,
+    onCommentAnchorClick,
+    onDocTextChange,
+  },
+  ref,
+) {
   const { user } = useAuth();
   const { entries, addEntries, findNearDuplicate, findByKey } = useBibliography();
   const { show } = useToast();
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  useImperativeHandle(ref, () => ({
+    openSearch: () => {
+      if (viewRef.current) openSearchPanel(viewRef.current);
+    },
+  }));
   const changeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const docTextChangeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onContentChangedRef = useRef(onContentChanged);
   onContentChangedRef.current = onContentChanged;
   const onCompileShortcutRef = useRef(onCompileShortcut);
@@ -224,6 +291,8 @@ export function CodeMirrorEditor({
   onCommentAnchorClickRef.current = onCommentAnchorClick;
   const onAddCommentRef = useRef(onAddComment);
   onAddCommentRef.current = onAddComment;
+  const onDocTextChangeRef = useRef(onDocTextChange);
+  onDocTextChangeRef.current = onDocTextChange;
   const [commentMenu, setCommentMenu] = useState<{ x: number; y: number; from: number; to: number; text: string; line: number } | null>(null);
   const onOpenTableDesignerRef = useRef(onOpenTableDesigner);
   onOpenTableDesignerRef.current = onOpenTableDesigner;
@@ -460,7 +529,9 @@ export function CodeMirrorEditor({
               ...defaultKeymap,
               ...historyKeymap,
               ...completionKeymap,
+              ...searchKeymap,
             ]),
+            search({ top: true }),
             theme,
             EditorView.lineWrapping,
             EditorState.readOnly.of(readOnly),
@@ -546,6 +617,7 @@ export function CodeMirrorEditor({
         recomputeTrackChangesRef.current();
         recomputePolishingLintRef.current();
         recomputeCommentAnchorsRef.current();
+        onDocTextChangeRef.current?.(ytext.toString());
 
         // Only schedule auto-compile for changes *after* the initial content
         // sync — otherwise just opening the file would trigger a compile.
@@ -553,6 +625,8 @@ export function CodeMirrorEditor({
           onActivityRef.current?.();
           if (changeTimerRef.current) clearTimeout(changeTimerRef.current);
           changeTimerRef.current = setTimeout(() => onContentChangedRef.current?.(), 1500);
+          if (docTextChangeTimerRef.current) clearTimeout(docTextChangeTimerRef.current);
+          docTextChangeTimerRef.current = setTimeout(() => onDocTextChangeRef.current?.(ytext.toString()), 400);
           // Deferred: this fires *during* yCollab's own transaction application
           // (Yjs's "update" event is emitted mid-transact, itself nested inside
           // a CodeMirror view.update() call), so dispatching another transaction
@@ -570,6 +644,7 @@ export function CodeMirrorEditor({
     return () => {
       cancelled = true;
       if (changeTimerRef.current) clearTimeout(changeTimerRef.current);
+      if (docTextChangeTimerRef.current) clearTimeout(docTextChangeTimerRef.current);
       if (tokenRefreshInterval) clearInterval(tokenRefreshInterval);
       if (handleVisibility) document.removeEventListener("visibilitychange", handleVisibility);
       if (handleWake) window.removeEventListener("online", handleWake);
@@ -678,7 +753,7 @@ export function CodeMirrorEditor({
       )}
     </div>
   );
-}
+});
 
 function ConnectionStatusPill({ status }: { status: ConnectionStatus }) {
   const label = { connecting: "Connecting…", live: "Live", disconnected: "Reconnecting…" }[status];

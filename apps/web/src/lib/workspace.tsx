@@ -1,7 +1,7 @@
 import { api } from "@freeleaf/shared";
 import type { components } from "@freeleaf/shared";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import type { MutableRefObject, ReactNode } from "react";
 
 export type ProjectOut = components["schemas"]["ProjectOut"];
 export type ProjectFileOut = components["schemas"]["ProjectFileOut"];
@@ -15,6 +15,17 @@ interface WorkspaceContextValue {
   selectedFileId: string | null;
   selectFile: (fileId: string | null) => void;
   canWrite: boolean;
+  /** Live text of whichever `.tex` file is currently open in the editor
+   * (Plan.md §9 Phase 11) — kept in sync by `EditorTab`/`CodeMirrorEditor`
+   * so the sidebar's Outline/Figures & Tables tabs can scan it without
+   * reaching into the editor's own Yjs document. Empty when no file (or a
+   * non-`.tex` file) is open. */
+  currentFileText: string;
+  setCurrentFileText: (text: string) => void;
+  /** A mutable slot `EditorTab` points at its own jump-to-line function so
+   * the sidebar can call it without the two being directly wired together —
+   * `null` when no editor is mounted to jump within. */
+  jumpToLineRef: MutableRefObject<((line: number) => void) | null>;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -24,6 +35,8 @@ export function WorkspaceProvider({ projectId, children }: { projectId: string; 
   const [files, setFiles] = useState<ProjectFileOut[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
+  const [currentFileText, setCurrentFileText] = useState("");
+  const jumpToLineRef = useRef<((line: number) => void) | null>(null);
 
   const refreshFiles = useCallback(async () => {
     const { data } = await api.GET("/api/projects/{project_id}/files", {
@@ -67,8 +80,11 @@ export function WorkspaceProvider({ projectId, children }: { projectId: string; 
       selectedFileId,
       selectFile: setSelectedFileId,
       canWrite,
+      currentFileText,
+      setCurrentFileText,
+      jumpToLineRef,
     }),
-    [projectId, project, files, loading, refreshFiles, selectedFileId, canWrite],
+    [projectId, project, files, loading, refreshFiles, selectedFileId, canWrite, currentFileText],
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;

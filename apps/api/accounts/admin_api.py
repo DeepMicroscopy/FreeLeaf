@@ -1,7 +1,8 @@
 """In-app admin user management (Plan.md §9 Phase 7) — distinct from
 Django's own /admin/ site (django.contrib.auth, staff-only, see CLAUDE.md).
-Gated by accounts.User.is_admin, which nothing in the UI can grant yet;
-bootstrap the first admin via `manage.py shell`."""
+Gated by accounts.User.is_admin — bootstrapped for a fresh install by the
+first-run setup wizard (Plan.md §9 Phase 11, see setup_api.py), not a
+`manage.py shell` step anymore."""
 
 import uuid
 
@@ -12,8 +13,9 @@ from ninja.errors import HttpError
 from core.session import get_current_user
 from projects.models import Membership
 
+from . import orcid
 from .auth import SessionAuth
-from .models import User
+from .models import SiteSettings, SsoProvider, User
 
 router = Router(auth=SessionAuth())
 
@@ -60,3 +62,40 @@ def list_users(request):
         )
         for u in users
     ]
+
+
+class SiteSettingsOut(Schema):
+    orcid_enabled: bool
+    # Whether ORCID has real credentials configured at all (env vars) —
+    # informational: toggling `orcid_enabled` on with no credentials set
+    # would just produce a broken "Sign in with ORCID" button.
+    orcid_configured: bool
+
+
+class SiteSettingsIn(Schema):
+    orcid_enabled: bool
+
+
+def _site_settings_out(s: SiteSettings) -> SiteSettingsOut:
+    return SiteSettingsOut(orcid_enabled=s.orcid_enabled, orcid_configured=bool(orcid.CLIENT_ID and orcid.CLIENT_SECRET))
+
+
+@router.get("/admin/site-settings", response=SiteSettingsOut)
+def get_site_settings(request):
+    require_admin(get_current_user(request))
+    return _site_settings_out(SiteSettings.load())
+
+
+@router.put("/admin/site-settings", response=SiteSettingsOut)
+def update_site_settings(request, payload: SiteSettingsIn):
+    require_admin(get_current_user(request))
+    s = SiteSettings.load()
+    # ORCID and institutional SSO are the only sign-in methods generally
+    # reachable from the login page (magic-link/anonymous both require an
+    # existing project's invite link) — block turning off the last one so
+    # an admin can't accidentally lock everyone, including themselves, out.
+    if not payload.orcid_enabled and not SsoProvider.objects.filter(enabled=True).exists():
+        raise HttpError(400, "Can't disable ORCID while no institutional SSO provider is enabled — nobody would be able to sign in.")
+    s.orcid_enabled = payload.orcid_enabled
+    s.save(update_fields=["orcid_enabled"])
+    return _site_settings_out(s)

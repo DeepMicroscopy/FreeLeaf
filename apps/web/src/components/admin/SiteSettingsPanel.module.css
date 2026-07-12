@@ -1,0 +1,96 @@
+.panel {
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 640px;
+}
+
+.card {
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  padding: var(--space-3);
+  background: var(--bg-surface);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.cardHeader > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: 14px;
+}
+
+.cardHint {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.footnote {
+  margin: var(--space-3) 0 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.toggle {
+  flex: none;
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+}
+
+.toggle input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+.toggle input:disabled {
+  cursor: not-allowed;
+}
+
+.toggleTrack {
+  display: block;
+  width: 36px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-default);
+  transition: background-color 120ms var(--ease);
+}
+
+.toggleThumb {
+  display: block;
+  width: 14px;
+  height: 14px;
+  margin: 2px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  transition: transform 120ms var(--ease);
+}
+
+.toggle input:checked + .toggleTrack {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.toggle input:checked + .toggleTrack .toggleThumb {
+  transform: translateX(16px);
+  background: #fff;
+}
+
+.toggle input:disabled + .toggleTrack {
+  opacity: 0.5;
+}

@@ -1,6 +1,6 @@
 import { api, apiOrigin } from "@freeleaf/shared";
 import type { components } from "@freeleaf/shared";
-import { FileQuestion, MessageSquare } from "lucide-react";
+import { FileQuestion, MessageSquare, Search } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "../ui/Button";
@@ -9,7 +9,7 @@ import { useToast } from "../ui/Toast";
 import { useEditingMode } from "../../lib/editingMode";
 import { useWorkspace } from "../../lib/workspace";
 import { CodeMirrorEditor } from "./CodeMirrorEditor";
-import type { JumpTarget } from "./CodeMirrorEditor";
+import type { CodeMirrorEditorHandle, JumpTarget } from "./CodeMirrorEditor";
 import { CommentsPane } from "./CommentsPane";
 import type { PendingCommentAnchor } from "./CommentsPane";
 import { CompilePane } from "./CompilePane";
@@ -42,11 +42,13 @@ const KEYSTROKE_SNAPSHOT_THRESHOLD = 1000;
 const MIN_AUTO_SNAPSHOT_GAP_MS = 60 * 1000;
 
 export function EditorTab() {
-  const { projectId, files, selectedFileId, selectFile, canWrite, refreshFiles } = useWorkspace();
+  const { projectId, files, selectedFileId, selectFile, canWrite, refreshFiles, setCurrentFileText, jumpToLineRef } =
+    useWorkspace();
   const { mode } = useEditingMode();
   const { show } = useToast();
   const selectedFile = files.find((f) => f.id === selectedFileId);
   const compilePaneRef = useRef<CompilePaneHandle>(null);
+  const codeMirrorRef = useRef<CodeMirrorEditorHandle>(null);
   const jumpTokenRef = useRef(0);
   const [jump, setJump] = useState<{ fileId: string } & JumpTarget | null>(null);
   const [cursorLine, setCursorLine] = useState(1);
@@ -74,6 +76,24 @@ export function EditorTab() {
     },
     [selectedFile],
   );
+
+  // Points the sidebar's shared jump-to-line slot (Plan.md §9 Phase 11) at
+  // this tab's own handler so the Outline/Figures & Tables panels can
+  // navigate the editor without being directly wired to it.
+  useEffect(() => {
+    jumpToLineRef.current = handleJumpToLine;
+    return () => {
+      jumpToLineRef.current = null;
+    };
+  }, [jumpToLineRef, handleJumpToLine]);
+
+  // The sidebar's Outline/Figures & Tables tabs only make sense for
+  // whichever file is actually open in the editor — clear the shared text
+  // when there's nothing (or an image) to scan, and on unmount.
+  useEffect(() => {
+    if (!selectedFile || selectedFile.type === "image") setCurrentFileText("");
+  }, [selectedFile, setCurrentFileText]);
+  useEffect(() => () => setCurrentFileText(""), [setCurrentFileText]);
 
   // Right-click "Add comment" on a text selection (CodeMirrorEditor) opens
   // the Comments pane (if hidden) with that selection queued up so the next
@@ -317,6 +337,14 @@ export function EditorTab() {
             <div className={styles.paneHeaderActions}>
               <ModeSwitcher />
               <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => codeMirrorRef.current?.openSearch()}
+                title="Find/replace in this file (Cmd/Ctrl+F)"
+              >
+                <Search size={14} aria-hidden="true" />
+              </Button>
+              <Button
                 variant={showComments ? "secondary" : "ghost"}
                 size="sm"
                 onClick={toggleComments}
@@ -388,6 +416,7 @@ export function EditorTab() {
           )}
           <div className={styles.paneBody}>
             <CodeMirrorEditor
+              ref={codeMirrorRef}
               projectId={projectId}
               fileId={selectedFile.id}
               readOnly={!canWrite}
@@ -405,6 +434,7 @@ export function EditorTab() {
               commentAnchors={commentAnchors}
               onAddComment={handleAddCommentFromSelection}
               onCommentAnchorClick={handleCommentAnchorClick}
+              onDocTextChange={setCurrentFileText}
             />
           </div>
         </div>
