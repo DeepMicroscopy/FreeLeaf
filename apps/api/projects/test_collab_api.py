@@ -6,7 +6,7 @@ from accounts.models import User
 from core.collab_tokens import verify_collab_token
 from core.testing import ApiTestCase, login_as
 
-from .models import ProjectFile
+from .models import Project, ProjectFile
 
 
 def post_json(client, url, data=None):
@@ -92,3 +92,46 @@ class CollabInternalContentTests(ApiTestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["content"], "hello from collab")
+
+    def test_persist_with_editor_user_id_attributes_the_project(self):
+        editor = User.objects.create(kind=User.Kind.EMAIL, email="editor@example.com", display_name="Editor Person")
+        client = Client()
+        response = client.put(
+            f"/api/internal/collab/files/{self.main_tex_id}/content",
+            data=json.dumps({"content": "typed by editor", "editor_user_id": str(editor.id)}),
+            content_type="application/json",
+            HTTP_X_COLLAB_SECRET="test-secret",
+        )
+        self.assertEqual(response.status_code, 200)
+        project = Project.objects.get(id=self.project_id)
+        self.assertEqual(project.last_edited_by_id, editor.id)
+
+    def test_persist_without_editor_user_id_keeps_previous_attribution(self):
+        editor = User.objects.create(kind=User.Kind.EMAIL, email="editor2@example.com")
+        client = Client()
+        client.put(
+            f"/api/internal/collab/files/{self.main_tex_id}/content",
+            data=json.dumps({"content": "first", "editor_user_id": str(editor.id)}),
+            content_type="application/json",
+            HTTP_X_COLLAB_SECRET="test-secret",
+        )
+        client.put(
+            f"/api/internal/collab/files/{self.main_tex_id}/content",
+            data=json.dumps({"content": "second, no editor info"}),
+            content_type="application/json",
+            HTTP_X_COLLAB_SECRET="test-secret",
+        )
+        project = Project.objects.get(id=self.project_id)
+        self.assertEqual(project.last_edited_by_id, editor.id)
+
+    def test_unknown_editor_user_id_is_ignored_not_an_error(self):
+        client = Client()
+        response = client.put(
+            f"/api/internal/collab/files/{self.main_tex_id}/content",
+            data=json.dumps({"content": "x", "editor_user_id": "00000000-0000-0000-0000-000000000000"}),
+            content_type="application/json",
+            HTTP_X_COLLAB_SECRET="test-secret",
+        )
+        self.assertEqual(response.status_code, 200)
+        project = Project.objects.get(id=self.project_id)
+        self.assertIsNone(project.last_edited_by_id)

@@ -13,11 +13,11 @@ export async function fetchFileContent(fileId: string): Promise<string> {
   return body.content;
 }
 
-export async function persistFileContent(fileId: string, content: string): Promise<void> {
+export async function persistFileContent(fileId: string, content: string, editorUserId?: string | null): Promise<void> {
   const res = await fetch(`${API_INTERNAL_URL}/api/internal/collab/files/${fileId}/content`, {
     method: "PUT",
     headers: { "X-Collab-Secret": COLLAB_SHARED_SECRET, "content-type": "application/json" },
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, editor_user_id: editorUserId ?? null }),
   });
   if (!res.ok) throw new Error(`persistFileContent(${fileId}) failed: ${res.status}`);
 }

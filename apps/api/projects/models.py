@@ -19,9 +19,27 @@ class Project(models.Model):
     name = models.CharField(max_length=255)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # Who last touched the project (renamed it, edited/created/deleted a file,
+    # restored a snapshot). Best-effort for live collaborative edits — the
+    # collab server attributes a persisted flush to whichever connection's
+    # update it saw most recently, not a full authorship history.
+    last_edited_by = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
 
     def __str__(self):
         return self.name
+
+
+def touch_project(project: "Project", user: User | None = None) -> None:
+    """Bumps `updated_at` (via `auto_now`) and, if a user is known, records
+    them as `last_edited_by`. Call this from any endpoint that changes a
+    project's content, not just `Project` field edits directly."""
+    if user is not None:
+        project.last_edited_by = user
+        project.save(update_fields=["updated_at", "last_edited_by"])
+    else:
+        project.save(update_fields=["updated_at"])
 
 
 class Membership(models.Model):

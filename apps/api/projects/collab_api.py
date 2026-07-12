@@ -8,12 +8,13 @@ from ninja import Router, Schema
 from ninja.errors import HttpError
 
 from accounts.auth import SessionAuth
+from accounts.models import User
 from core import storage
 from core.collab_tokens import sign_collab_token
 from core.session import get_current_user
 
 from .authz import get_authorized_project
-from .models import FileType, ProjectFile
+from .models import FileType, ProjectFile, touch_project
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,9 @@ def internal_get_content(request, file_id: uuid.UUID):
 
 class InternalContentIn(Schema):
     content: str
+    # Best-effort — whichever connected user's edit the collab server saw
+    # most recently before this flush, not a full authorship history.
+    editor_user_id: str | None = None
 
 
 @internal_router.put("/internal/collab/files/{file_id}/content")
@@ -98,6 +102,8 @@ def internal_put_content(request, file_id: uuid.UUID, payload: InternalContentIn
     storage.put_object(f.storage_key, content_bytes, "text/plain; charset=utf-8")
     f.size = len(content_bytes)
     f.save(update_fields=["size", "updated_at"])
+    editor = User.objects.filter(id=payload.editor_user_id).first() if payload.editor_user_id else None
+    touch_project(f.project, editor)
     return {"ok": True}
 
 

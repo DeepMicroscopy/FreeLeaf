@@ -12,7 +12,7 @@ from core import storage
 from core.session import get_current_user
 
 from .authz import get_authorized_project, require_role
-from .models import FileType, ProjectFile, Role
+from .models import FileType, ProjectFile, Role, touch_project
 from .paths import InvalidPathError, guess_file_type, normalize_path
 
 router = Router(auth=SessionAuth())
@@ -104,6 +104,7 @@ def create_file(request, project_id: uuid.UUID, payload: FileCreateIn):
     except IntegrityError as exc:
         storage.delete_object(key)
         raise HttpError(409, "A file already exists at that path.") from exc
+    touch_project(project, user)
     return _file_out(f)
 
 
@@ -129,6 +130,7 @@ def create_folder(request, project_id: uuid.UUID, payload: FolderCreateIn):
         )
     except IntegrityError as exc:
         raise HttpError(409, "A file or folder already exists at that path.") from exc
+    touch_project(project, user)
     return _file_out(f)
 
 
@@ -161,6 +163,7 @@ def upload_file(request, project_id: uuid.UUID, path: str, file: UploadedFile = 
     except IntegrityError as exc:
         storage.delete_object(key)
         raise HttpError(409, "A file already exists at that path.") from exc
+    touch_project(project, user)
     return _file_out(f)
 
 
@@ -211,6 +214,7 @@ def update_file_content(request, project_id: uuid.UUID, file_id: uuid.UUID, payl
     storage.put_object(f.storage_key, content_bytes, "text/plain; charset=utf-8")
     f.size = len(content_bytes)
     f.save(update_fields=["size", "updated_at"])
+    touch_project(project, user)
     return _file_out(f)
 
 
@@ -242,6 +246,7 @@ def rename_file(request, project_id: uuid.UUID, file_id: uuid.UUID, payload: Fil
             f.save(update_fields=["path", "updated_at"])
     except IntegrityError as exc:
         raise HttpError(409, "A file already exists at that path.") from exc
+    touch_project(project, user)
     return _file_out(f)
 
 
@@ -261,4 +266,5 @@ def delete_file(request, project_id: uuid.UUID, file_id: uuid.UUID):
     ProjectFile.objects.filter(id__in=ids).delete()
     for key in keys:
         storage.delete_object(key)
+    touch_project(project, user)
     return {"detail": "deleted"}

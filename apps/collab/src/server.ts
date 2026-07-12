@@ -73,7 +73,7 @@ function handleMessage(ws: WebSocket, room: Room, state: ConnState, data: ArrayB
   }
 }
 
-function setupConnection(ws: WebSocket, room: Room, readOnly: boolean): ConnState {
+function setupConnection(ws: WebSocket, room: Room, readOnly: boolean, userId: string): ConnState {
   room.clientCount += 1;
   console.log(`[collab] connection set up: room=${room.fileId} readOnly=${readOnly} clientCount=${room.clientCount}`);
   const state: ConnState = { readOnly, controlledClientIds: new Set() };
@@ -103,8 +103,17 @@ function setupConnection(ws: WebSocket, room: Room, readOnly: boolean): ConnStat
   };
   room.ydoc.on("update", updateHandler);
 
+  // Separate listener (rather than folding into updateHandler above, which
+  // only fires for *other* connections) — this one fires exactly when this
+  // connection's own edit lands, to attribute the next persisted flush to it.
+  const editorNoteHandler = (_update: Uint8Array, origin: unknown) => {
+    if (origin === ws) room.noteEditor(userId);
+  };
+  room.ydoc.on("update", editorNoteHandler);
+
   ws.on("close", (code, reason) => {
     room.ydoc.off("update", updateHandler);
+    room.ydoc.off("update", editorNoteHandler);
     room.awareness.off("update", awarenessChangeHandler);
     awarenessProtocol.removeAwarenessStates(room.awareness, Array.from(state.controlledClientIds), null);
     room.clientCount -= 1;
@@ -302,7 +311,7 @@ wss.on("connection", (ws, req) => {
 
   void getOrCreateRoom(fileId).then((room) => {
     if (ws.readyState !== WebSocket.OPEN) return; // client may have gone already
-    const state = setupConnection(ws, room, payload.role === "viewer");
+    const state = setupConnection(ws, room, payload.role === "viewer", payload.user_id);
     ws.removeAllListeners("message");
     for (const data of pending) handleMessage(ws, room, state, data);
     ws.on("message", (data: ArrayBuffer) => handleMessage(ws, room, state, data));

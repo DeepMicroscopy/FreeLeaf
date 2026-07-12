@@ -26,7 +26,7 @@ from core.session import get_current_user
 from .api import build_project_zip_bytes
 from .authz import get_authorized_project, require_role
 from .compile_api import flush_collab_rooms
-from .models import FileType, ProjectFile, ProjectSnapshot, Role, SnapshotKind
+from .models import FileType, ProjectFile, ProjectSnapshot, Role, SnapshotKind, touch_project
 from .paths import guess_file_type
 
 router = Router(auth=SessionAuth())
@@ -225,6 +225,7 @@ def restore_snapshot(request, project_id: uuid.UUID, snapshot_id: uuid.UUID):
                 storage.delete_object(f.storage_key)
                 f.delete()
 
+    touch_project(project, user)
     return RestoreOut(
         restored_to=_snapshot_out(target),
         safety_snapshot=_snapshot_out(safety_snapshot) if safety_snapshot else None,

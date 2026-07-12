@@ -16,6 +16,13 @@ export class Room {
   private dirty = false;
   private persistTimer: ReturnType<typeof setInterval>;
   readonly ready: Promise<void>;
+  // Best-effort attribution for "last changed by" — whichever connected
+  // user's update this room saw most recently, not a full authorship history.
+  private lastEditorUserId: string | null = null;
+
+  noteEditor(userId: string): void {
+    this.lastEditorUserId = userId;
+  }
 
   constructor(readonly fileId: string) {
     console.log(`[collab] room created: ${fileId}`);
@@ -46,7 +53,7 @@ export class Room {
     this.dirty = false;
     try {
       const content = this.ytext.toString();
-      await persistFileContent(this.fileId, content);
+      await persistFileContent(this.fileId, content, this.lastEditorUserId);
       console.log(`[collab] persisted ${this.fileId}: contentLength=${content.length}`);
     } catch (err) {
       console.error(`[collab] failed to persist ${this.fileId}:`, err);

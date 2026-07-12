@@ -37,7 +37,10 @@ export function SettingsTab() {
 
   async function save(
     patch: Partial<
-      Pick<ProjectSettingsOut, "compiler" | "central_bib_path" | "bib_engine" | "cite_autocomplete_enabled">
+      Pick<
+        ProjectSettingsOut,
+        "compiler" | "central_bib_path" | "bib_engine" | "cite_autocomplete_enabled" | "main_doc_path"
+      >
     >,
   ) {
     setSaving(true);
@@ -66,11 +69,30 @@ export function SettingsTab() {
   }
 
   const bibFiles = files.filter((f) => f.type === "bib");
+  const texFiles = files.filter((f) => f.type === "tex");
 
   return (
     <div className={styles.root}>
       <section className={styles.section}>
         <h3 className={styles.sectionTitle}>Compilation</h3>
+
+        <label className={styles.field}>
+          <span className={styles.label}>Main document</span>
+          <select
+            className={styles.select}
+            value={settings.main_doc_path}
+            disabled={!canWrite || saving}
+            onChange={(e) => save({ main_doc_path: e.target.value })}
+          >
+            {texFiles.length === 0 && <option value={settings.main_doc_path}>{settings.main_doc_path}</option>}
+            {texFiles.map((f) => (
+              <option key={f.id} value={f.path}>
+                {f.path}
+              </option>
+            ))}
+          </select>
+          <span className={styles.hint}>The file compiled to produce the project's PDF.</span>
+        </label>
 
         <label className={styles.field}>
           <span className={styles.label}>PDF compiler</span>

@@ -22,7 +22,7 @@ from core.tokens import hash_token
 
 from .authz import get_authorized_project, require_role
 from .files_api import create_main_tex, storage_key_for
-from .models import FileType, Membership, Project, ProjectFile, Role, ShareLink
+from .models import FileType, Membership, Project, ProjectFile, Role, ShareLink, touch_project
 from .paths import InvalidPathError, guess_file_type, normalize_path
 
 router = Router(auth=SessionAuth())
@@ -39,6 +39,7 @@ class ProjectOut(Schema):
     role: str
     created_at: str
     updated_at: str
+    last_edited_by_name: str | None = None
 
 
 def _project_out(project: Project, role: str) -> ProjectOut:
@@ -48,6 +49,11 @@ def _project_out(project: Project, role: str) -> ProjectOut:
         role=role,
         created_at=project.created_at.isoformat(),
         updated_at=project.updated_at.isoformat(),
+        last_edited_by_name=(
+            project.last_edited_by.display_name or project.last_edited_by.email
+            if project.last_edited_by
+            else None
+        ),
     )
 
 
@@ -215,7 +221,8 @@ def update_project(request, project_id: uuid.UUID, payload: ProjectUpdateIn):
     if not name:
         raise HttpError(400, "Project name is required.")
     project.name = name
-    project.save(update_fields=["name", "updated_at"])
+    project.save(update_fields=["name"])
+    touch_project(project, user)
     return _project_out(project, membership.role)
 
 

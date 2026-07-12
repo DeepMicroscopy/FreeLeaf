@@ -1037,6 +1037,8 @@ export interface components {
             created_at: string;
             /** Updated At */
             updated_at: string;
+            /** Last Edited By Name */
+            last_edited_by_name?: string | null;
         };
         /** ProjectCreateIn */
         ProjectCreateIn: {
@@ -1241,6 +1243,8 @@ export interface components {
         InternalContentIn: {
             /** Content */
             content: string;
+            /** Editor User Id */
+            editor_user_id?: string | null;
         };
         /** BibliographyFileOut */
         BibliographyFileOut: {

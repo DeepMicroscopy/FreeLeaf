@@ -221,6 +221,11 @@ export function ProjectsPage() {
                       <Users size={12} aria-hidden="true" />
                       {p.role}
                     </p>
+                    <p className={styles.cardActivity} title={new Date(p.updated_at).toLocaleString()}>
+                      {p.last_edited_by_name ? `Changed by ${p.last_edited_by_name}` : "Changed"}
+                      {" · "}
+                      {new Date(p.updated_at).toLocaleDateString()}
+                    </p>
                   </div>
                 </button>
               </li>

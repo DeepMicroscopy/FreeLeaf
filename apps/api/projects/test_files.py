@@ -6,7 +6,7 @@ from django.test import Client
 from accounts.models import User
 from core.testing import ApiTestCase, login_as
 
-from .models import ProjectFile
+from .models import Project, ProjectFile
 
 
 def post_json(client, url, data=None):
@@ -150,3 +150,39 @@ class FileTreeTests(ApiTestCase):
         post_json(stranger, "/api/auth/anonymous", {})
         response = stranger.get(f"/api/projects/{self.project_id}/files")
         self.assertEqual(response.status_code, 404)
+
+
+class ProjectActivityAttributionTests(ApiTestCase):
+    """Creating a project has no attribution yet (last_edited_by_name is
+    null); direct file edits by a collaborator should attribute the project
+    to that collaborator, matching the "who last changed this" list column."""
+
+    def setUp(self):
+        super().setUp()
+        self.owner = Client()
+        _login_new_user(self.owner, "owner@example.com")
+        create = post_json(self.owner, "/api/projects", {"name": "Paper"})
+        self.project_id = create.json()["id"]
+        self.assertIsNone(create.json()["last_edited_by_name"])
+
+    def test_editor_creating_a_file_attributes_the_project_to_them(self):
+        editor = Client()
+        _login_new_user(editor, "editor@example.com")
+        from .models import Membership, Role
+
+        Membership.objects.create(
+            project_id=self.project_id, user=User.objects.get(email="editor@example.com"), role=Role.EDITOR
+        )
+        post_json(editor, f"/api/projects/{self.project_id}/files", {"path": "notes.tex", "content": "x"})
+        response = self.owner.get(f"/api/projects/{self.project_id}")
+        self.assertEqual(response.json()["last_edited_by_name"], "editor@example.com")
+
+    def test_renaming_the_project_attributes_it_to_the_renamer(self):
+        response = patch_json(self.owner, f"/api/projects/{self.project_id}", {"name": "New Name"})
+        self.assertEqual(response.json()["last_edited_by_name"], "owner@example.com")
+
+    def test_deleting_a_file_attributes_the_project(self):
+        main_tex = ProjectFile.objects.get(project_id=self.project_id, path="main.tex")
+        self.owner.delete(f"/api/projects/{self.project_id}/files/{main_tex.id}")
+        response = self.owner.get(f"/api/projects/{self.project_id}")
+        self.assertEqual(response.json()["last_edited_by_name"], "owner@example.com")
