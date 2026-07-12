@@ -101,3 +101,10 @@
   font-size: 12px;
   color: var(--text-secondary);
 }
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  white-space: nowrap;
+}

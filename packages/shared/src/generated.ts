@@ -620,6 +620,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/users/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete User */
+        delete: operations["accounts_admin_api_delete_user"];
+        options?: never;
+        head?: never;
+        /** Update User Admin */
+        patch: operations["accounts_admin_api_update_user_admin"];
+        trace?: never;
+    };
     "/api/admin/site-settings": {
         parameters: {
             query?: never;
@@ -1235,6 +1253,11 @@ export interface components {
             last_login_at?: string | null;
             /** Project Count */
             project_count: number;
+        };
+        /** UpdateUserAdminIn */
+        UpdateUserAdminIn: {
+            /** Is Admin */
+            is_admin: boolean;
         };
         /** SiteSettingsOut */
         SiteSettingsOut: {
@@ -2599,6 +2622,52 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminUserOut"][];
+                };
+            };
+        };
+    };
+    accounts_admin_api_delete_user: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    accounts_admin_api_update_user_admin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateUserAdminIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserOut"];
                 };
             };
         };

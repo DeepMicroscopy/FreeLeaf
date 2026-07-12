@@ -39,29 +39,72 @@ class AdminUserOut(Schema):
     project_count: int
 
 
+def _admin_user_out(u: User, project_count: int) -> AdminUserOut:
+    return AdminUserOut(
+        id=u.id,
+        kind=u.kind,
+        display_name=u.display_name,
+        email=u.email,
+        orcid_id=u.orcid_id,
+        is_admin=u.is_admin,
+        created_at=u.created_at.isoformat(),
+        last_login_at=u.last_login_at.isoformat() if u.last_login_at else None,
+        project_count=project_count,
+    )
+
+
+def _project_counts() -> dict:
+    return dict(Membership.objects.values("user_id").annotate(count=Count("id")).values_list("user_id", "count"))
+
+
 @router.get("/admin/users", response=list[AdminUserOut])
 def list_users(request):
     user = get_current_user(request)
     require_admin(user)
 
-    project_counts = dict(
-        Membership.objects.values("user_id").annotate(count=Count("id")).values_list("user_id", "count")
-    )
+    project_counts = _project_counts()
     users = User.objects.all().order_by("-created_at")
-    return [
-        AdminUserOut(
-            id=u.id,
-            kind=u.kind,
-            display_name=u.display_name,
-            email=u.email,
-            orcid_id=u.orcid_id,
-            is_admin=u.is_admin,
-            created_at=u.created_at.isoformat(),
-            last_login_at=u.last_login_at.isoformat() if u.last_login_at else None,
-            project_count=project_counts.get(u.id, 0),
-        )
-        for u in users
-    ]
+    return [_admin_user_out(u, project_counts.get(u.id, 0)) for u in users]
+
+
+def _get_user_or_404(user_id: uuid.UUID) -> User:
+    target = User.objects.filter(id=user_id).first()
+    if target is None:
+        raise HttpError(404, "User not found.")
+    return target
+
+
+class UpdateUserAdminIn(Schema):
+    is_admin: bool
+
+
+@router.patch("/admin/users/{user_id}", response=AdminUserOut)
+def update_user_admin(request, user_id: uuid.UUID, payload: UpdateUserAdminIn):
+    require_admin(get_current_user(request))
+    target = _get_user_or_404(user_id)
+
+    if target.is_admin and not payload.is_admin and not User.objects.filter(is_admin=True).exclude(id=target.id).exists():
+        raise HttpError(400, "Can't remove admin from the last remaining admin.")
+
+    target.is_admin = payload.is_admin
+    target.save(update_fields=["is_admin"])
+    return _admin_user_out(target, _project_counts().get(target.id, 0))
+
+
+@router.delete("/admin/users/{user_id}")
+def delete_user(request, user_id: uuid.UUID):
+    require_admin(get_current_user(request))
+    target = _get_user_or_404(user_id)
+
+    if target.is_admin and not User.objects.filter(is_admin=True).exclude(id=target.id).exists():
+        raise HttpError(400, "Can't delete the last remaining admin.")
+
+    # Memberships cascade-delete (they're meaningless without the user);
+    # owned projects and anything else pointing at this user (comments,
+    # snapshots, ...) fall back to SET_NULL — deleting an account never
+    # deletes a project or its content out from under other collaborators.
+    target.delete()
+    return {"detail": "User deleted."}
 
 
 class SiteSettingsOut(Schema):
