@@ -32,13 +32,43 @@ export interface CommentAnchor {
  * current document length — anchors are plain character offsets captured
  * at creation time (see Comment model docstring), so a range can end up
  * stale/out-of-bounds after enough edits; clamping keeps that "honest
- * drift" harmless instead of throwing. Each decoration carries the
- * originating comment's `id` in its spec (CodeMirror preserves arbitrary
- * extra fields on a mark's spec) so a click on the marked text can look up
- * *which* comment it belongs to — see `findCommentAnchorAt`. */
-export function computeCommentAnchorDecorations(anchors: CommentAnchor[], docLength: number): DecorationSet {
+ * drift" harmless instead of throwing.
+ *
+ * `currentDecorations` (the field's own live value, already kept correctly
+ * positioned edit-by-edit via CodeMirror's own `deco.map()`) takes priority
+ * over the anchor's raw stored offsets for any comment that already has a
+ * decoration — a real, previously-reproduced bug: `commentAnchors` is a
+ * freshly-built array on every render of the *parent* editor tab (not
+ * memoized against unrelated state like cursor position), so this recompute
+ * fires far more often than "the comment list changed." Recomputing purely
+ * from the stale stored offsets every time silently snapped an already
+ * correctly-drifted anchor back to its stale creation-time position on
+ * nearly every keystroke — looking exactly like a highlighted comment
+ * "shifting" or "not moving" as text was typed elsewhere. Only a genuinely
+ * *new* comment (no existing decoration yet) falls back to its stored
+ * offsets, since it hasn't had a chance to drift from anything yet. Each
+ * decoration carries the originating comment's `id` in its spec (CodeMirror
+ * preserves arbitrary extra fields on a mark's spec) so a click on the
+ * marked text can look up *which* comment it belongs to — see
+ * `findCommentAnchorAt`. */
+export function computeCommentAnchorDecorations(
+  anchors: CommentAnchor[],
+  docLength: number,
+  currentDecorations: DecorationSet = Decoration.none,
+): DecorationSet {
+  const livePositionByCommentId = new Map<string, { from: number; to: number }>();
+  currentDecorations.between(0, docLength, (from, to, deco) => {
+    const id = (deco.spec as { commentId?: string }).commentId;
+    if (id) livePositionByCommentId.set(id, { from, to });
+  });
+
   const marks = anchors
-    .map((a) => ({ id: a.id, from: Math.max(0, Math.min(a.from, docLength)), to: Math.max(0, Math.min(a.to, docLength)), resolved: a.resolved }))
+    .map((a) => {
+      const live = livePositionByCommentId.get(a.id);
+      const from = live?.from ?? a.from;
+      const to = live?.to ?? a.to;
+      return { id: a.id, from: Math.max(0, Math.min(from, docLength)), to: Math.max(0, Math.min(to, docLength)), resolved: a.resolved };
+    })
     .filter((a) => a.to > a.from)
     .sort((a, b) => a.from - b.from || a.to - b.to)
     .map((a) =>

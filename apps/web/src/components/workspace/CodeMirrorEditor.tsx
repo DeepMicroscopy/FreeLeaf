@@ -388,7 +388,8 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
   recomputeCommentAnchorsRef.current = () => {
     const view = viewRef.current;
     if (!view) return;
-    const decorations = computeCommentAnchorDecorations(commentAnchorsRef.current ?? [], view.state.doc.length);
+    const current = view.state.field(commentAnchorsField);
+    const decorations = computeCommentAnchorDecorations(commentAnchorsRef.current ?? [], view.state.doc.length, current);
     view.dispatch({ effects: setCommentAnchorDecorations.of(decorations) });
   };
   const onCommentAnchorClickRef = useRef(onCommentAnchorClick);

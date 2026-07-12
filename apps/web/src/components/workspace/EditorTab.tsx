@@ -1,7 +1,7 @@
 import { api, apiOrigin } from "@freeleaf/shared";
 import type { components } from "@freeleaf/shared";
 import { FileQuestion, MessageSquare, Search } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
@@ -132,9 +132,20 @@ export function EditorTab() {
     [projectId],
   );
 
-  const commentAnchors = comments
-    .filter((c) => c.anchor_from != null && c.anchor_to != null)
-    .map((c) => ({ id: c.id, from: c.anchor_from!, to: c.anchor_to!, resolved: c.resolved }));
+  // Memoized against `comments` specifically (not just inline) — this array
+  // otherwise gets a fresh reference on every render, including ones with no
+  // actual comment-list change (e.g. every cursor move while typing), which
+  // used to force a decoration recompute far more often than intended. See
+  // computeCommentAnchorDecorations's own docstring for why that recompute
+  // frequency mattered: it used to be the cause of a real "comment highlight
+  // resets position" bug even after this fix (now fixed at the source too).
+  const commentAnchors = useMemo(
+    () =>
+      comments
+        .filter((c) => c.anchor_from != null && c.anchor_to != null)
+        .map((c) => ({ id: c.id, from: c.anchor_from!, to: c.anchor_to!, resolved: c.resolved })),
+    [comments],
+  );
 
   // A pending selection anchor belongs to whichever file it was marked on —
   // discard it on file switch so it can't get attached to the wrong file.
