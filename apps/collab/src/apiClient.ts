@@ -21,3 +21,26 @@ export async function persistFileContent(fileId: string, content: string, editor
   });
   if (!res.ok) throw new Error(`persistFileContent(${fileId}) failed: ${res.status}`);
 }
+
+// A binary Yjs snapshot, stored separately from the plain-text content above
+// — the only thing that carries suggested-edit formatting (Plan.md §9 Phase
+// 8 extension), which a room's own plain-text persistence has no way to
+// represent. Returns null if none exists yet (a brand new file, or one that
+// predates this feature) — the caller falls back to plain-text-only seeding.
+export async function fetchYjsSnapshot(fileId: string): Promise<Uint8Array | null> {
+  const res = await fetch(`${API_INTERNAL_URL}/api/internal/collab/files/${fileId}/yjs-snapshot`, {
+    headers: { "X-Collab-Secret": COLLAB_SHARED_SECRET },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`fetchYjsSnapshot(${fileId}) failed: ${res.status} ${await res.text()}`);
+  return new Uint8Array(await res.arrayBuffer());
+}
+
+export async function persistYjsSnapshot(fileId: string, snapshot: Uint8Array): Promise<void> {
+  const res = await fetch(`${API_INTERNAL_URL}/api/internal/collab/files/${fileId}/yjs-snapshot`, {
+    method: "PUT",
+    headers: { "X-Collab-Secret": COLLAB_SHARED_SECRET, "content-type": "application/octet-stream" },
+    body: snapshot,
+  });
+  if (!res.ok) throw new Error(`persistYjsSnapshot(${fileId}) failed: ${res.status}`);
+}

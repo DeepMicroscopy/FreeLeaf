@@ -15,6 +15,11 @@ interface WorkspaceContextValue {
   selectedFileId: string | null;
   selectFile: (fileId: string | null) => void;
   canWrite: boolean;
+  /** True for owner/editor/reviewer — anyone who can type in the document at
+   * all. Narrower than `canWrite`: a reviewer can edit text (always as a
+   * tracked suggestion, see editingMode.tsx/suggestions.ts) but can't touch
+   * file management, settings, or members — those stay gated on `canWrite`. */
+  canEditText: boolean;
   /** Live text of whichever `.tex` file is currently open in the editor
    * (Plan.md §9 Phase 11) — kept in sync by `EditorTab`/`CodeMirrorEditor`
    * so the sidebar's Outline/Figures & Tables tabs can scan it without
@@ -69,6 +74,7 @@ export function WorkspaceProvider({ projectId, children }: { projectId: string; 
   }, [files, selectedFileId]);
 
   const canWrite = project?.role === "owner" || project?.role === "editor";
+  const canEditText = canWrite || project?.role === "reviewer";
 
   const value = useMemo<WorkspaceContextValue>(
     () => ({
@@ -80,11 +86,12 @@ export function WorkspaceProvider({ projectId, children }: { projectId: string; 
       selectedFileId,
       selectFile: setSelectedFileId,
       canWrite,
+      canEditText,
       currentFileText,
       setCurrentFileText,
       jumpToLineRef,
     }),
-    [projectId, project, files, loading, refreshFiles, selectedFileId, canWrite, currentFileText],
+    [projectId, project, files, loading, refreshFiles, selectedFileId, canWrite, canEditText, currentFileText],
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;

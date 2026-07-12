@@ -8,6 +8,11 @@ from accounts.models import User
 class Role(models.TextChoices):
     OWNER = "owner", "Owner"
     EDITOR = "editor", "Editor"
+    # Can edit text, but only as tracked suggestions (never a direct write) —
+    # locked to Reviewing mode client-side; see EditingModeProvider/
+    # ModeSwitcher in apps/web. Same read access as VIEWER otherwise (no
+    # file management, settings, or member/share-link management).
+    REVIEWER = "reviewer", "Reviewer"
     VIEWER = "viewer", "Viewer"
 
 

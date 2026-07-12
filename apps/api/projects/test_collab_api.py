@@ -135,3 +135,52 @@ class CollabInternalContentTests(ApiTestCase):
         self.assertEqual(response.status_code, 200)
         project = Project.objects.get(id=self.project_id)
         self.assertIsNone(project.last_edited_by_id)
+
+
+@override_settings(COLLAB_SHARED_SECRET="test-secret")
+class CollabInternalYjsSnapshotTests(ApiTestCase):
+    """Binary Yjs snapshot storage (separate from the plain-text content
+    endpoint) — the only thing that lets suggested-edit formatting (Plan.md
+    §9 Phase 8 extension) survive a room being destroyed and reseeded."""
+
+    def setUp(self):
+        super().setUp()
+        self.owner = Client()
+        _login_new_user(self.owner, "owner@example.com")
+        create = post_json(self.owner, "/api/projects", {"name": "P"})
+        self.project_id = create.json()["id"]
+        self.main_tex_id = ProjectFile.objects.get(project_id=self.project_id, path="main.tex").id
+
+    def test_missing_snapshot_is_404(self):
+        client = Client()
+        response = client.get(
+            f"/api/internal/collab/files/{self.main_tex_id}/yjs-snapshot", HTTP_X_COLLAB_SECRET="test-secret"
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_write_then_read_round_trips_binary_bytes(self):
+        client = Client()
+        fake_snapshot = bytes([0, 1, 2, 255, 254, 253, 0, 0])
+        response = client.put(
+            f"/api/internal/collab/files/{self.main_tex_id}/yjs-snapshot",
+            data=fake_snapshot,
+            content_type="application/octet-stream",
+            HTTP_X_COLLAB_SECRET="test-secret",
+        )
+        self.assertEqual(response.status_code, 200)
+
+        response = client.get(
+            f"/api/internal/collab/files/{self.main_tex_id}/yjs-snapshot", HTTP_X_COLLAB_SECRET="test-secret"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, fake_snapshot)
+
+    def test_wrong_secret_is_rejected(self):
+        client = Client()
+        response = client.put(
+            f"/api/internal/collab/files/{self.main_tex_id}/yjs-snapshot",
+            data=b"whatever",
+            content_type="application/octet-stream",
+            HTTP_X_COLLAB_SECRET="nope",
+        )
+        self.assertEqual(response.status_code, 401)

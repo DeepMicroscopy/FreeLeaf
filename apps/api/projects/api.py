@@ -88,9 +88,9 @@ def create_project(request, payload: ProjectCreateIn):
 def _common_leading_dir(names: list[str]) -> str:
     """If every entry shares one top-level directory, return that prefix
     (with a trailing slash) so it can be stripped. Common in zip exports
-    that wrap the whole project in one folder (e.g. Overleaf's "Download
-    as zip") — without this, every file would land one level deeper than
-    the user expects."""
+    that wrap the whole project in one folder (a common "download project
+    as zip" convention) — without this, every file would land one level
+    deeper than the user expects."""
     if not names:
         return ""
     tops = {n.split("/", 1)[0] for n in names if "/" in n}
@@ -278,8 +278,8 @@ def update_member_role(request, project_id: uuid.UUID, member_user_id: uuid.UUID
     project, membership = get_authorized_project(user, project_id)
     require_role(membership, Role.OWNER)
 
-    if payload.role not in (Role.OWNER, Role.EDITOR, Role.VIEWER):
-        raise HttpError(400, "role must be 'owner', 'editor', or 'viewer'.")
+    if payload.role not in (Role.OWNER, Role.EDITOR, Role.REVIEWER, Role.VIEWER):
+        raise HttpError(400, "role must be 'owner', 'editor', 'reviewer', or 'viewer'.")
 
     target = project.memberships.select_related("user").filter(user_id=member_user_id).first()
     if target is None:
@@ -355,8 +355,8 @@ def create_share_link(request, project_id: uuid.UUID, payload: ShareLinkCreateIn
     user = get_current_user(request)
     project, membership = get_authorized_project(user, project_id)
     require_role(membership, Role.OWNER)
-    if payload.role not in (Role.EDITOR, Role.VIEWER):
-        raise HttpError(400, "role must be 'editor' or 'viewer'.")
+    if payload.role not in (Role.EDITOR, Role.REVIEWER, Role.VIEWER):
+        raise HttpError(400, "role must be 'editor', 'reviewer', or 'viewer'.")
 
     token = secrets.token_urlsafe(32)
     expires_at = None

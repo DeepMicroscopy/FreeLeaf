@@ -9,7 +9,21 @@ const MODES: { value: EditingMode; label: string }[] = [
 ];
 
 export function ModeSwitcher() {
-  const { mode, setMode } = useEditingMode();
+  const { mode, setMode, locked } = useEditingMode();
+
+  if (locked) {
+    return (
+      <div className={styles.switcher} role="tablist" aria-label="Editing mode">
+        <span
+          className={[styles.option, styles.optionActive].join(" ")}
+          title="Reviewers are locked to Reviewing mode — every change is a tracked suggestion"
+        >
+          Reviewing
+        </span>
+      </div>
+    );
+  }
+
   return (
     <div className={styles.switcher} role="tablist" aria-label="Editing mode">
       {MODES.map((m) => (

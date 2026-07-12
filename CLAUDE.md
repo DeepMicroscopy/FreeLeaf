@@ -1,6 +1,6 @@
 # CLAUDE.md — FreeLeaf
 
-Open-source Overleaf alternative. Full spec: **`PLAN.md`** (read on demand, don't restate). This file is loaded every session — keep it, and your working style, token-lean.
+Open-source, self-hostable collaborative LaTeX editor. Full spec: **`PLAN.md`** (read on demand, don't restate). This file is loaded every session — keep it, and your working style, token-lean.
 
 ## Token discipline (primary directive)
 - Cite `PLAN.md §N` instead of quoting it. Never paste the plan back.

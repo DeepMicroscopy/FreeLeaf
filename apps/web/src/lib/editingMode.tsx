@@ -6,6 +6,10 @@ export type EditingMode = "writing" | "reviewing" | "polishing";
 interface EditingModeContextValue {
   mode: EditingMode;
   setMode: (mode: EditingMode) => void;
+  // True for the "reviewer" share-link/member role: locked to Reviewing
+  // mode, no Writing/Polishing — every one of their edits is a tracked
+  // suggestion, never a direct write. See ModeSwitcher.
+  locked: boolean;
 }
 
 const EditingModeContext = createContext<EditingModeContextValue | null>(null);
@@ -22,18 +26,28 @@ function readStoredMode(projectId: string): EditingMode {
 // Per-user, per-project UI preference (not project state) — each
 // collaborator can be in a different mode at once, so this deliberately
 // isn't synced via Yjs/ProjectSettings, just persisted locally.
-export function EditingModeProvider({ projectId, children }: { projectId: string; children: ReactNode }) {
-  const [mode, setModeState] = useState<EditingMode>(() => readStoredMode(projectId));
+export function EditingModeProvider({
+  projectId,
+  role,
+  children,
+}: {
+  projectId: string;
+  role: string;
+  children: ReactNode;
+}) {
+  const locked = role === "reviewer";
+  const [mode, setModeState] = useState<EditingMode>(() => (locked ? "reviewing" : readStoredMode(projectId)));
 
   const setMode = useCallback(
     (next: EditingMode) => {
+      if (locked) return;
       setModeState(next);
       localStorage.setItem(storageKey(projectId), next);
     },
-    [projectId],
+    [projectId, locked],
   );
 
-  return <EditingModeContext.Provider value={{ mode, setMode }}>{children}</EditingModeContext.Provider>;
+  return <EditingModeContext.Provider value={{ mode, setMode, locked }}>{children}</EditingModeContext.Provider>;
 }
 
 export function useEditingMode(): EditingModeContextValue {

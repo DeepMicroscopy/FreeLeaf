@@ -20,9 +20,7 @@ export function ProjectWorkspace() {
   return (
     <WorkspaceProvider projectId={projectId}>
       <BibliographyProvider projectId={projectId}>
-        <EditingModeProvider projectId={projectId}>
-          <WorkspaceShell />
-        </EditingModeProvider>
+        <WorkspaceShell />
       </BibliographyProvider>
     </WorkspaceProvider>
   );
@@ -36,6 +34,22 @@ function WorkspaceShell() {
 
   const base = `/projects/${projectId}`;
 
+  return (
+    <EditingModeProvider projectId={projectId} role={project.role}>
+      <WorkspaceShellBody base={base} projectId={projectId} project={project} />
+    </EditingModeProvider>
+  );
+}
+
+function WorkspaceShellBody({
+  base,
+  projectId,
+  project,
+}: {
+  base: string;
+  projectId: string;
+  project: NonNullable<ReturnType<typeof useWorkspace>["project"]>;
+}) {
   return (
     <div className={styles.shell}>
       <header className={styles.header}>

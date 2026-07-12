@@ -8,9 +8,19 @@ import { Spinner } from "../ui/Spinner";
 import styles from "./ShareButton.module.css";
 
 type MemberOut = components["schemas"]["MemberOut"];
+type ShareRole = "editor" | "reviewer" | "viewer";
+
+const ROLE_DESCRIPTIONS: Record<ShareRole, string> = {
+  editor: "Anyone with this link can join as an editor — including anonymously, with just a display name.",
+  reviewer:
+    "Anyone with this link joins as a reviewer — locked to Reviewing mode, and every change they make is a " +
+    "tracked suggestion, never a direct edit.",
+  viewer: "Anyone with this link can view the project, read-only.",
+};
 
 export function ShareButton({ projectId }: { projectId: string }) {
   const [open, setOpen] = useState(false);
+  const [role, setRole] = useState<ShareRole>("editor");
   const [link, setLink] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState(false);
@@ -20,7 +30,7 @@ export function ShareButton({ projectId }: { projectId: string }) {
   async function toggle() {
     const next = !open;
     setOpen(next);
-    if (next && !link) await generate();
+    if (next && !link) await generate(role);
     if (next) {
       const { data } = await api.GET("/api/projects/{project_id}/members", {
         params: { path: { project_id: projectId } },
@@ -29,12 +39,12 @@ export function ShareButton({ projectId }: { projectId: string }) {
     }
   }
 
-  async function generate() {
+  async function generate(forRole: ShareRole) {
     setGenerating(true);
     setError(false);
     const { data, error: reqError } = await api.POST("/api/projects/{project_id}/share-links", {
       params: { path: { project_id: projectId } },
-      body: { role: "editor" },
+      body: { role: forRole },
     });
     setGenerating(false);
     if (reqError || !data?.token) {
@@ -42,6 +52,12 @@ export function ShareButton({ projectId }: { projectId: string }) {
       return;
     }
     setLink(`${window.location.origin}/join/${data.token}`);
+  }
+
+  async function changeShareRole(next: ShareRole) {
+    setRole(next);
+    setLink(null);
+    await generate(next);
   }
 
   async function copy() {
@@ -73,7 +89,7 @@ export function ShareButton({ projectId }: { projectId: string }) {
 
   return (
     <div className={styles.wrapper}>
-      <Button variant="secondary" size="sm" onClick={toggle}>
+      <Button variant="secondary" size="sm" onClick={toggle} className={styles.trigger}>
         <Share2 size={14} aria-hidden="true" />
         Share
       </Button>
@@ -82,16 +98,28 @@ export function ShareButton({ projectId }: { projectId: string }) {
           <button className={styles.backdrop} aria-label="Close" onClick={() => setOpen(false)} />
           <div className={styles.popover}>
             <p className={styles.title}>Invite collaborators</p>
-            <p className={styles.description}>
-              Anyone with this link can join as an editor — including anonymously, with just a display
-              name.
-            </p>
+            <label className={styles.shareRoleField}>
+              <span className={styles.shareRoleLabel}>Link role</span>
+              <select
+                className={styles.roleSelect}
+                value={role}
+                disabled={generating}
+                onChange={(e) => void changeShareRole(e.target.value as ShareRole)}
+              >
+                <option value="editor">Editor</option>
+                <option value="reviewer">Reviewer</option>
+                <option value="viewer">Viewer</option>
+              </select>
+            </label>
+            <p className={styles.description}>{ROLE_DESCRIPTIONS[role]}</p>
             {generating ? (
               <div className={styles.loading}>
                 <Spinner size={16} />
               </div>
             ) : error ? (
-              <p className={styles.error}>Couldn't create a link. <button type="button" onClick={generate}>Try again</button></p>
+              <p className={styles.error}>
+                Couldn't create a link. <button type="button" onClick={() => void generate(role)}>Try again</button>
+              </p>
             ) : (
               <div className={styles.linkRow}>
                 <input className={styles.linkInput} readOnly value={link ?? ""} onFocus={(e) => e.target.select()} />
@@ -126,6 +154,7 @@ export function ShareButton({ projectId }: { projectId: string }) {
                           onChange={(e) => changeRole(m.user_id, e.target.value)}
                         >
                           <option value="editor">editor</option>
+                          <option value="reviewer">reviewer</option>
                           <option value="viewer">viewer</option>
                         </select>
                         <button

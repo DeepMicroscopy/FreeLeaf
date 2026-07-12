@@ -42,8 +42,17 @@ const KEYSTROKE_SNAPSHOT_THRESHOLD = 1000;
 const MIN_AUTO_SNAPSHOT_GAP_MS = 60 * 1000;
 
 export function EditorTab() {
-  const { projectId, files, selectedFileId, selectFile, canWrite, refreshFiles, setCurrentFileText, jumpToLineRef } =
-    useWorkspace();
+  const {
+    projectId,
+    files,
+    selectedFileId,
+    selectFile,
+    canWrite,
+    canEditText,
+    refreshFiles,
+    setCurrentFileText,
+    jumpToLineRef,
+  } = useWorkspace();
   const { mode } = useEditingMode();
   const { show } = useToast();
   const selectedFile = files.find((f) => f.id === selectedFileId);
@@ -187,14 +196,15 @@ export function EditorTab() {
     [files, selectedFileId, selectFile],
   );
 
-  // Reviewing mode's track-changes diff (Plan.md §9 Phase 8): diffs the live
-  // file against a chosen snapshot "baseline" — see trackChangesExtension.ts
-  // for why this, not per-keystroke CRDT attribution, was the scoped-down
-  // approach here.
+  // Reviewing mode's "safety baseline" (Plan.md §9 Phase 8): a whole-project
+  // revert point, independent of per-character suggestion tracking (see
+  // suggestions.ts) — picking a snapshot here doesn't affect which
+  // suggestions are shown, it's just "what would 'Revert project to
+  // baseline' restore to."
   const [snapshots, setSnapshots] = useState<SnapshotOut[]>([]);
   const [baselineId, setBaselineId] = useState<string | null>(null);
-  const [baselineContent, setBaselineContent] = useState<string | null>(null);
   const [trackChangesBusy, setTrackChangesBusy] = useState(false);
+  const [suggestionCount, setSuggestionCount] = useState(0);
 
   const loadSnapshots = useCallback(async () => {
     const { data } = await api.GET("/api/projects/{project_id}/snapshots", {
@@ -210,22 +220,15 @@ export function EditorTab() {
     void loadSnapshots();
   }, [mode, loadSnapshots]);
 
-  useEffect(() => {
-    if (mode !== "reviewing" || !baselineId || !selectedFile) {
-      setBaselineContent(null);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      const { data } = await api.GET("/api/projects/{project_id}/snapshots/{snapshot_id}/file-content", {
-        params: { path: { project_id: projectId, snapshot_id: baselineId }, query: { path: selectedFile.path } },
-      });
-      if (!cancelled) setBaselineContent(data?.content ?? null);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [mode, baselineId, projectId, selectedFile]);
+  const handleAcceptAllSuggestions = useCallback(() => {
+    if (!window.confirm(`Accept all ${suggestionCount} pending suggestion(s) in this file?`)) return;
+    codeMirrorRef.current?.acceptAllSuggestions();
+  }, [suggestionCount]);
+
+  const handleRejectAllSuggestions = useCallback(() => {
+    if (!window.confirm(`Reject all ${suggestionCount} pending suggestion(s) in this file?`)) return;
+    codeMirrorRef.current?.rejectAllSuggestions();
+  }, [suggestionCount]);
 
   const handleMarkNewBaseline = useCallback(async () => {
     setTrackChangesBusy(true);
@@ -414,20 +417,39 @@ export function EditorTab() {
               )}
             </div>
           )}
+          {suggestionCount > 0 && (
+            <div className={styles.trackChangesBar}>
+              <span className={styles.trackChangesHint}>
+                {suggestionCount} suggestion{suggestionCount === 1 ? "" : "s"} pending in this file
+              </span>
+              {canWrite && (
+                <>
+                  <Button variant="secondary" size="sm" onClick={handleAcceptAllSuggestions}>
+                    Accept all
+                  </Button>
+                  <Button variant="danger" size="sm" onClick={handleRejectAllSuggestions}>
+                    Reject all
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
           <div className={styles.paneBody}>
             <CodeMirrorEditor
               ref={codeMirrorRef}
               projectId={projectId}
               fileId={selectedFile.id}
-              readOnly={!canWrite}
+              readOnly={!canEditText}
               onContentChanged={handleContentChanged}
               onCompileShortcut={handleCompileShortcut}
               onJumpToPdf={handleJumpToPdf}
               jumpTarget={jump && jump.fileId === selectedFile.id ? jump : undefined}
-              onActivity={canWrite ? handleActivity : undefined}
-              onKeystroke={canWrite ? handleKeystroke : undefined}
+              onActivity={canEditText ? handleActivity : undefined}
+              onKeystroke={canEditText ? handleKeystroke : undefined}
               onCursorLineChange={setCursorLine}
-              trackChangesBaseline={mode === "reviewing" ? baselineContent : null}
+              suggestMode={mode === "reviewing"}
+              canModerateSuggestions={canWrite}
+              onSuggestionCountChange={setSuggestionCount}
               polishingEnabled={mode === "polishing"}
               onLintFindings={setLintFindings}
               onOpenTableDesigner={handleOpenTableDesigner}

@@ -9,7 +9,7 @@ description: Open, self-hostable, real-time collaborative LaTeX editing.
   <p class="tagline">The LaTeX editor you always wanted but never asked for. <span>;-)</span></p>
   <p class="subtagline">
     Open-source, self-hostable, real-time collaborative LaTeX editing — with the parts every
-    Overleaf refugee actually asks for: sane sign-in, real comments, track changes, version
+    cloud-LaTeX refugee actually asks for: sane sign-in, real comments, track changes, version
     history, and a sandboxed compile pipeline you control.
   </p>
   <div class="cta">

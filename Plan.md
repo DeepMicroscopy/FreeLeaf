@@ -1,6 +1,6 @@
 # Build Plan / Claude Code Prompt — "FreeLeaf"
 
-> An open and free, self-hostable, collaborative LaTeX editing platform (an Overleaf alternative).
+> An open and free, self-hostable, collaborative LaTeX editing platform.
 > Project name: **FreeLeaf**.
 
 ---
@@ -18,7 +18,7 @@ Build a web application where a user can:
 5. Manage references (BibTeX) in a dedicated tab, with `\cite{}` autocomplete and smart paste/drop.
 6. Self-host the whole thing with a single `docker compose up`.
 
-The north star is the Overleaf core loop — *edit → compile → co-view PDF* — plus real-time collaboration and frictionless, academic-friendly access (ORCID / magic link / anonymous). Ship that well before extras.
+The north star is the standard collaborative-LaTeX core loop — *edit → compile → co-view PDF* — plus real-time collaboration and frictionless, academic-friendly access (ORCID / magic link / anonymous). Ship that well before extras.
 
 ---
 
@@ -42,7 +42,7 @@ The north star is the Overleaf core loop — *edit → compile → co-view PDF* 
 
 ## 3. Non-negotiable principles
 
-- **Open & free.** No proprietary cloud dependencies. License: **AGPL-3.0** (network service; matches Overleaf CE). State the choice in `LICENSE`.
+- **Open & free.** No proprietary cloud dependencies. License: **AGPL-3.0** (network service). State the choice in `LICENSE`.
 - **Security first for compilation.** See §7. Never weaken the sandbox for convenience.
 - **Type-safe where possible.** TypeScript on the frontend; typed API contract (OpenAPI) between frontend and the Python backend.
 - **Reproducible.** Everything via Docker Compose; a clean clone must build and start.

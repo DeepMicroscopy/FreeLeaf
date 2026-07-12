@@ -2,8 +2,9 @@ import logging
 import time
 import uuid
 
+from botocore.exceptions import ClientError
 from django.conf import settings
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from ninja import Router, Schema
 from ninja.errors import HttpError
 
@@ -112,3 +113,37 @@ def _internal_file_or_404(file_id: uuid.UUID):
     if f is None:
         raise HttpError(404, "File not found.")
     return f
+
+
+def _yjs_snapshot_key(f: ProjectFile) -> str:
+    return f"{f.storage_key}.yjs"
+
+
+# A binary Yjs document snapshot (Y.encodeStateAsUpdate), separate from the
+# plain-text `content` object above — the plain text is (and must stay) the
+# actual LaTeX source everything else reads (compiling, export, direct API
+# edits), so it can never carry Yjs's rich-text formatting attributes.
+# Suggested-edit tags (Plan.md §9 Phase 8 extension — see suggestions.ts)
+# only exist in that formatting, which would otherwise vanish the moment a
+# room has no clients left and its in-memory Y.Doc is destroyed (see
+# apps/collab/src/room.ts's seed()/flush()). Whether this snapshot is safe
+# to trust on next load — vs. stale because something edited the plain text
+# outside the collab room since — is decided by the collab server, which
+# has both texts to compare; this endpoint is just dumb storage.
+@internal_router.get("/internal/collab/files/{file_id}/yjs-snapshot")
+def internal_get_yjs_snapshot(request, file_id: uuid.UUID):
+    _check_internal_secret(request)
+    f = _internal_file_or_404(file_id)
+    try:
+        data = storage.get_object(_yjs_snapshot_key(f))
+    except ClientError:
+        raise HttpError(404, "No snapshot yet.")
+    return HttpResponse(data, content_type="application/octet-stream")
+
+
+@internal_router.put("/internal/collab/files/{file_id}/yjs-snapshot")
+def internal_put_yjs_snapshot(request, file_id: uuid.UUID):
+    _check_internal_secret(request)
+    f = _internal_file_or_404(file_id)
+    storage.put_object(_yjs_snapshot_key(f), request.body, "application/octet-stream")
+    return {"ok": True}

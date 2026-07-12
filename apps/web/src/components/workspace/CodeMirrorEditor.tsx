@@ -7,7 +7,8 @@ import { StreamLanguage } from "@codemirror/language";
 import { stex } from "@codemirror/legacy-modes/mode/stex";
 import { openSearchPanel, search, searchKeymap } from "@codemirror/search";
 import { EditorState } from "@codemirror/state";
-import { Decoration, EditorView, keymap, lineNumbers } from "@codemirror/view";
+import type { Transaction, TransactionSpec } from "@codemirror/state";
+import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { yCollab } from "y-codemirror.next";
 import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
@@ -33,7 +34,21 @@ import {
   polishingLintField,
   setPolishingLintDecorations,
 } from "./polishingLintExtension";
-import { computeTrackChangesDecorations, setTrackChangesDecorations, trackChangesField } from "./trackChangesExtension";
+import {
+  acceptAllSuggestions,
+  colorForUserId,
+  computeSuggestionSpans,
+  ensureSuggestionTag,
+  rejectAllSuggestions,
+} from "./suggestions";
+import type { SuggestionSpan } from "./suggestions";
+import { isSuggestableEdit, planSuggestionRewrite } from "./suggestionRewrite";
+import {
+  computeSuggestionDecorations,
+  setSuggestionDecorations,
+  suggestionDecorationsField,
+  suggestionHoverTooltip,
+} from "./suggestionsExtension";
 import {
   commentAnchorsField,
   computeCommentAnchorDecorations,
@@ -75,16 +90,40 @@ const theme = EditorView.theme({
     backgroundColor: "var(--accent-soft-border) !important",
   },
   ".cm-scroller": { overflow: "auto" },
-  ".cm-trackInsert": {
-    backgroundColor: "color-mix(in srgb, #22c55e 20%, transparent)",
-    textDecoration: "underline",
-    textDecorationColor: "#22c55e",
+  ".cm-suggestionTooltip": {
+    backgroundColor: "var(--bg-surface-raised)",
+    border: "1px solid var(--border-default)",
+    borderRadius: "6px",
+    boxShadow: "var(--shadow-md)",
+    padding: "6px 8px",
+    fontFamily: "var(--font-sans)",
+    fontSize: "12px",
+    maxWidth: "260px",
   },
-  ".cm-trackDelete": {
-    backgroundColor: "color-mix(in srgb, #ef4444 18%, transparent)",
-    textDecoration: "line-through",
-    textDecorationColor: "#ef4444",
-    opacity: 0.75,
+  ".cm-suggestionTooltipInfo": {
+    color: "var(--text-secondary)",
+    whiteSpace: "nowrap",
+  },
+  ".cm-suggestionTooltipActions": {
+    display: "flex",
+    gap: "6px",
+    marginTop: "6px",
+  },
+  ".cm-suggestionTooltipAccept, .cm-suggestionTooltipReject": {
+    fontSize: "11.5px",
+    fontWeight: 600,
+    padding: "3px 8px",
+    borderRadius: "4px",
+    border: "1px solid var(--border-default)",
+    cursor: "pointer",
+  },
+  ".cm-suggestionTooltipAccept": {
+    color: "#16a34a",
+    borderColor: "color-mix(in srgb, #16a34a 45%, var(--border-default))",
+  },
+  ".cm-suggestionTooltipReject": {
+    color: "#dc2626",
+    borderColor: "color-mix(in srgb, #dc2626 45%, var(--border-default))",
   },
   ".cm-lintFinding": {
     textDecoration: "underline wavy",
@@ -141,13 +180,6 @@ const theme = EditorView.theme({
   },
 });
 
-function colorForUserId(id: string): { color: string; colorLight: string } {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) | 0;
-  const hue = Math.abs(hash) % 360;
-  return { color: `hsl(${hue} 70% 45%)`, colorLight: `hsl(${hue} 70% 45% / 0.25)` };
-}
-
 export interface JumpTarget {
   line: number;
   token: number;
@@ -158,6 +190,11 @@ export interface CodeMirrorEditorHandle {
    * exposed imperatively so a toolbar button outside the editor can trigger
    * it, same pattern as `CompilePaneHandle`. */
   openSearch: () => void;
+  /** Bulk-resolves every pending suggestion currently in the document (the
+   * Reviewing-mode toolbar's "Accept all"/"Reject all" buttons) — see
+   * suggestions.ts. */
+  acceptAllSuggestions: () => void;
+  rejectAllSuggestions: () => void;
 }
 
 interface CodeMirrorEditorProps {
@@ -171,11 +208,21 @@ interface CodeMirrorEditorProps {
   onKeystroke?: () => void;
   onCursorLineChange?: (line: number) => void;
   jumpTarget?: JumpTarget;
-  /** Reviewing mode's diff-since-baseline (Plan.md §9 Phase 8) — raw text
-   * content of the chosen snapshot to diff the live document against. Null
-   * means "don't show track-changes markup" (Writing/Polishing mode, or no
-   * baseline picked yet). */
-  trackChangesBaseline?: string | null;
+  /** Reviewing mode / reviewer role (Plan.md §9 Phase 8 extension): while
+   * true, local text edits are intercepted and turned into tracked
+   * suggestions (author-colored, accept/reject-able) instead of direct
+   * writes — see suggestionRewrite.ts/suggestions.ts. Suggestions already in
+   * the document are always shown/decorated regardless of this flag; it
+   * only controls whether *new* edits become suggestions. */
+  suggestMode?: boolean;
+  /** Whether hovering a suggestion shows Accept/Reject buttons (owner/editor
+   * — decides what to do with a suggestion) or just author/time info
+   * (reviewer — proposes changes but doesn't resolve them). */
+  canModerateSuggestions?: boolean;
+  /** Fires with the current count of pending suggestions in the document
+   * whenever it changes — drives the Reviewing-mode toolbar's "N pending
+   * suggestions" label and enables/disables its Accept/Reject-all buttons. */
+  onSuggestionCountChange?: (count: number) => void;
   /** Polishing mode's static lint checks (Plan.md §9 Phase 8) — see
    * polishingLint.ts. */
   polishingEnabled?: boolean;
@@ -218,7 +265,9 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
     onActivity,
     onKeystroke,
     onCursorLineChange,
-    trackChangesBaseline,
+    suggestMode,
+    canModerateSuggestions,
+    onSuggestionCountChange,
     polishingEnabled,
     onLintFindings,
     onOpenTableDesigner,
@@ -238,6 +287,12 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
     openSearch: () => {
       if (viewRef.current) openSearchPanel(viewRef.current);
     },
+    acceptAllSuggestions: () => {
+      if (ytextRef.current) acceptAllSuggestions(ytextRef.current, suggestionSpansRef.current);
+    },
+    rejectAllSuggestions: () => {
+      if (ytextRef.current) rejectAllSuggestions(ytextRef.current, suggestionSpansRef.current);
+    },
   }));
   const changeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const docTextChangeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -253,16 +308,23 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
   onKeystrokeRef.current = onKeystroke;
   const onCursorLineChangeRef = useRef(onCursorLineChange);
   onCursorLineChangeRef.current = onCursorLineChange;
-  const trackChangesBaselineRef = useRef(trackChangesBaseline);
-  trackChangesBaselineRef.current = trackChangesBaseline;
-  const recomputeTrackChangesRef = useRef(() => {});
-  recomputeTrackChangesRef.current = () => {
+  const suggestModeRef = useRef(suggestMode);
+  suggestModeRef.current = suggestMode;
+  const canModerateSuggestionsRef = useRef(canModerateSuggestions);
+  canModerateSuggestionsRef.current = canModerateSuggestions;
+  const ytextRef = useRef<Y.Text | null>(null);
+  const suggestionSpansRef = useRef<SuggestionSpan[]>([]);
+  const onSuggestionCountChangeRef = useRef(onSuggestionCountChange);
+  onSuggestionCountChangeRef.current = onSuggestionCountChange;
+  const recomputeSuggestionsRef = useRef(() => {});
+  recomputeSuggestionsRef.current = () => {
     const view = viewRef.current;
-    const baseline = trackChangesBaselineRef.current;
-    if (!view) return;
-    const decorations =
-      baseline == null ? Decoration.none : computeTrackChangesDecorations(baseline, view.state.doc.toString());
-    view.dispatch({ effects: setTrackChangesDecorations.of(decorations) });
+    const ytext = ytextRef.current;
+    if (!view || !ytext) return;
+    const spans = computeSuggestionSpans(ytext);
+    suggestionSpansRef.current = spans;
+    view.dispatch({ effects: setSuggestionDecorations.of(computeSuggestionDecorations(spans)) });
+    onSuggestionCountChangeRef.current?.(spans.length);
   };
   const polishingEnabledRef = useRef(polishingEnabled);
   polishingEnabledRef.current = polishingEnabled;
@@ -310,7 +372,10 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
       // if something else edited it meanwhile (this file has no lock, and
       // Yjs merges concurrent edits), refuse rather than clobber it.
       if (liveView.state.sliceDoc(match.from, match.to) !== match.raw) return false;
-      liveView.dispatch({ changes: { from: match.from, to: match.to, insert: newText } });
+      // Tagged as real input, same reasoning as the BibTeX paste-insert above
+      // — a Table Designer save must also become a suggestion while
+      // suggesting, not a way to bypass it.
+      liveView.dispatch({ changes: { from: match.from, to: match.to, insert: newText }, userEvent: "input" });
       return true;
     });
   };
@@ -389,6 +454,12 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
     view.dispatch({
       changes: { from: atPos, to: atPos, insert: citeText },
       selection: { anchor: atPos + citeText.length },
+      // Tagged as real input (not a silent programmatic edit) so this
+      // becomes a tracked suggestion too when suggesting — a pasted
+      // citation is exactly as much "what the user just typed" as anything
+      // else, and a reviewer must never be able to bypass suggestions by
+      // pasting BibTeX instead of typing.
+      userEvent: "input.paste",
     });
     show(`Added reference${resolvedKeys.length === 1 ? "" : "s"}: ${resolvedKeys.join(", ")}`);
   };
@@ -421,6 +492,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
 
       ydoc = new Y.Doc();
       const ytext = ydoc.getText("content");
+      ytextRef.current = ytext;
       provider = new WebsocketProvider(data.ws_url, fileId, ydoc, {
         params: { token: data.token },
       });
@@ -604,7 +676,12 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
               if (!update.selectionSet) return;
               onCursorLineChangeRef.current?.(update.state.doc.lineAt(update.state.selection.main.head).number);
             }),
-            trackChangesField,
+            suggestionDecorationsField,
+            suggestionHoverTooltip(
+              () => suggestionSpansRef.current,
+              () => ytextRef.current!,
+              () => canModerateSuggestionsRef.current ?? false,
+            ),
             commentAnchorsField,
             polishingLintField,
             tableDesignerGutter((lineNumber) => handleTableGutterClickRef.current(lineNumber)),
@@ -612,9 +689,47 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
         });
 
         viewRef.current?.destroy();
-        viewRef.current = new EditorView({ state, parent: hostRef.current! });
+        viewRef.current = new EditorView({
+          state,
+          parent: hostRef.current!,
+          // Reviewing mode / reviewer role: rewrite local edits into tracked
+          // suggestions instead of direct writes before they ever reach
+          // yCollab's own mirroring — see suggestionRewrite.ts for why a
+          // deletion becomes "keep the text, tag it" rather than an actual
+          // removal, and CodeMirrorEditor.module.css / suggestionsExtension.ts
+          // for how that's then rendered and resolved.
+          dispatchTransactions: (trs, view) => {
+            if (!suggestModeRef.current) {
+              view.update(trs);
+              return;
+            }
+            const rewritten: Transaction[] = [];
+            const formatOps: { kind: "ins" | "del"; from: number; to: number }[] = [];
+            for (const tr of trs) {
+              if (isSuggestableEdit(tr)) {
+                const plan = planSuggestionRewrite(tr);
+                if (plan.changes) {
+                  const spec: TransactionSpec = { changes: plan.changes, scrollIntoView: tr.scrollIntoView };
+                  if (plan.selectionAnchor != null) spec.selection = { anchor: plan.selectionAnchor };
+                  rewritten.push(tr.startState.update(spec));
+                  formatOps.push(...plan.formatOps);
+                  continue;
+                }
+              }
+              rewritten.push(tr);
+            }
+            view.update(rewritten);
+            const yt = ytextRef.current;
+            if (formatOps.length > 0 && yt) {
+              const authorId = user?.id ?? "anonymous";
+              const authorName = user?.display_name || "Anonymous";
+              const now = Date.now();
+              for (const op of formatOps) ensureSuggestionTag(yt, op.from, op.to, op.kind, authorId, authorName, now);
+            }
+          },
+        });
         setLoading(false);
-        recomputeTrackChangesRef.current();
+        recomputeSuggestionsRef.current();
         recomputePolishingLintRef.current();
         recomputeCommentAnchorsRef.current();
         onDocTextChangeRef.current?.(ytext.toString());
@@ -633,7 +748,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
           // synchronously here hits CodeMirror's re-entrancy guard ("Calls to
           // EditorView.update are not allowed while an update is in progress").
           setTimeout(() => {
-            recomputeTrackChangesRef.current();
+            recomputeSuggestionsRef.current();
             recomputePolishingLintRef.current();
           }, 0);
         });
@@ -650,6 +765,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
       if (handleWake) window.removeEventListener("online", handleWake);
       viewRef.current?.destroy();
       viewRef.current = null;
+      ytextRef.current = null;
       provider?.destroy();
       ydoc?.destroy();
     };
@@ -670,15 +786,6 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
     });
     view.focus();
   }, [jumpTarget, loading]);
-
-  // Recomputes track-changes markup when the chosen baseline changes (e.g.
-  // the user picks a different snapshot to compare against) without a
-  // content edit having happened — the ydoc "update" listener above only
-  // covers the other direction (content changed, baseline unchanged).
-  useEffect(() => {
-    if (loading) return;
-    recomputeTrackChangesRef.current();
-  }, [trackChangesBaseline, loading]);
 
   // Recomputes lint findings when Polishing mode is toggled on/off.
   useEffect(() => {

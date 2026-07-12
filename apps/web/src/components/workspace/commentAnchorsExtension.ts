@@ -5,7 +5,7 @@ import type { EditorState } from "@codemirror/state";
 
 // Highlights the marked text range a comment is attached to (Plan.md §9
 // Phase 8 extension: comments on selected text, not just a whole line).
-// Same StateField/StateEffect shape as trackChangesExtension.ts.
+// Same StateField/StateEffect shape as suggestionsExtension.ts.
 export const setCommentAnchorDecorations = StateEffect.define<DecorationSet>();
 
 export const commentAnchorsField = StateField.define<DecorationSet>({
