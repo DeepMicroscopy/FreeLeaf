@@ -2,15 +2,28 @@
  * LaTeX environments into a plain grid model an interactive UI can edit.
  * Deliberately scoped to the common case, same "best-effort, not a real
  * parser" discipline as log_parser.py/polishingLint.ts — anything using
- * `\cline`, booktabs rules (`\toprule` etc.), a nested environment, a
- * non-l/c/r column type (`p{}`, `m{}`, `@{}`, ...), a mismatched cell count,
- * a doubled `\hline`/`|`, or a cell combining `\multicolumn` *and*
- * `\multirow` at once is reported as *unsupported* rather than silently
- * mangled — the caller should refuse to open the designer and say why, not
- * guess. `\multicolumn` and `\multirow` (used separately) are supported.
+ * `\cline`, a nested environment, a non-l/c/r column type (`p{}`, `m{}`,
+ * `@{}`, ...), a mismatched cell count in the middle of a row (trailing
+ * cells *can* be omitted — see below), a doubled rule/`|`, or a cell
+ * combining `\multicolumn` *and* `\multirow` at once is reported as
+ * *unsupported* rather than silently mangled — the caller should refuse to
+ * open the designer and say why, not guess. `\multicolumn` and `\multirow`
+ * (used separately) and booktabs rules (`\toprule`/`\midrule`/`\bottomrule`,
+ * tracked per-slot alongside plain `\hline` so each one round-trips back to
+ * the exact macro it came from) are supported.
+ *
+ * Two escaping/leniency behaviors match real LaTeX rather than a naive
+ * split: an escaped `\&` is literal text, not a cell separator, and a `\\`
+ * used for line-breaking *inside* a cell's own braces (e.g.
+ * `\thead{a\\b}`, `\shortstack{a\\b}`) is literal text, not a row
+ * separator — both are only structural at brace depth 0. And a row may
+ * have *fewer* `&`-separated cells than the column count: real `tabular`
+ * silently treats missing trailing cells as blank, so we do too.
  */
 
 export type ColumnAlign = "l" | "c" | "r";
+
+export type HorizontalRuleKind = "hline" | "toprule" | "midrule" | "bottomrule";
 
 export interface TableColumn {
   align: ColumnAlign;
@@ -41,8 +54,16 @@ export interface TableGridModel {
    * filled with `{kind: "covered"}` so every row/column index pair resolves
    * to exactly one cell, span or not. */
   rows: TableCell[][];
-  /** Length rows.length + 1 — one slot before each row and one after the last. */
-  horizontalBorders: boolean[];
+  /** Length rows.length + 1 — one slot before each row and one after the
+   * last. `false` means no rule there; otherwise the exact macro
+   * (`\hline`/`\toprule`/`\midrule`/`\bottomrule`) that produced it,
+   * tracked per-slot so a table round-trips byte-identical even in the
+   * unusual case of mixing conventions. */
+  horizontalBorders: (false | HorizontalRuleKind)[];
+  /** What a *newly* toggled-on border (or a newly added row's border)
+   * should default to — the table's dominant rule style at parse time, or
+   * `"hline"` for a table built from scratch in the UI. */
+  defaultRuleKind: HorizontalRuleKind;
 }
 
 export interface TabularMatch {
@@ -58,7 +79,7 @@ export interface TabularMatch {
 
 const TABULAR_ENV_RE = /\\begin\{(tabular\*?|tabularx|longtable)\}/;
 const TABULAR_BEGIN_LINE_RE = /\\begin\{(tabular\*?|tabularx|longtable)\}/;
-const UNSUPPORTED_BODY_RE = /\\(cline|toprule|midrule|bottomrule|begin)\b/;
+const UNSUPPORTED_BODY_RE = /\\(cline|begin)\b/;
 
 export function lineHasTabularBegin(lineText: string): boolean {
   return TABULAR_BEGIN_LINE_RE.test(lineText);
@@ -175,7 +196,18 @@ function tryParseMultirowCell(cellText: string): ParsedMultirow | "invalid" | nu
   return { rowspan: n, width, text };
 }
 
-type Token = { kind: "hline" } | { kind: "rowsep" } | { kind: "cellsep" } | { kind: "text"; value: string };
+type Token =
+  | { kind: "hline"; macro: HorizontalRuleKind }
+  | { kind: "rowsep" }
+  | { kind: "cellsep" }
+  | { kind: "text"; value: string };
+
+const RULE_MACROS: { name: HorizontalRuleKind; token: string }[] = [
+  { name: "bottomrule", token: "\\bottomrule" },
+  { name: "toprule", token: "\\toprule" },
+  { name: "midrule", token: "\\midrule" },
+  { name: "hline", token: "\\hline" },
+];
 
 function tokenizeBody(body: string): Token[] {
   const tokens: Token[] = [];
@@ -190,17 +222,30 @@ function tokenizeBody(body: string): Token[] {
   let i = 0;
   while (i < body.length) {
     const ch = body[i];
-    if (ch === "\\" && body[i + 1] === "\\") {
+    // `\&` is a literal ampersand, not a cell separator — regardless of
+    // brace depth, since it's an escape sequence, not structural syntax.
+    if (ch === "\\" && body[i + 1] === "&") {
+      buf += "\\&";
+      i += 2;
+      continue;
+    }
+    // A `\\` row separator (and `\hline`/booktabs rules below) are only
+    // structural at depth 0 — inside a cell's own braces (e.g.
+    // `\thead{a\\b}`), `\\` is just a literal line break within that cell.
+    if (ch === "\\" && depth === 0 && body[i + 1] === "\\") {
       flush();
       tokens.push({ kind: "rowsep" });
       i += 2;
       continue;
     }
-    if (ch === "\\" && depth === 0 && body.startsWith("\\hline", i)) {
-      flush();
-      tokens.push({ kind: "hline" });
-      i += 6;
-      continue;
+    if (ch === "\\" && depth === 0) {
+      const rule = RULE_MACROS.find((r) => body.startsWith(r.token, i));
+      if (rule) {
+        flush();
+        tokens.push({ kind: "hline", macro: rule.name });
+        i += rule.token.length;
+        continue;
+      }
     }
     if (ch === "{") {
       depth++;
@@ -230,13 +275,15 @@ function tokenizeBody(body: string): Token[] {
 /** Groups tokens into raw (un-interpreted) string cells per row — same
  * bookkeeping `buildRows` used to do, minus the column-count check, which
  * now has to happen after `\multicolumn` spans are accounted for. */
-function splitIntoRawRows(tokens: Token[]): { ok: true; rawRows: string[][]; horizontalBorders: boolean[] } | { ok: false; reason: string } {
+function splitIntoRawRows(
+  tokens: Token[],
+): { ok: true; rawRows: string[][]; horizontalBorders: (false | HorizontalRuleKind)[] } | { ok: false; reason: string } {
   const rawRows: string[][] = [];
-  const horizontalBorders: boolean[] = [];
+  const horizontalBorders: (false | HorizontalRuleKind)[] = [];
   let currentCells: string[] = [];
   let cellBuf = "";
   let sawTextInRow = false;
-  let pendingHline = false;
+  let pendingRule: false | HorizontalRuleKind = false;
 
   const finalizeCell = () => {
     currentCells.push(cellBuf.trim());
@@ -244,18 +291,18 @@ function splitIntoRawRows(tokens: Token[]): { ok: true; rawRows: string[][]; hor
   };
   const finalizeRow = () => {
     finalizeCell();
-    horizontalBorders.push(pendingHline);
+    horizontalBorders.push(pendingRule);
     rawRows.push(currentCells);
     currentCells = [];
-    pendingHline = false;
+    pendingRule = false;
     sawTextInRow = false;
   };
 
   for (const tok of tokens) {
     if (tok.kind === "hline") {
-      if (sawTextInRow) return { ok: false, reason: "Found \\hline in the middle of a row." };
-      if (pendingHline) return { ok: false, reason: "Doubled \\hline (double rule) isn't supported yet." };
-      pendingHline = true;
+      if (sawTextInRow) return { ok: false, reason: "Found a table rule (\\hline/\\toprule/\\midrule/\\bottomrule) in the middle of a row." };
+      if (pendingRule) return { ok: false, reason: "Doubled table rules (e.g. \\hline\\hline) aren't supported yet." };
+      pendingRule = tok.macro;
     } else if (tok.kind === "cellsep") {
       finalizeCell();
     } else if (tok.kind === "rowsep") {
@@ -266,7 +313,7 @@ function splitIntoRawRows(tokens: Token[]): { ok: true; rawRows: string[][]; hor
     }
   }
   if (cellBuf.trim() || currentCells.length > 0) finalizeRow();
-  horizontalBorders.push(pendingHline);
+  horizontalBorders.push(pendingRule);
 
   return { ok: true, rawRows, horizontalBorders };
 }
@@ -290,23 +337,33 @@ function interpretGrid(rawRows: string[][], columnCount: number): { ok: true; ro
     while (col < columnCount) {
       if (pendingMultirow[col] !== null) {
         const cellText = rawCells[rawIdx];
-        if (cellText === undefined) {
-          return { ok: false, reason: `Row ${r + 1} ends before reaching the \\multirow placeholder expected in column ${col + 1}.` };
-        }
-        if (cellText.trim() !== "") {
+        // A row can legitimately run out of `&`-separated cells before
+        // reaching a trailing \multirow placeholder — real `tabular`
+        // treats missing trailing cells as blank, and an empty cell is
+        // exactly what's expected here anyway.
+        if (cellText !== undefined && cellText.trim() !== "") {
           return { ok: false, reason: `Row ${r + 1}, column ${col + 1}: expected an empty placeholder cell under a \\multirow, found content.` };
         }
         grid[r][col] = { kind: "covered", by: "rowspan" };
         pendingMultirow[col] = pendingMultirow[col]! - 1;
         if (pendingMultirow[col] === 0) pendingMultirow[col] = null;
-        rawIdx++;
+        if (cellText !== undefined) rawIdx++;
         col++;
         continue;
       }
 
       const cellText = rawCells[rawIdx];
       if (cellText === undefined) {
-        return { ok: false, reason: `Row ${r + 1} has fewer cells than the ${columnCount}-column table expects.` };
+        // Trailing cells omitted entirely — real `tabular` silently
+        // treats a row with fewer `&`-separated cells than the column
+        // spec as blank in the remaining columns, so we do too. Since
+        // cells are consumed strictly left-to-right, running out here can
+        // only mean the *rest* of this row is missing, never a gap in the
+        // middle (an explicit gap like "a && b" already produces an empty
+        // string cell, not a shortfall).
+        grid[r][col] = { kind: "text", text: "" };
+        col++;
+        continue;
       }
 
       const mc = tryParseMulticolumnCell(cellText);
@@ -387,7 +444,7 @@ function parseTabular(envName: string, contentAfterBeginName: string): { ok: tru
 
   const body = contentAfterBeginName.slice(specEnd + 1);
   if (UNSUPPORTED_BODY_RE.test(body)) {
-    return { ok: false, reason: "Uses \\cline, booktabs rules, or a nested environment." };
+    return { ok: false, reason: "Uses \\cline or a nested environment." };
   }
 
   const tokens = tokenizeBody(body);
@@ -395,6 +452,8 @@ function parseTabular(envName: string, contentAfterBeginName: string): { ok: tru
   if (!split.ok) return { ok: false, reason: split.reason };
   const interpreted = interpretGrid(split.rawRows, colSpec.columns.length);
   if (!interpreted.ok) return { ok: false, reason: interpreted.reason };
+
+  const firstRule = split.horizontalBorders.find((r): r is HorizontalRuleKind => r !== false);
 
   return {
     ok: true,
@@ -404,6 +463,7 @@ function parseTabular(envName: string, contentAfterBeginName: string): { ok: tru
       verticalBorders: colSpec.verticalBorders,
       rows: interpreted.rows,
       horizontalBorders: split.horizontalBorders,
+      defaultRuleKind: firstRule ?? "hline",
     },
   };
 }
@@ -482,11 +542,13 @@ export function serializeTabular(envName: string, model: TableGridModel): string
   const widthPart = model.widthArg !== null ? `{${model.widthArg}}` : "";
   let body = "";
   for (let r = 0; r < model.rows.length; r++) {
-    if (model.horizontalBorders[r]) body += "\\hline\n";
+    const rule = model.horizontalBorders[r];
+    if (rule) body += `\\${rule}\n`;
     const cellStrs = model.rows[r].map(serializeCell).filter((s): s is string => s !== null);
     body += `${cellStrs.join(" & ")} \\\\\n`;
   }
-  if (model.horizontalBorders[model.rows.length]) body += "\\hline\n";
+  const lastRule = model.horizontalBorders[model.rows.length];
+  if (lastRule) body += `\\${lastRule}\n`;
   return `\\begin{${envName}}${widthPart}{${colSpec}}\n${body}\\end{${envName}}`;
 }
 
@@ -496,7 +558,8 @@ export function emptyGridModel(rows: number, columns: number): TableGridModel {
     columns: Array.from({ length: columns }, () => ({ align: "l" as ColumnAlign })),
     verticalBorders: Array.from({ length: columns + 1 }, () => false),
     rows: Array.from({ length: rows }, () => Array.from({ length: columns }, () => ({ kind: "text" as const, text: "" }))),
-    horizontalBorders: Array.from({ length: rows + 1 }, () => false),
+    horizontalBorders: Array.from({ length: rows + 1 }, () => false as const),
+    defaultRuleKind: "hline",
   };
 }
 
@@ -507,6 +570,7 @@ export function cloneGridModel(model: TableGridModel): TableGridModel {
     verticalBorders: [...model.verticalBorders],
     rows: model.rows.map((row) => row.map((cell) => ({ ...cell }))),
     horizontalBorders: [...model.horizontalBorders],
+    defaultRuleKind: model.defaultRuleKind,
   };
 }
 

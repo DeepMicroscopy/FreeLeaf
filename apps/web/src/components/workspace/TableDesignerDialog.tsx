@@ -99,7 +99,7 @@ export function TableDesignerDialog({
   function toggleHBorder(idx: number) {
     setGrid((g) => {
       const next = cloneGridModel(g);
-      next.horizontalBorders[idx] = !next.horizontalBorders[idx];
+      next.horizontalBorders[idx] = next.horizontalBorders[idx] ? false : next.defaultRuleKind;
       return next;
     });
   }
