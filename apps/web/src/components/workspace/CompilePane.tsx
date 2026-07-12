@@ -1,11 +1,12 @@
 import { api, apiOrigin } from "@freeleaf/shared";
 import type { components } from "@freeleaf/shared";
-import { FileText, FileX2, RotateCw } from "lucide-react";
+import { Download, FileText, FileX2, RotateCw } from "lucide-react";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
 import { Spinner } from "../ui/Spinner";
+import { useWorkspace } from "../../lib/workspace";
 import { PdfViewer } from "./PdfViewer";
 import type { PdfViewerHandle } from "./PdfViewer";
 import styles from "./CompilePane.module.css";
@@ -29,6 +30,7 @@ export const CompilePane = forwardRef<
     onRunChanged?: (run: CompileRunOut | null) => void;
   }
 >(function CompilePane({ projectId, canWrite, onJumpToSource, onRunChanged }, ref) {
+    const { project } = useWorkspace();
     const [run, setRunState] = useState<CompileRunOut | null>(null);
     const onRunChangedRef = useRef(onRunChanged);
     onRunChangedRef.current = onRunChanged;
@@ -180,6 +182,17 @@ export const CompilePane = forwardRef<
               <FileText size={14} aria-hidden="true" />
               {viewMode === "pdf" ? "View log" : "View PDF"}
             </Button>
+            {run?.has_pdf && (
+              <a
+                className={styles.downloadLink}
+                href={`${apiOrigin()}/api/projects/${projectId}/compile-runs/${run.id}/pdf`}
+                download={`${project?.name || "document"}.pdf`}
+                title="Download the compiled PDF"
+              >
+                <Download size={14} aria-hidden="true" />
+                Download
+              </a>
+            )}
             <Button
               variant="secondary"
               size="sm"

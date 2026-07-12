@@ -12,6 +12,8 @@ interface WorkspaceContextValue {
   files: ProjectFileOut[];
   loading: boolean;
   refreshFiles: () => Promise<void>;
+  /** Re-fetches the project itself (name, role) — call after renaming it. */
+  refreshProject: () => Promise<void>;
   selectedFileId: string | null;
   selectFile: (fileId: string | null) => void;
   canWrite: boolean;
@@ -50,6 +52,11 @@ export function WorkspaceProvider({ projectId, children }: { projectId: string; 
     setFiles(data ?? []);
   }, [projectId]);
 
+  const refreshProject = useCallback(async () => {
+    const { data } = await api.GET("/api/projects/{project_id}", { params: { path: { project_id: projectId } } });
+    setProject(data ?? null);
+  }, [projectId]);
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -83,6 +90,7 @@ export function WorkspaceProvider({ projectId, children }: { projectId: string; 
       files,
       loading,
       refreshFiles,
+      refreshProject,
       selectedFileId,
       selectFile: setSelectedFileId,
       canWrite,
@@ -91,7 +99,18 @@ export function WorkspaceProvider({ projectId, children }: { projectId: string; 
       setCurrentFileText,
       jumpToLineRef,
     }),
-    [projectId, project, files, loading, refreshFiles, selectedFileId, canWrite, canEditText, currentFileText],
+    [
+      projectId,
+      project,
+      files,
+      loading,
+      refreshFiles,
+      refreshProject,
+      selectedFileId,
+      canWrite,
+      canEditText,
+      currentFileText,
+    ],
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
