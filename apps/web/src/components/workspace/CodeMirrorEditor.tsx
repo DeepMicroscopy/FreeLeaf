@@ -225,6 +225,32 @@ const theme = EditorView.theme({
   ".cm-button:hover": {
     borderColor: "var(--accent)",
   },
+  // CodeMirror's own autocomplete popup ships unthemed (dark-on-light)
+  // defaults — in dark mode that left every non-selected row's text the
+  // same near-white as the popup's own background, effectively invisible.
+  ".cm-tooltip.cm-tooltip-autocomplete": {
+    backgroundColor: "var(--bg-surface-raised)",
+    border: "1px solid var(--border-default)",
+    borderRadius: "6px",
+    boxShadow: "var(--shadow-lg)",
+  },
+  ".cm-tooltip-autocomplete ul li": {
+    color: "var(--text-primary) !important",
+  },
+  ".cm-tooltip-autocomplete ul li[aria-selected]": {
+    backgroundColor: "var(--accent-soft) !important",
+    color: "var(--text-primary) !important",
+  },
+  ".cm-completionLabel": { color: "inherit" },
+  ".cm-completionDetail": {
+    color: "var(--text-tertiary)",
+    fontStyle: "normal",
+  },
+  ".cm-completionMatchedText": {
+    color: "var(--accent)",
+    textDecoration: "none",
+    fontWeight: 650,
+  },
 });
 
 export interface JumpTarget {
