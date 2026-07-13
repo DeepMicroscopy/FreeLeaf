@@ -61,6 +61,12 @@
   background: var(--accent-soft) !important;
 }
 
+.rowDragOver {
+  background: var(--accent-soft) !important;
+  outline: 1px dashed var(--accent-soft-border);
+  outline-offset: -1px;
+}
+
 .rowMain {
   flex: 1;
   display: flex;

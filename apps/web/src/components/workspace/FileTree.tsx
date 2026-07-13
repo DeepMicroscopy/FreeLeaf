@@ -36,6 +36,20 @@ function iconFor(file: ProjectFileOut | undefined, expanded: boolean) {
 
 type Draft = { parentPath: string; kind: "file" | "folder" } | null;
 
+// Mirrors the backend's path segment rule (projects/paths.py: letters,
+// numbers, spaces, dots, underscores, hyphens) — uploaded files keep
+// whatever name they arrived with, so rather than rejecting an upload
+// outright we rewrite disallowed characters instead of forcing the user
+// to rename the file themselves before retrying.
+function sanitizeFileName(name: string): string {
+  const cleaned = name.replace(/[^A-Za-z0-9 ._-]/g, "_").trim();
+  return cleaned && cleaned !== "." && cleaned !== ".." ? cleaned : "file";
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return (error as { detail?: string } | undefined)?.detail ?? fallback;
+}
+
 export function FileTree() {
   const { projectId, files, refreshFiles, selectedFileId, selectFile, canWrite } = useWorkspace();
   const { show } = useToast();
@@ -47,7 +61,9 @@ export function FileTree() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [dragOver, setDragOver] = useState(false);
+  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadTargetRef = useRef("");
 
   function toggle(path: string) {
     setExpanded((prev) => {
@@ -138,35 +154,78 @@ export function FileTree() {
     }
   }
 
-async function uploadFiles(fileList: FileList | File[]) {
+async function uploadFiles(fileList: FileList | File[], targetFolder = "") {
     for (const file of Array.from(fileList)) {
+      const name = sanitizeFileName(file.name);
+      const path = targetFolder ? `${targetFolder}/${name}` : name;
       const { error } = await api.POST("/api/projects/{project_id}/files/upload", {
-        params: { path: { project_id: projectId }, query: { path: file.name } },
+        params: { path: { project_id: projectId }, query: { path } },
         // Cast as any here to satisfy the strict OpenAPI schema type checker
-        body: { file: file as any }, 
+        body: { file: file as any },
         bodySerializer: (body) => {
           const form = new FormData();
           // body.file here will still correctly reference your original native File object
-          form.append("file", body.file); 
+          form.append("file", body.file);
           return form;
         },
       });
-      if (error) show(`Could not upload "${file.name}".`, "error");
+      if (error) show(`Could not upload "${file.name}": ${errorMessage(error, "unknown error")}`, "error");
     }
     await refreshFiles();
   }
 
+  function triggerUpload(targetFolder: string) {
+    uploadTargetRef.current = targetFolder;
+    fileInputRef.current?.click();
+  }
+
   function handleFileInputChange(e: ChangeEvent<HTMLInputElement>) {
     if (e.target.files && e.target.files.length > 0) {
-      uploadFiles(e.target.files);
+      uploadFiles(e.target.files, uploadTargetRef.current);
       e.target.value = "";
+    }
+    uploadTargetRef.current = "";
+  }
+
+  async function moveFile(fileId: string, targetFolder: string) {
+    const file = files.find((f) => f.id === fileId);
+    if (!file) return;
+    const slash = file.path.lastIndexOf("/");
+    const name = slash === -1 ? file.path : file.path.slice(slash + 1);
+    const currentParent = slash === -1 ? "" : file.path.slice(0, slash);
+    if (currentParent === targetFolder) return;
+    if (file.type === "folder" && (targetFolder === file.path || targetFolder.startsWith(file.path + "/"))) {
+      show("Can't move a folder into itself.", "error");
+      return;
+    }
+    const newPath = targetFolder ? `${targetFolder}/${name}` : name;
+    try {
+      const { error } = await api.PATCH("/api/projects/{project_id}/files/{file_id}", {
+        params: { path: { project_id: projectId, file_id: fileId } },
+        body: { path: newPath },
+      });
+      if (error) throw new Error(errorMessage(error, "That name may already be taken."));
+      await refreshFiles();
+    } catch (e) {
+      show(`Could not move "${name}": ${e instanceof Error ? e.message : "unknown error"}`, "error");
+    }
+  }
+
+  function handleDropAt(targetFolder: string, e: DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
+    setDragOverFolder(null);
+    const movingId = e.dataTransfer.getData("application/x-freeleaf-file-id");
+    if (movingId) {
+      moveFile(movingId, targetFolder);
+    } else if (e.dataTransfer.files.length > 0) {
+      uploadFiles(e.dataTransfer.files, targetFolder);
     }
   }
 
   function handleDrop(e: DragEvent) {
-    e.preventDefault();
-    setDragOver(false);
-    if (e.dataTransfer.files.length > 0) uploadFiles(e.dataTransfer.files);
+    handleDropAt("", e);
   }
 
   return (
@@ -194,7 +253,7 @@ async function uploadFiles(fileList: FileList | File[]) {
           <button
             className={styles.toolbarButton}
             title="Upload file"
-            onClick={() => fileInputRef.current?.click()}
+            onClick={() => triggerUpload("")}
           >
             <Upload size={15} aria-hidden="true" />
           </button>
@@ -232,6 +291,10 @@ async function uploadFiles(fileList: FileList | File[]) {
             setDraftName={setDraftName}
             onSubmitDraft={submitDraft}
             onCancelDraft={() => setDraft(null)}
+            onUploadInto={triggerUpload}
+            dragOverFolder={dragOverFolder}
+            onDragOverFolder={setDragOverFolder}
+            onDropAt={handleDropAt}
           />
         ))}
 
@@ -273,6 +336,10 @@ function Node({
   setDraftName,
   onSubmitDraft,
   onCancelDraft,
+  onUploadInto,
+  dragOverFolder,
+  onDragOverFolder,
+  onDropAt,
 }: {
   node: TreeNode;
   depth: number;
@@ -294,6 +361,10 @@ function Node({
   setDraftName: (v: string) => void;
   onSubmitDraft: (e: FormEvent<HTMLFormElement>) => void;
   onCancelDraft: () => void;
+  onUploadInto: (targetFolder: string) => void;
+  dragOverFolder: string | null;
+  onDragOverFolder: (path: string | null) => void;
+  onDropAt: (targetFolder: string, e: DragEvent) => void;
 }) {
   const isFolder = node.file?.type === "folder" || (!node.file && node.children.length > 0);
   const isOpen = expanded.has(node.path);
@@ -302,12 +373,31 @@ function Node({
   return (
     <div>
       <div
-        className={[styles.row, !isFolder && node.file?.id === selectedFileId ? styles.rowSelected : ""].join(
-          " ",
-        )}
+        className={[
+          styles.row,
+          !isFolder && node.file?.id === selectedFileId ? styles.rowSelected : "",
+          isFolder && dragOverFolder === node.path ? styles.rowDragOver : "",
+        ].join(" ")}
         style={{ paddingLeft: 8 + depth * 16 }}
         role="treeitem"
         aria-selected={node.file?.id === selectedFileId}
+        draggable={canWrite && node.file != null && !isRenaming}
+        onDragStart={(e) => {
+          if (!node.file) return;
+          e.dataTransfer.setData("application/x-freeleaf-file-id", node.file.id);
+          e.dataTransfer.effectAllowed = "move";
+        }}
+        onDragOver={(e) => {
+          if (!canWrite || !isFolder) return;
+          e.preventDefault();
+          e.stopPropagation();
+          onDragOverFolder(node.path);
+        }}
+        onDragLeave={() => onDragOverFolder(null)}
+        onDrop={(e) => {
+          if (!canWrite || !isFolder) return;
+          onDropAt(node.path, e);
+        }}
       >
         <button
           type="button"
@@ -364,6 +454,14 @@ function Node({
                 >
                   <FolderPlus size={13} aria-hidden="true" />
                 </button>
+                <button
+                  type="button"
+                  className={styles.actionButton}
+                  title="Upload here"
+                  onClick={() => onUploadInto(node.path)}
+                >
+                  <Upload size={13} aria-hidden="true" />
+                </button>
               </>
             )}
             <button type="button" className={styles.actionButton} title="Rename" onClick={() => onStartRename(node)}>
@@ -401,6 +499,10 @@ function Node({
               setDraftName={setDraftName}
               onSubmitDraft={onSubmitDraft}
               onCancelDraft={onCancelDraft}
+              onUploadInto={onUploadInto}
+              dragOverFolder={dragOverFolder}
+              onDragOverFolder={onDragOverFolder}
+              onDropAt={onDropAt}
             />
           ))}
           {draft && draft.parentPath === node.path && (
