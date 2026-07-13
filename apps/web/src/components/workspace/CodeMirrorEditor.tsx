@@ -25,6 +25,7 @@ import {
   includegraphicsFileCompletionSource,
   includegraphicsOptionsCompletionSource,
 } from "./includegraphicsCompletion";
+import { latexSyntaxHighlighting } from "./latexHighlight";
 import { packageCompletionSource } from "./packageCompletion";
 import { extractLabels, refCompletionSource } from "./refCompletion";
 import type { DuplicateChoice } from "./DuplicateDialog";
@@ -650,6 +651,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
             lineNumbers(),
             history(),
             StreamLanguage.define(stex),
+            latexSyntaxHighlighting,
             autocompletion({
               override: [
                 ...(citeAutocompleteEnabled

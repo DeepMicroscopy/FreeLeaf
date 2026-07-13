@@ -62,6 +62,15 @@
 
   --focus-ring: #79d5a1;
   color-scheme: light;
+
+  /* Editor syntax highlighting (LaTeX) */
+  --syntax-command: #2454c7;
+  --syntax-env: #7c3aed;
+  --syntax-comment: #6a7280;
+  --syntax-bracket: #57606b;
+  --syntax-math-delim: #0f7a86;
+  --syntax-math-var: #9a5b12;
+  --syntax-number: #b0266f;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -89,6 +98,15 @@
 
     --focus-ring: #45ba7d;
     color-scheme: dark;
+
+    /* Editor syntax highlighting (LaTeX) */
+    --syntax-command: #6c93ff;
+    --syntax-env: #b490ff;
+    --syntax-comment: #8b95a0;
+    --syntax-bracket: #9aa4ad;
+    --syntax-math-delim: #4dd0d9;
+    --syntax-math-var: #e0a458;
+    --syntax-number: #f472b6;
   }
 }
 
@@ -116,4 +134,13 @@
 
   --focus-ring: #45ba7d;
   color-scheme: dark;
+
+  /* Editor syntax highlighting (LaTeX) */
+  --syntax-command: #6c93ff;
+  --syntax-env: #b490ff;
+  --syntax-comment: #8b95a0;
+  --syntax-bracket: #9aa4ad;
+  --syntax-math-delim: #4dd0d9;
+  --syntax-math-var: #e0a458;
+  --syntax-number: #f472b6;
 }

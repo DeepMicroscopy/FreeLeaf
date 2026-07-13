@@ -74,6 +74,9 @@ importers:
       '@freeleaf/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@lezer/highlight':
+        specifier: ^1.2.3
+        version: 1.2.3
       diff:
         specifier: ^9.0.0
         version: 9.0.0

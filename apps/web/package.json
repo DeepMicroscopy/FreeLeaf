@@ -19,6 +19,7 @@
     "@codemirror/state": "^6.5.1",
     "@codemirror/view": "^6.35.3",
     "@freeleaf/shared": "workspace:*",
+    "@lezer/highlight": "^1.2.3",
     "diff": "^9.0.0",
     "lucide-react": "^0.469.0",
     "pdfjs-dist": "^6.1.200",
