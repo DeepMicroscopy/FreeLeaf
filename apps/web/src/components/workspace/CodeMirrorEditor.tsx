@@ -16,10 +16,15 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "re
 
 import { useAuth } from "../../lib/auth";
 import { useBibliography } from "../../lib/bibliography";
+import { useWorkspace } from "../../lib/workspace";
 import { Spinner } from "../ui/Spinner";
 import { useToast } from "../ui/Toast";
 import { citeCompletionSource } from "./citeCompletion";
 import { envCompletionSource } from "./envCompletion";
+import {
+  includegraphicsFileCompletionSource,
+  includegraphicsOptionsCompletionSource,
+} from "./includegraphicsCompletion";
 import { packageCompletionSource } from "./packageCompletion";
 import { extractLabels, refCompletionSource } from "./refCompletion";
 import type { DuplicateChoice } from "./DuplicateDialog";
@@ -322,6 +327,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
 ) {
   const { user } = useAuth();
   const { entries, addEntries, findNearDuplicate, findByKey } = useBibliography();
+  const { files } = useWorkspace();
   const { show } = useToast();
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -424,6 +430,8 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
   };
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
+  const imageFilePathsRef = useRef<string[]>([]);
+  imageFilePathsRef.current = files.filter((f) => f.type === "image").map((f) => f.path);
   const addEntriesRef = useRef(addEntries);
   addEntriesRef.current = addEntries;
   const findNearDuplicateRef = useRef(findNearDuplicate);
@@ -624,13 +632,15 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
                       refCompletionSource(() => extractLabels(ytext.toString())),
                     ]
                   : []),
-                // Environment and package completion (\begin{...},
-                // \usepackage{...}) are general LaTeX authoring aids, not
-                // citation features — always on, independent of the
-                // "Autocomplete suggestions" project setting (which is
-                // specifically about \cite{}/\ref{}).
+                // Environment/package/\includegraphics completion are
+                // general LaTeX authoring aids, not citation features —
+                // always on, independent of the "Autocomplete suggestions"
+                // project setting (which is specifically about
+                // \cite{}/\ref{}).
                 envCompletionSource(),
                 packageCompletionSource(),
+                includegraphicsFileCompletionSource(() => imageFilePathsRef.current),
+                includegraphicsOptionsCompletionSource(),
               ],
             }),
             keymap.of([

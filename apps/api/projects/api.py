@@ -22,8 +22,8 @@ from core.tokens import hash_token
 
 from .authz import get_authorized_project, require_role
 from .files_api import create_main_tex, storage_key_for
-from .models import FileType, Membership, Project, ProjectFile, Role, ShareLink, touch_project
-from .paths import InvalidPathError, guess_file_type, normalize_path
+from .models import FileType, Membership, Project, ProjectFile, ProjectSettings, Role, ShareLink, touch_project
+from .paths import InvalidPathError, guess_file_type, normalize_path, sanitize_path
 
 router = Router(auth=SessionAuth())
 
@@ -109,7 +109,10 @@ def import_project_zip(request, name: str, file: UploadedFile = File(...)):
     failing the whole import — the same "validate every entry independently,
     never trust the archive" discipline as the compile sandbox's tar
     extraction (apps/compile/sandbox.py's _safe_extract), applied here to
-    Python's zipfile instead of tarfile."""
+    Python's zipfile instead of tarfile. Entries whose name merely has
+    disallowed *characters* (not a traversal/absolute-path attempt) are
+    sanitized rather than skipped, matching the single-file upload
+    endpoint's behavior — see paths.sanitize_path."""
     user = get_current_user(request)
     if user is None:
         raise HttpError(401, "Authentication required.")
@@ -148,7 +151,10 @@ def import_project_zip(request, name: str, file: UploadedFile = File(...)):
         try:
             clean_path = normalize_path(rel)
         except InvalidPathError:
-            continue
+            try:
+                clean_path = sanitize_path(rel)
+            except InvalidPathError:
+                continue
         entries.append((clean_path, info))
 
     if not entries:
@@ -157,6 +163,8 @@ def import_project_zip(request, name: str, file: UploadedFile = File(...)):
     project = Project.objects.create(owner=user, name=clean_name)
     membership = Membership.objects.create(project=project, user=user, role=Role.OWNER)
 
+    tex_paths_with_documentclass: list[str] = []
+    tex_paths: list[str] = []
     for clean_path, info in entries:
         data = zf.read(info)
         file_id = uuid.uuid4()
@@ -170,6 +178,28 @@ def import_project_zip(request, name: str, file: UploadedFile = File(...)):
             )
         except IntegrityError:
             storage.delete_object(key)  # duplicate path within the zip — keep the first, skip this one
+            continue
+        if clean_path.endswith(".tex"):
+            tex_paths.append(clean_path)
+            if b"\\documentclass" in data:
+                tex_paths_with_documentclass.append(clean_path)
+
+    # A zip without a main.tex (Plan.md's default) otherwise silently leaves
+    # ProjectSettings.main_doc_path at its model default of "main.tex" — a
+    # file that doesn't exist — so every compile fails with no obvious cause.
+    # Pick the best available candidate up front instead: main.tex itself,
+    # else the sole .tex file, else the sole one with a \documentclass (a zip
+    # of multiple .tex files with no single obvious entry point is genuinely
+    # ambiguous — left at the model default, same as an empty project).
+    main_doc = None
+    if "main.tex" in tex_paths:
+        main_doc = "main.tex"
+    elif len(tex_paths) == 1:
+        main_doc = tex_paths[0]
+    elif len(tex_paths_with_documentclass) == 1:
+        main_doc = tex_paths_with_documentclass[0]
+    if main_doc is not None:
+        ProjectSettings.objects.create(project=project, main_doc_path=main_doc)
 
     return _project_out(project, membership.role)
 

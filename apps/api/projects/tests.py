@@ -10,7 +10,7 @@ from django.utils import timezone
 from accounts.models import User
 from core.testing import ApiTestCase, login_as
 
-from .models import Membership, Project, ProjectFile, Role, ShareLink
+from .models import Membership, Project, ProjectFile, ProjectSettings, Role, ShareLink
 
 
 def post_json(client, url, data=None):
@@ -344,6 +344,51 @@ class ZipImportTests(ApiTestCase):
     def test_blank_name_rejected(self):
         response = self._import(self.owner, "", _make_zip({"main.tex": b"x"}))
         self.assertEqual(response.status_code, 400)
+
+    def test_traversal_entries_still_skipped_not_sanitized(self):
+        zip_bytes = _make_zip({"main.tex": b"x", "../../etc/passwd": b"evil"})
+        response = self._import(self.owner, "P", zip_bytes)
+        self.assertEqual(response.status_code, 200, response.content)
+        paths = set(ProjectFile.objects.filter(project_id=response.json()["id"]).values_list("path", flat=True))
+        self.assertEqual(paths, {"main.tex"})
+
+    def test_special_characters_sanitized_not_skipped(self):
+        zip_bytes = _make_zip({
+            "main.tex": b"x",
+            "Pilot study: 'atypical' + examples.png": b"y",
+        })
+        response = self._import(self.owner, "P", zip_bytes)
+        self.assertEqual(response.status_code, 200, response.content)
+        paths = set(ProjectFile.objects.filter(project_id=response.json()["id"]).values_list("path", flat=True))
+        self.assertEqual(paths, {"main.tex", "Pilot study_ _atypical_ _ examples.png"})
+
+    def test_main_doc_detected_when_not_named_main_tex(self):
+        zip_bytes = _make_zip({"proposal.tex": b"\\documentclass{article}", "refs.bib": b"@x"})
+        response = self._import(self.owner, "P", zip_bytes)
+        self.assertEqual(response.status_code, 200, response.content)
+        settings_row = ProjectSettings.objects.get(project_id=response.json()["id"])
+        self.assertEqual(settings_row.main_doc_path, "proposal.tex")
+
+    def test_main_tex_preferred_over_other_tex_files(self):
+        zip_bytes = _make_zip({"main.tex": b"\\documentclass{article}", "chapter1.tex": b"x"})
+        response = self._import(self.owner, "P", zip_bytes)
+        settings_row = ProjectSettings.objects.get(project_id=response.json()["id"])
+        self.assertEqual(settings_row.main_doc_path, "main.tex")
+
+    def test_documentclass_file_preferred_among_multiple_tex_files(self):
+        zip_bytes = _make_zip({
+            "paper.tex": b"\\documentclass{article}\\input{sections/intro}",
+            "sections/intro.tex": b"Some text, not a full document.",
+        })
+        response = self._import(self.owner, "P", zip_bytes)
+        settings_row = ProjectSettings.objects.get(project_id=response.json()["id"])
+        self.assertEqual(settings_row.main_doc_path, "paper.tex")
+
+    def test_ambiguous_multi_tex_leaves_default(self):
+        zip_bytes = _make_zip({"a.tex": b"no documentclass here", "b.tex": b"nor here"})
+        response = self._import(self.owner, "P", zip_bytes)
+        settings_row = ProjectSettings.objects.get_or_create(project_id=response.json()["id"])[0]
+        self.assertEqual(settings_row.main_doc_path, "main.tex")
 
 
 class ZipExportTests(ApiTestCase):
