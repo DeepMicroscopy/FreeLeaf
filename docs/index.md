@@ -26,9 +26,11 @@ description: Open, self-hostable, real-time collaborative LaTeX editing.
   <a href="#collaboration">Real-time collaboration</a>
   <a href="#citations">Citations &amp; references</a>
   <a href="#comments">Comments on marked text</a>
-  <a href="#review">Review modes &amp; track changes</a>
+  <a href="#review">Suggested edits &amp; review</a>
   <a href="#tables">Table Designer</a>
   <a href="#package-docs">Package documentation</a>
+  <a href="#templates">Templates &amp; GitHub import</a>
+  <a href="#navigation">Outline, figures &amp; search</a>
   <a href="#compile">Compile &amp; SyncTeX</a>
   <a href="#history">Version history</a>
   <a href="#signin">Flexible sign-in</a>
@@ -91,16 +93,17 @@ description: Open, self-hostable, real-time collaborative LaTeX editing.
 
 <section class="feature reverse" id="review">
   <div class="feature-text">
-    <h2>Writing, Reviewing, and Polishing modes</h2>
+    <h2>Real-time suggested edits, not just track changes</h2>
     <p>
-      Switch into Reviewing mode to see insertions and deletions marked up inline against
-      any saved baseline — green underlines, red strikethrough, no separate diff tool.
-      Polishing mode aggressively surfaces LaTeX lint: missing non-breaking spaces before
-      citations, orphaned headings, unescaped symbols.
+      Switch into Reviewing mode and every insertion or deletion is tracked live, colored
+      and attributed per author — hover any suggestion to see who made it and when, then
+      Accept or Reject on the spot. A dedicated Reviewer role can propose edits but never
+      writes directly. Polishing mode separately surfaces aggressive LaTeX lint: missing
+      non-breaking spaces before citations, orphaned headings, unescaped symbols.
     </p>
   </div>
   <div class="feature-shot">
-    <img src="{{ '/assets/img/track-changes-markup.png' | relative_url }}" alt="Reviewing mode showing inline insertion and deletion markup against a saved baseline">
+    <img src="{{ '/assets/img/suggested-edit-hover.png' | relative_url }}" alt="Hovering a suggested insertion showing the author, timestamp, and Accept/Reject buttons">
   </div>
 </section>
 
@@ -131,6 +134,34 @@ description: Open, self-hostable, real-time collaborative LaTeX editing.
   </div>
   <div class="feature-shot">
     <img src="{{ '/assets/img/package-docs-open.png' | relative_url }}" alt="Package documentation dialog for amsmath, showing a description, example source, and compiled rendering">
+  </div>
+</section>
+
+<section class="feature" id="templates">
+  <div class="feature-text">
+    <h2>Start from a template, a GitHub repo, or a blank page</h2>
+    <p>
+      Spin up a new project from a curated template gallery, import any public GitHub
+      repository directly, upload a zip, or start blank. Admins choose how community
+      template contributions are handled — open, review-required, or admin-only.
+    </p>
+  </div>
+  <div class="feature-shot">
+    <img src="{{ '/assets/img/template-gallery.png' | relative_url }}" alt="Template gallery showing Master Thesis, Conference Article, and Modern CV templates">
+  </div>
+</section>
+
+<section class="feature reverse" id="navigation">
+  <div class="feature-text">
+    <h2>Navigate long documents fast</h2>
+    <p>
+      An Outline view lists every section and subsection with one click to jump there; a
+      Figures &amp; Tables view lists every numbered caption. In-file search
+      (<kbd>Cmd</kbd>/<kbd>Ctrl</kbd>-F) finds and replaces without leaving the editor.
+    </p>
+  </div>
+  <div class="feature-shot">
+    <img src="{{ '/assets/img/sidebar-outline.png' | relative_url }}" alt="Sidebar Outline tab listing a document's sections and subsections">
   </div>
 </section>
 
