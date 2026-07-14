@@ -31,11 +31,18 @@ from projects.collab_api import router as collab_router
 from projects.comments_api import router as comments_router
 from projects.compile_api import router as compile_router
 from projects.files_api import router as files_router
+from projects.templates_api import router as templates_router
 from projects.versions_api import router as versions_router
 
 api = NinjaAPI(title="FreeLeaf API")
 api.add_router("", health_router)
 api.add_router("", accounts_router)
+# templates_router before projects_router: POST /projects/from-github is a
+# literal, single-segment path that would otherwise be shadowed by
+# projects_router's generic /projects/{project_id} (GET/PATCH/DELETE) route
+# registered first — same "more specific route must come first" gotcha
+# files_api.py documents for /files/upload vs /files/{file_id}.
+api.add_router("", templates_router)
 api.add_router("", projects_router)
 api.add_router("", files_router)
 api.add_router("", compile_router)

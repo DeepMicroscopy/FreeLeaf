@@ -4,6 +4,7 @@ import { ArrowLeft, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 
+import { PendingTemplatesPanel } from "../components/admin/PendingTemplatesPanel";
 import { SiteSettingsPanel } from "../components/admin/SiteSettingsPanel";
 import { SsoProvidersPanel } from "../components/admin/SsoProvidersPanel";
 import { Button } from "../components/ui/Button";
@@ -18,7 +19,7 @@ export function AdminPage() {
   const { user: currentUser } = useAuth();
   const { show } = useToast();
   const [users, setUsers] = useState<AdminUserOut[] | null>(null);
-  const [tab, setTab] = useState<"users" | "sso" | "site">("users");
+  const [tab, setTab] = useState<"users" | "sso" | "site" | "templates">("users");
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const loadUsers = useCallback(async () => {
@@ -88,6 +89,12 @@ export function AdminPage() {
           >
             Site Settings
           </button>
+          <button
+            className={[styles.tab, tab === "templates" ? styles.tabActive : ""].join(" ")}
+            onClick={() => setTab("templates")}
+          >
+            Templates
+          </button>
         </nav>
       </header>
 
@@ -96,6 +103,8 @@ export function AdminPage() {
           <SiteSettingsPanel />
         ) : tab === "sso" ? (
           <SsoProvidersPanel />
+        ) : tab === "templates" ? (
+          <PendingTemplatesPanel />
         ) : users === null ? (
           <PageSpinner />
         ) : (

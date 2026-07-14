@@ -63,13 +63,18 @@ def me(request):
 
 class SiteInfoOut(Schema):
     site_name: str
+    # Public (not just admin-only site-settings) because the "Contribute a
+    # template" entry point's visibility for ordinary, non-admin users
+    # depends on it.
+    template_contribution_mode: str
 
 
 @router.get("/site-info", response=SiteInfoOut)
 def site_info(request):
     # Public and unauthenticated on purpose — the login/setup pages need it
     # before anyone's signed in, and it's not sensitive (just branding).
-    return SiteInfoOut(site_name=SiteSettings.load().site_name)
+    s = SiteSettings.load()
+    return SiteInfoOut(site_name=s.site_name, template_contribution_mode=s.template_contribution_mode)
 
 
 @router.post("/auth/logout", auth=csrf_protect)

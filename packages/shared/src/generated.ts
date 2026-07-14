@@ -174,6 +174,126 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/from-template/{template_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Project From Template */
+        post: operations["projects_templates_api_create_project_from_template"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/from-github": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Project From Github */
+        post: operations["projects_templates_api_create_project_from_github"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Templates */
+        get: operations["projects_templates_api_list_templates"];
+        put?: never;
+        /** Create Template */
+        post: operations["projects_templates_api_create_template"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/templates/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Pending Templates */
+        get: operations["projects_templates_api_list_pending_templates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/templates/{template_id}/thumbnail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Template Thumbnail */
+        get: operations["projects_templates_api_get_template_thumbnail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/templates/{template_id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish Template */
+        post: operations["projects_templates_api_publish_template"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/templates/{template_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Template */
+        delete: operations["projects_templates_api_delete_template"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects": {
         parameters: {
             query?: never;
@@ -203,16 +323,8 @@ export interface paths {
         put?: never;
         /**
          * Import Project Zip
-         * @description Create a new project from an uploaded .zip (Plan.md §9 Phase 7).
-         *     Unsafe or junk entries (path traversal, absolute paths, OS metadata
-         *     like __MACOSX/.DS_Store, dotfiles) are silently skipped rather than
-         *     failing the whole import — the same "validate every entry independently,
-         *     never trust the archive" discipline as the compile sandbox's tar
-         *     extraction (apps/compile/sandbox.py's _safe_extract), applied here to
-         *     Python's zipfile instead of tarfile. Entries whose name merely has
-         *     disallowed *characters* (not a traversal/absolute-path attempt) are
-         *     sanitized rather than skipped, matching the single-file upload
-         *     endpoint's behavior — see paths.sanitize_path.
+         * @description Create a new project from an uploaded .zip (Plan.md §9 Phase 7). See
+         *     _create_project_from_zip_bytes for the actual validation/import logic.
          */
         post: operations["projects_api_import_project_zip"];
         delete?: never;
@@ -1047,6 +1159,8 @@ export interface components {
         SiteInfoOut: {
             /** Site Name */
             site_name: string;
+            /** Template Contribution Mode */
+            template_contribution_mode: string;
         };
         /** AnonymousLoginIn */
         AnonymousLoginIn: {
@@ -1084,6 +1198,42 @@ export interface components {
             updated_at: string;
             /** Last Edited By Name */
             last_edited_by_name?: string | null;
+        };
+        /** FromTemplateIn */
+        FromTemplateIn: {
+            /** Name */
+            name: string;
+        };
+        /** FromGithubIn */
+        FromGithubIn: {
+            /** Name */
+            name: string;
+            /** Owner */
+            owner: string;
+            /** Repo */
+            repo: string;
+        };
+        /** TemplateOut */
+        TemplateOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Source Url */
+            source_url: string;
+            /** Category */
+            category: string;
+            /** Has Thumbnail */
+            has_thumbnail: boolean;
+            /** Is Published */
+            is_published: boolean;
+            /** Created At */
+            created_at: string;
         };
         /** ProjectCreateIn */
         ProjectCreateIn: {
@@ -1338,6 +1488,8 @@ export interface components {
             orcid_configured: boolean;
             /** Site Name */
             site_name: string;
+            /** Template Contribution Mode */
+            template_contribution_mode: string;
         };
         /** SiteSettingsIn */
         SiteSettingsIn: {
@@ -1345,6 +1497,8 @@ export interface components {
             orcid_enabled: boolean;
             /** Site Name */
             site_name: string;
+            /** Template Contribution Mode */
+            template_contribution_mode?: string | null;
         };
         /** SnapshotOut */
         SnapshotOut: {
@@ -1879,6 +2033,195 @@ export interface operations {
             };
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    projects_templates_api_create_project_from_template: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FromTemplateIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectOut"];
+                };
+            };
+        };
+    };
+    projects_templates_api_create_project_from_github: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FromGithubIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectOut"];
+                };
+            };
+        };
+    };
+    projects_templates_api_list_templates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateOut"][];
+                };
+            };
+        };
+    };
+    projects_templates_api_create_template: {
+        parameters: {
+            query: {
+                name: string;
+                source_url: string;
+                description?: string;
+                category?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * File
+                     * Format: binary
+                     */
+                    file: string;
+                    /** Thumbnail */
+                    thumbnail?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateOut"];
+                };
+            };
+        };
+    };
+    projects_templates_api_list_pending_templates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateOut"][];
+                };
+            };
+        };
+    };
+    projects_templates_api_get_template_thumbnail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    projects_templates_api_publish_template: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateOut"];
+                };
+            };
+        };
+    };
+    projects_templates_api_delete_template: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
             cookie?: never;
         };
         requestBody?: never;

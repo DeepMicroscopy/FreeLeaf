@@ -1,10 +1,12 @@
 import { api } from "@freeleaf/shared";
 import type { components } from "@freeleaf/shared";
 import { useEffect, useRef, useState } from "react";
-import type { DragEvent, FormEvent } from "react";
+import type { ChangeEvent, DragEvent, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { FileText, LogOut, Plus, ShieldCheck, Upload, Users } from "lucide-react";
+import { FilePlus, FileText, Github, LayoutGrid, LogOut, Plus, ShieldCheck, Upload, Users } from "lucide-react";
 
+import { ContributeTemplateForm } from "../components/templates/ContributeTemplateForm";
+import { TemplateGallery } from "../components/templates/TemplateGallery";
 import { Button } from "../components/ui/Button";
 import { TextField } from "../components/ui/TextField";
 import { EmptyState } from "../components/ui/EmptyState";
@@ -15,23 +17,39 @@ import { useSiteInfo } from "../lib/siteInfo";
 import styles from "./ProjectsPage.module.css";
 
 type ProjectOut = components["schemas"]["ProjectOut"];
+type ChooserMode = "closed" | "choose" | "blank" | "template" | "github";
+
+function parseGithubRepo(input: string): { owner: string; repo: string } | null {
+  const trimmed = input.trim().replace(/^https?:\/\/github\.com\//i, "").replace(/\.git$/i, "").replace(/\/+$/, "");
+  const match = /^([^/\s]+)\/([^/\s]+)$/.exec(trimmed);
+  return match ? { owner: match[1], repo: match[2] } : null;
+}
 
 export function ProjectsPage() {
   const { user, logout } = useAuth();
-  const { siteName } = useSiteInfo();
+  const { siteName, templateContributionMode } = useSiteInfo();
   const { show } = useToast();
   const navigate = useNavigate();
 
   const [projects, setProjects] = useState<ProjectOut[] | null>(null);
-  const [creating, setCreating] = useState(false);
+  const [mode, setMode] = useState<ChooserMode>("closed");
+  const [contributingTemplate, setContributingTemplate] = useState(false);
   const [newName, setNewName] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  const [githubRepo, setGithubRepo] = useState("");
+  const [githubName, setGithubName] = useState("");
+  const [githubSubmitting, setGithubSubmitting] = useState(false);
 
   const [dragActive, setDragActive] = useState(false);
   const dragCounter = useRef(0);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importName, setImportName] = useState("");
   const [importing, setImporting] = useState(false);
+  const zipInputRef = useRef<HTMLInputElement>(null);
+
+  const canContributeTemplates =
+    templateContributionMode !== "admin_only" || Boolean(user?.is_admin);
 
   useEffect(() => {
     api.GET("/api/projects").then(({ data }) => setProjects(data ?? []));
@@ -125,6 +143,34 @@ export function ProjectsPage() {
     navigate(`/projects/${data.id}`);
   }
 
+  function handleZipFileChosen(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setImportFile(file);
+    setImportName(file.name.replace(/\.zip$/i, ""));
+    setMode("closed");
+  }
+
+  async function handleGithubImport(e: FormEvent) {
+    e.preventDefault();
+    const parsed = parseGithubRepo(githubRepo);
+    if (!parsed || !githubName.trim()) {
+      show('Enter a GitHub repo as "owner/repo" or a full github.com URL.', "error");
+      return;
+    }
+    setGithubSubmitting(true);
+    const { data, error } = await api.POST("/api/projects/from-github", {
+      body: { name: githubName.trim(), owner: parsed.owner, repo: parsed.repo },
+    });
+    setGithubSubmitting(false);
+    if (error || !data) {
+      show((error as { detail?: string })?.detail ?? "Could not import that repository.", "error");
+      return;
+    }
+    navigate(`/projects/${data.id}`);
+  }
+
   return (
     <div className={styles.page}>
       <header className={styles.header}>
@@ -150,13 +196,43 @@ export function ProjectsPage() {
       <main className={styles.main}>
         <div className={styles.titleRow}>
           <h1 className={styles.pageTitle}>Your projects</h1>
-          <Button onClick={() => setCreating((c) => !c)}>
+          <Button onClick={() => setMode((m) => (m === "closed" ? "choose" : "closed"))}>
             <Plus size={16} aria-hidden="true" />
             New project
           </Button>
         </div>
 
-        {creating && (
+        <input ref={zipInputRef} type="file" accept=".zip" className="visually-hidden" onChange={handleZipFileChosen} />
+
+        {mode === "choose" && (
+          <div className={styles.chooser}>
+            <button type="button" className={styles.chooserOption} onClick={() => setMode("blank")}>
+              <FilePlus size={22} aria-hidden="true" />
+              Blank
+            </button>
+            <button
+              type="button"
+              className={styles.chooserOption}
+              onClick={() => {
+                setContributingTemplate(false);
+                setMode("template");
+              }}
+            >
+              <LayoutGrid size={22} aria-hidden="true" />
+              From template
+            </button>
+            <button type="button" className={styles.chooserOption} onClick={() => setMode("github")}>
+              <Github size={22} aria-hidden="true" />
+              From GitHub
+            </button>
+            <button type="button" className={styles.chooserOption} onClick={() => zipInputRef.current?.click()}>
+              <Upload size={22} aria-hidden="true" />
+              Upload zip
+            </button>
+          </div>
+        )}
+
+        {mode === "blank" && (
           <form className={styles.createForm} onSubmit={handleCreate}>
             <TextField
               label="Project name"
@@ -170,11 +246,56 @@ export function ProjectsPage() {
               <Button type="submit" loading={submitting}>
                 Create
               </Button>
-              <Button type="button" variant="ghost" onClick={() => setCreating(false)}>
-                Cancel
+              <Button type="button" variant="ghost" onClick={() => setMode("choose")}>
+                Back
               </Button>
             </div>
           </form>
+        )}
+
+        {mode === "github" && (
+          <form className={styles.createForm} onSubmit={handleGithubImport}>
+            <TextField
+              label="GitHub repository"
+              placeholder="owner/repo or https://github.com/owner/repo"
+              hint="Public repositories only."
+              value={githubRepo}
+              onChange={(e) => setGithubRepo(e.target.value)}
+              autoFocus
+              required
+            />
+            <TextField
+              label="Project name"
+              value={githubName}
+              onChange={(e) => setGithubName(e.target.value)}
+              required
+            />
+            <div className={styles.createActions}>
+              <Button type="submit" loading={githubSubmitting}>
+                Import
+              </Button>
+              <Button type="button" variant="ghost" onClick={() => setMode("choose")}>
+                Back
+              </Button>
+            </div>
+          </form>
+        )}
+
+        {mode === "template" && (
+          <div className={styles.templatePanel}>
+            {contributingTemplate ? (
+              <ContributeTemplateForm onDone={() => setContributingTemplate(false)} onCancel={() => setContributingTemplate(false)} />
+            ) : (
+              <>
+                <TemplateGallery onCreated={(id) => navigate(`/projects/${id}`)} onCancel={() => setMode("choose")} />
+                {canContributeTemplates && (
+                  <Button variant="ghost" size="sm" onClick={() => setContributingTemplate(true)}>
+                    Contribute a template
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
         )}
 
         {importFile && (
@@ -205,7 +326,7 @@ export function ProjectsPage() {
             icon={<FileText size={32} aria-hidden="true" />}
             title="No projects yet"
             description="Create your first project to start writing in LaTeX with a live PDF preview."
-            action={<Button onClick={() => setCreating(true)}>Create a project</Button>}
+            action={<Button onClick={() => setMode("choose")}>Create a project</Button>}
           />
         ) : (
           <ul className={styles.grid}>

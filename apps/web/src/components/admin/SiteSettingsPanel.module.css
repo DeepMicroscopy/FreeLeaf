@@ -53,6 +53,15 @@
   color: var(--text-tertiary);
 }
 
+.select {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 13.5px;
+}
+
 .toggle {
   flex: none;
   position: relative;

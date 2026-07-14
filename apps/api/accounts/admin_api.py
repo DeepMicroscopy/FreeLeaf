@@ -114,11 +114,13 @@ class SiteSettingsOut(Schema):
     # would just produce a broken "Sign in with ORCID" button.
     orcid_configured: bool
     site_name: str
+    template_contribution_mode: str
 
 
 class SiteSettingsIn(Schema):
     orcid_enabled: bool
     site_name: str
+    template_contribution_mode: str | None = None
 
 
 def _site_settings_out(s: SiteSettings) -> SiteSettingsOut:
@@ -126,6 +128,7 @@ def _site_settings_out(s: SiteSettings) -> SiteSettingsOut:
         orcid_enabled=s.orcid_enabled,
         orcid_configured=bool(orcid.CLIENT_ID and orcid.CLIENT_SECRET),
         site_name=s.site_name,
+        template_contribution_mode=s.template_contribution_mode,
     )
 
 
@@ -150,5 +153,12 @@ def update_site_settings(request, payload: SiteSettingsIn):
         raise HttpError(400, "Site name can't be blank.")
     s.orcid_enabled = payload.orcid_enabled
     s.site_name = site_name
-    s.save(update_fields=["orcid_enabled", "site_name"])
+    update_fields = ["orcid_enabled", "site_name"]
+    if payload.template_contribution_mode is not None:
+        valid_modes = {c.value for c in SiteSettings.TemplateContributionMode}
+        if payload.template_contribution_mode not in valid_modes:
+            raise HttpError(400, "Invalid template contribution mode.")
+        s.template_contribution_mode = payload.template_contribution_mode
+        update_fields.append("template_contribution_mode")
+    s.save(update_fields=update_fields)
     return _site_settings_out(s)

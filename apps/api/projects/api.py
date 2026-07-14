@@ -101,29 +101,22 @@ def _common_leading_dir(names: list[str]) -> str:
     return ""
 
 
-@router.post("/projects/import", response=ProjectOut)
-def import_project_zip(request, name: str, file: UploadedFile = File(...)):
-    """Create a new project from an uploaded .zip (Plan.md §9 Phase 7).
-    Unsafe or junk entries (path traversal, absolute paths, OS metadata
-    like __MACOSX/.DS_Store, dotfiles) are silently skipped rather than
-    failing the whole import — the same "validate every entry independently,
-    never trust the archive" discipline as the compile sandbox's tar
-    extraction (apps/compile/sandbox.py's _safe_extract), applied here to
-    Python's zipfile instead of tarfile. Entries whose name merely has
-    disallowed *characters* (not a traversal/absolute-path attempt) are
-    sanitized rather than skipped, matching the single-file upload
-    endpoint's behavior — see paths.sanitize_path."""
-    user = get_current_user(request)
-    if user is None:
-        raise HttpError(401, "Authentication required.")
-    if user.kind == User.Kind.ANONYMOUS:
-        raise HttpError(403, "Anonymous users can't create projects — sign in with ORCID or email.")
+def _create_project_from_zip_bytes(user: User, name: str, zip_bytes: bytes) -> Project:
+    """Creates a new Project, owned by `user`, from `zip_bytes` as its
+    initial file set. Shared by the manual zip-upload endpoint and the
+    from-template/from-github project-creation endpoints (templates_api.py)
+    — all three get identical validation for free, not three copies of it.
 
-    clean_name = name.strip()
-    if not clean_name:
-        raise HttpError(400, "Project name is required.")
-
-    zip_bytes = file.read()
+    Unsafe or junk entries (path traversal, absolute paths, OS metadata like
+    __MACOSX/.DS_Store, dotfiles) are silently skipped rather than failing
+    the whole import — the same "validate every entry independently, never
+    trust the archive" discipline as the compile sandbox's tar extraction
+    (apps/compile/sandbox.py's _safe_extract), applied here to Python's
+    zipfile instead of tarfile. Entries whose name merely has disallowed
+    *characters* (not a traversal/absolute-path attempt) are sanitized
+    rather than skipped, matching the single-file upload endpoint's
+    behavior — see paths.sanitize_path. Raises HttpError on any validation
+    failure (bad zip, too large, empty, no usable files)."""
     if len(zip_bytes) > MAX_ZIP_BYTES:
         raise HttpError(413, "Zip file is too large.")
 
@@ -160,8 +153,8 @@ def import_project_zip(request, name: str, file: UploadedFile = File(...)):
     if not entries:
         raise HttpError(400, "No usable files found in the zip.")
 
-    project = Project.objects.create(owner=user, name=clean_name)
-    membership = Membership.objects.create(project=project, user=user, role=Role.OWNER)
+    project = Project.objects.create(owner=user, name=name)
+    Membership.objects.create(project=project, user=user, role=Role.OWNER)
 
     tex_paths_with_documentclass: list[str] = []
     tex_paths: list[str] = []
@@ -201,7 +194,26 @@ def import_project_zip(request, name: str, file: UploadedFile = File(...)):
     if main_doc is not None:
         ProjectSettings.objects.create(project=project, main_doc_path=main_doc)
 
-    return _project_out(project, membership.role)
+    return project
+
+
+@router.post("/projects/import", response=ProjectOut)
+def import_project_zip(request, name: str, file: UploadedFile = File(...)):
+    """Create a new project from an uploaded .zip (Plan.md §9 Phase 7). See
+    _create_project_from_zip_bytes for the actual validation/import logic."""
+    user = get_current_user(request)
+    if user is None:
+        raise HttpError(401, "Authentication required.")
+    if user.kind == User.Kind.ANONYMOUS:
+        raise HttpError(403, "Anonymous users can't create projects — sign in with ORCID or email.")
+
+    clean_name = name.strip()
+    if not clean_name:
+        raise HttpError(400, "Project name is required.")
+
+    zip_bytes = file.read()
+    project = _create_project_from_zip_bytes(user, clean_name, zip_bytes)
+    return _project_out(project, Role.OWNER)
 
 
 def build_project_zip_bytes(project) -> bytes:

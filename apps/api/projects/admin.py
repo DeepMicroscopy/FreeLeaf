@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import CompileRun, Membership, Project, ProjectFile, ProjectSettings, ShareLink
+from .models import CompileRun, Membership, Project, ProjectFile, ProjectSettings, ShareLink, Template
 
 
 @admin.register(Project)
@@ -37,3 +37,10 @@ class ProjectSettingsAdmin(admin.ModelAdmin):
 class CompileRunAdmin(admin.ModelAdmin):
     list_display = ("id", "project", "compiler", "status", "started_at", "duration_ms")
     list_filter = ("status", "compiler")
+
+
+@admin.register(Template)
+class TemplateAdmin(admin.ModelAdmin):
+    list_display = ("id", "name", "category", "is_published", "created_by", "created_at")
+    list_filter = ("is_published", "category")
+    search_fields = ("name", "description")

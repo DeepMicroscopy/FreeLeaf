@@ -52,6 +52,35 @@ class SiteSettingsTests(ApiTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["site_name"], "Acme")
 
+    def test_defaults_to_admin_only_template_contribution(self):
+        response = self.admin.get("/api/admin/site-settings")
+        self.assertEqual(response.json()["template_contribution_mode"], "admin_only")
+
+    def test_admin_can_change_template_contribution_mode(self):
+        response = put_json(
+            self.admin, "/api/admin/site-settings",
+            {"orcid_enabled": True, "site_name": "FreeLeaf", "template_contribution_mode": "open"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["template_contribution_mode"], "open")
+        self.assertEqual(SiteSettings.load().template_contribution_mode, "open")
+
+    def test_invalid_template_contribution_mode_rejected(self):
+        response = put_json(
+            self.admin, "/api/admin/site-settings",
+            {"orcid_enabled": True, "site_name": "FreeLeaf", "template_contribution_mode": "bogus"},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_template_contribution_mode_omitted_leaves_it_unchanged(self):
+        put_json(
+            self.admin, "/api/admin/site-settings",
+            {"orcid_enabled": True, "site_name": "FreeLeaf", "template_contribution_mode": "open"},
+        )
+        response = put_json(self.admin, "/api/admin/site-settings", {"orcid_enabled": True, "site_name": "Renamed"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["template_contribution_mode"], "open")
+
 
 class PublicSiteInfoTests(ApiTestCase):
     def test_reflects_the_configured_name_without_auth(self):

@@ -61,6 +61,15 @@ class SiteSettings(models.Model):
     # the icon itself isn't configurable, just the name beside it.
     site_name = models.CharField(max_length=100, default="FreeLeaf")
 
+    class TemplateContributionMode(models.TextChoices):
+        ADMIN_ONLY = "admin_only", "Admins only"
+        REVIEW_REQUIRED = "review_required", "Anyone, pending admin review"
+        OPEN = "open", "Anyone, published immediately"
+
+    template_contribution_mode = models.CharField(
+        max_length=20, choices=TemplateContributionMode.choices, default=TemplateContributionMode.ADMIN_ONLY,
+    )
+
     @classmethod
     def load(cls) -> "SiteSettings":
         obj, _ = cls.objects.get_or_create(pk=1)
