@@ -267,4 +267,45 @@ Text & 123.45 \\\\
     example: `Direct UTF-8 input works out of the box: caf\\'e, na\\"ive, Z\\"urich, and symbols like \\texteuro, \\S, and $\\pm$.`,
     image: "/package-docs/inputenc.png",
   },
+  acronym: {
+    description:
+      "Define acronyms once and have them auto-expand on first use (\\ac) — the surrounding acronym environment also prints a definition list of everything declared inside it, handy for a nomenclature section.",
+    example: `\\begin{acronym}
+\\acro{CPU}{Central Processing Unit}
+\\end{acronym}
+First use: the \\ac{CPU} executes instructions.\\\\
+Later use: the \\ac{CPU} can throttle under load.`,
+    image: "/package-docs/acronym.png",
+  },
+  color: {
+    description:
+      "Basic named-color text and background support (predates xcolor) — a small fixed palette, no color mixing.",
+    example: `\\textcolor{red}{Red text}, \\textcolor{blue}{blue text}, and
+\\colorbox{yellow}{a yellow background}.`,
+    image: "/package-docs/color.png",
+  },
+  fontenc: {
+    description:
+      "Font encoding declaration (\\usepackage[T1]{fontenc}) — accented characters become real single glyphs instead of composites, enabling correct hyphenation and copy-paste of accented words.",
+    example: `With T1 encoding, accented words like caf\\'e, na\\"\\i ve, and
+stra\\ss e hyphenate correctly and copy out of the PDF as real characters.`,
+    image: "/package-docs/fontenc.png",
+  },
+  makecell: {
+    description:
+      "Multi-line table cells and simple per-cell formatting (\\makecell, \\thead) — line breaks inside a cell without a custom column type.",
+    example: `\\begin{tabular}{lc}
+\\toprule
+\\thead{Method} & \\thead{Accuracy\\\\(top-1)} \\\\
+\\midrule
+Ours & 91.7\\% \\\\
+\\bottomrule
+\\end{tabular}`,
+    image: "/package-docs/makecell.png",
+  },
+  lipsum: {
+    description: "Placeholder ('lorem ipsum') text for testing layout before real content is ready.",
+    example: `\\lipsum[1][1-2]`,
+    image: "/package-docs/lipsum.png",
+  },
 };
