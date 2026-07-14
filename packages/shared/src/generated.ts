@@ -209,7 +209,10 @@ export interface paths {
          *     failing the whole import — the same "validate every entry independently,
          *     never trust the archive" discipline as the compile sandbox's tar
          *     extraction (apps/compile/sandbox.py's _safe_extract), applied here to
-         *     Python's zipfile instead of tarfile.
+         *     Python's zipfile instead of tarfile. Entries whose name merely has
+         *     disallowed *characters* (not a traversal/absolute-path attempt) are
+         *     sanitized rather than skipped, matching the single-file upload
+         *     endpoint's behavior — see paths.sanitize_path.
          */
         post: operations["projects_api_import_project_zip"];
         delete?: never;
@@ -422,6 +425,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/files/{file_id}/binary-content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replace File Binary Content
+         * @description Overwrites an existing file's bytes in place — same `id`/`path`/
+         *     `storage_key`, only `size`/`updated_at` change. Used by the image resize
+         *     workflow (ResizeImageDialog.tsx) so a re-encoded PNG replaces the
+         *     original without breaking anything referencing it by path
+         *     (\includegraphics{...}, the file tree, an open preview tab).
+         */
+        put: operations["projects_files_api_replace_file_binary_content"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/files/{file_id}": {
         parameters: {
             query?: never;
@@ -596,6 +623,24 @@ export interface paths {
         get: operations["projects_collab_api_internal_get_content"];
         /** Internal Put Content */
         put: operations["projects_collab_api_internal_put_content"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/collab/files/{file_id}/yjs-snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Internal Get Yjs Snapshot */
+        get: operations["projects_collab_api_internal_get_yjs_snapshot"];
+        /** Internal Put Yjs Snapshot */
+        put: operations["projects_collab_api_internal_put_yjs_snapshot"];
         post?: never;
         delete?: never;
         options?: never;
@@ -2332,6 +2377,39 @@ export interface operations {
             };
         };
     };
+    projects_files_api_replace_file_binary_content: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * File
+                     * Format: binary
+                     */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectFileOut"];
+                };
+            };
+        };
+    };
     projects_files_api_delete_file: {
         parameters: {
             query?: never;
@@ -2624,6 +2702,46 @@ export interface operations {
                 "application/json": components["schemas"]["InternalContentIn"];
             };
         };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    projects_collab_api_internal_get_yjs_snapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    projects_collab_api_internal_put_yjs_snapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description OK */
             200: {

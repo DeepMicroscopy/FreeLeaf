@@ -2,6 +2,7 @@ import json
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client
+from django.test.client import BOUNDARY, MULTIPART_CONTENT, encode_multipart
 
 from accounts.models import User
 from core.testing import ApiTestCase, login_as
@@ -19,6 +20,11 @@ def patch_json(client, url, data=None):
 
 def put_json(client, url, data=None):
     return client.put(url, data=json.dumps(data or {}), content_type="application/json")
+
+
+def put_file(client, url, filename, content, content_type="application/octet-stream"):
+    data = encode_multipart(BOUNDARY, {"file": SimpleUploadedFile(filename, content, content_type=content_type)})
+    return client.put(url, data=data, content_type=MULTIPART_CONTENT)
 
 
 def _login_new_user(client, email):
@@ -149,6 +155,75 @@ class FileTreeTests(ApiTestCase):
         stranger = Client()
         post_json(stranger, "/api/auth/anonymous", {})
         response = stranger.get(f"/api/projects/{self.project_id}/files")
+        self.assertEqual(response.status_code, 404)
+
+
+class BinaryContentReplaceTests(ApiTestCase):
+    def setUp(self):
+        super().setUp()
+        self.owner = Client()
+        _login_new_user(self.owner, "owner@example.com")
+        create = post_json(self.owner, "/api/projects", {"name": "Paper"})
+        self.project_id = create.json()["id"]
+        original = b"\x89PNG\r\n\x1a\noriginal-bytes-here"
+        upload = self.owner.post(
+            f"/api/projects/{self.project_id}/files/upload?path=diagram.png",
+            {"file": SimpleUploadedFile("diagram.png", original, content_type="image/png")},
+        )
+        self.file_id = upload.json()["id"]
+        self.original_size = len(original)
+
+    def test_overwrite_updates_size_and_bytes_keeps_id_and_path(self):
+        new_bytes = b"\x89PNG\r\n\x1a\nshorter"
+        response = put_file(
+            self.owner, f"/api/projects/{self.project_id}/files/{self.file_id}/binary-content",
+            "diagram.png", new_bytes, "image/png",
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        self.assertEqual(body["id"], self.file_id)
+        self.assertEqual(body["path"], "diagram.png")
+        self.assertEqual(body["size"], len(new_bytes))
+        self.assertNotEqual(len(new_bytes), self.original_size)
+
+        content = self.owner.get(f"/api/projects/{self.project_id}/files/{self.file_id}/content")
+        self.assertEqual(content.content, new_bytes)
+
+    def test_rejects_folder(self):
+        folder = post_json(self.owner, f"/api/projects/{self.project_id}/folders", {"path": "figures"})
+        response = put_file(
+            self.owner, f"/api/projects/{self.project_id}/files/{folder.json()['id']}/binary-content",
+            "x.png", b"data", "image/png",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_rejects_oversized_payload(self):
+        from .files_api import MAX_UPLOAD_BYTES
+        oversized = b"0" * (MAX_UPLOAD_BYTES + 1)
+        response = put_file(
+            self.owner, f"/api/projects/{self.project_id}/files/{self.file_id}/binary-content",
+            "diagram.png", oversized, "image/png",
+        )
+        self.assertEqual(response.status_code, 413)
+
+    def test_requires_owner_or_editor(self):
+        link = post_json(self.owner, f"/api/projects/{self.project_id}/share-links", {"role": "viewer"})
+        viewer = Client()
+        post_json(viewer, f"/api/share-links/{link.json()['token']}/join", {})
+        response = put_file(
+            viewer, f"/api/projects/{self.project_id}/files/{self.file_id}/binary-content",
+            "diagram.png", b"hacked", "image/png",
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_404_for_foreign_project_file(self):
+        other_owner = Client()
+        _login_new_user(other_owner, "other@example.com")
+        other_project = post_json(other_owner, "/api/projects", {"name": "Other"})
+        response = put_file(
+            other_owner, f"/api/projects/{other_project.json()['id']}/files/{self.file_id}/binary-content",
+            "diagram.png", b"data", "image/png",
+        )
         self.assertEqual(response.status_code, 404)
 
 

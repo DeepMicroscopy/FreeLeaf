@@ -1,4 +1,4 @@
-import { api, apiOrigin } from "@freeleaf/shared";
+import { api } from "@freeleaf/shared";
 import type { components } from "@freeleaf/shared";
 import { FileQuestion, MessageSquare, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -14,6 +14,7 @@ import { CommentsPane } from "./CommentsPane";
 import type { PendingCommentAnchor } from "./CommentsPane";
 import { CompilePane } from "./CompilePane";
 import type { CompilePaneHandle } from "./CompilePane";
+import { ImagePreviewPane } from "./ImagePreviewPane";
 import { ModeSwitcher } from "./ModeSwitcher";
 import type { LintFinding } from "./polishingLint";
 import { SplitPane } from "./SplitPane";
@@ -335,7 +336,7 @@ export function EditorTab() {
   }
 
   if (selectedFile.type === "image") {
-    return <ImagePreviewPane projectId={projectId} fileId={selectedFile.id} name={selectedFile.path} />;
+    return <ImagePreviewPane file={selectedFile} />;
   }
 
   return (
@@ -522,14 +523,3 @@ export function EditorTab() {
   );
 }
 
-function ImagePreviewPane({ projectId, fileId, name }: { projectId: string; fileId: string; name: string }) {
-  const src = `${apiOrigin()}/api/projects/${projectId}/files/${fileId}/content`;
-  return (
-    <div className={styles.pane}>
-      <div className={styles.paneHeader}>{name}</div>
-      <div className={styles.imageBody}>
-        <img src={src} alt={name} className={styles.image} />
-      </div>
-    </div>
-  );
-}

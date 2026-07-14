@@ -56,6 +56,11 @@ MIDDLEWARE = [
     'accounts.middleware.CurrentUserMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    # Django only populates request.FILES for POST by design (a long-standing
+    # historical quirk, see https://code.djangoproject.com/ticket/12635) — ninja's
+    # own documented fix, needed for multipart PUT endpoints like
+    # replace_file_binary_content (projects/files_api.py).
+    'ninja.compatibility.files.fix_request_files_middleware',
 ]
 
 if not DEBUG:

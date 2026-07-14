@@ -225,6 +225,9 @@ Additionally, some polishing in phase 8:
 - **Full-text search in the current file:** a find/replace bar for the currently open file, built on CodeMirror's own `@codemirror/search` extension rather than hand-rolled — Cmd/Ctrl-F opens it, with case-sensitivity/regex toggles, match highlighting, next/previous navigation, and replace/replace-all (gated by the same write permission as editing, and applied as a normal edit to the live Yjs-shared document so co-editors see it). Deliberately scoped to the current file only — project-wide search across every file is a bigger, separate feature (would need a backend index) and isn't part of this phase.
 - **Acceptance:** a brand-new database redirects every visitor to the setup wizard until it's completed, after which exactly one admin exists and the wizard never reappears; toggling ORCID off/on in the admin UI changes the login page immediately for all users, with the last-enabled-method guard preventing lockout; the sidebar's Outline and Figures & Tables tabs stay live as the document changes and clicking any entry navigates the editor correctly; Cmd/Ctrl-F search/replace works correctly against the live collaborative document.
 
+### Phase 12 - Implement Package wizard
+
+
 ---
 
 ## 10. Repository layout (target)

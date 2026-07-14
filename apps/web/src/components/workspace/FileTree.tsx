@@ -20,6 +20,7 @@ import {
 import { useToast } from "../ui/Toast";
 import { useWorkspace } from "../../lib/workspace";
 import type { ProjectFileOut } from "../../lib/workspace";
+import { FILE_SIZE_WARN_BYTES } from "./fileSize";
 import { buildTree } from "./treeUtils";
 import type { TreeNode } from "./treeUtils";
 import styles from "./FileTree.module.css";
@@ -430,7 +431,16 @@ function Node({
               onBlur={() => onSubmitRename(node)}
             />
           ) : (
-            <span className={styles.name}>{node.name}</span>
+            <span
+              className={[
+                styles.name,
+                node.file && node.file.type !== "folder" && node.file.size > FILE_SIZE_WARN_BYTES
+                  ? styles.nameWarn
+                  : "",
+              ].join(" ")}
+            >
+              {node.name}
+            </span>
           )}
         </button>
 

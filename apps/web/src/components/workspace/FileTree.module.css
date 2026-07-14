@@ -108,6 +108,17 @@
   text-overflow: ellipsis;
 }
 
+.nameWarn {
+  color: #f59e0b;
+}
+
+/* .rowSelected .name (above) otherwise wins on specificity, silently
+   hiding the size warning the moment a large file is opened/selected —
+   force it to persist through selection too. */
+.rowSelected .nameWarn {
+  color: #f59e0b;
+}
+
 .rowActions {
   display: none;
   gap: 2px;

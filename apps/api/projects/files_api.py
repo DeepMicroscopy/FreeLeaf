@@ -218,6 +218,32 @@ def update_file_content(request, project_id: uuid.UUID, file_id: uuid.UUID, payl
     return _file_out(f)
 
 
+@router.put("/projects/{project_id}/files/{file_id}/binary-content", response=ProjectFileOut)
+def replace_file_binary_content(request, project_id: uuid.UUID, file_id: uuid.UUID, file: UploadedFile = File(...)):
+    """Overwrites an existing file's bytes in place — same `id`/`path`/
+    `storage_key`, only `size`/`updated_at` change. Used by the image resize
+    workflow (ResizeImageDialog.tsx) so a re-encoded PNG replaces the
+    original without breaking anything referencing it by path
+    (\\includegraphics{...}, the file tree, an open preview tab)."""
+    user = get_current_user(request)
+    project, membership = get_authorized_project(user, project_id)
+    require_role(membership, Role.OWNER, Role.EDITOR)
+    f = _get_file_or_404(project, file_id)
+    if f.type == FileType.FOLDER:
+        raise HttpError(400, "Folders have no content.")
+
+    data = file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HttpError(413, "File is too large.")
+
+    content_type = file.content_type or mimetypes.guess_type(f.path)[0] or "application/octet-stream"
+    storage.put_object(f.storage_key, data, content_type)
+    f.size = len(data)
+    f.save(update_fields=["size", "updated_at"])
+    touch_project(project, user)
+    return _file_out(f)
+
+
 class FileRenameIn(Schema):
     path: str
 
