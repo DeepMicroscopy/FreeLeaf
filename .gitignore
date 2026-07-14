@@ -17,3 +17,4 @@ staticfiles/
 docs/_site/
 docs/.jekyll-cache/
 freeleaf_promo.mp4
+.DS_Store
