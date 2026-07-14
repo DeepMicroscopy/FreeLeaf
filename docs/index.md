@@ -28,6 +28,7 @@ description: Open, self-hostable, real-time collaborative LaTeX editing.
   <a href="#comments">Comments on marked text</a>
   <a href="#review">Review modes &amp; track changes</a>
   <a href="#tables">Table Designer</a>
+  <a href="#package-docs">Package documentation</a>
   <a href="#compile">Compile &amp; SyncTeX</a>
   <a href="#history">Version history</a>
   <a href="#signin">Flexible sign-in</a>
@@ -119,7 +120,21 @@ description: Open, self-hostable, real-time collaborative LaTeX editing.
   </div>
 </section>
 
-<section class="feature reverse" id="compile">
+<section class="feature reverse" id="package-docs">
+  <div class="feature-text">
+    <h2>Package documentation, right in the gutter</h2>
+    <p>
+      A book icon appears next to every <code>\usepackage</code> line — click it for a
+      description, an example, and a real compiled rendering for the most common CTAN
+      packages, or a link straight to the package's own CTAN page for everything else.
+    </p>
+  </div>
+  <div class="feature-shot">
+    <img src="{{ '/assets/img/package-docs-open.png' | relative_url }}" alt="Package documentation dialog for amsmath, showing a description, example source, and compiled rendering">
+  </div>
+</section>
+
+<section class="feature" id="compile">
   <div class="feature-text">
     <h2>Sandboxed compiling, with real SyncTeX</h2>
     <p>
@@ -133,7 +148,7 @@ description: Open, self-hostable, real-time collaborative LaTeX editing.
   </div>
 </section>
 
-<section class="feature" id="history">
+<section class="feature reverse" id="history">
   <div class="feature-text">
     <h2>Version history you can actually read</h2>
     <p>
@@ -147,7 +162,7 @@ description: Open, self-hostable, real-time collaborative LaTeX editing.
   </div>
 </section>
 
-<section class="feature reverse" id="signin">
+<section class="feature" id="signin">
   <div class="feature-text">
     <h2>Sign in the way your institution already works</h2>
     <p>
