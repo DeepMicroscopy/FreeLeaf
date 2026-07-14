@@ -53,6 +53,39 @@ export const CompilePane = forwardRef<
     const onJumpToSourceRef = useRef(onJumpToSource);
     onJumpToSourceRef.current = onJumpToSource;
     const { show } = useToast();
+    const [downloading, setDownloading] = useState(false);
+
+    async function handleDownload() {
+      const currentRun = runRef.current;
+      if (!currentRun) return;
+      setDownloading(true);
+      try {
+        // A plain <a download> only reliably forces a download for
+        // same-origin URLs — for a cross-origin api (dev's separate port,
+        // or a split-subdomain production deployment), browsers just
+        // navigate to/render the PDF instead, ignoring the download hint
+        // entirely. Fetching the bytes ourselves and downloading via a
+        // blob: URL (always same-origin) works regardless of topology.
+        const res = await fetch(
+          `${apiOrigin()}/api/projects/${projectId}/compile-runs/${currentRun.id}/pdf`,
+          { credentials: "include" },
+        );
+        if (!res.ok) throw new Error();
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = blobUrl;
+        link.download = `${project?.name || "document"}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(blobUrl);
+      } catch {
+        show("Could not download the PDF.", "error");
+      } finally {
+        setDownloading(false);
+      }
+    }
 
     const handleSourceClick = useCallback(
       async (page: number, x: number, y: number) => {
@@ -197,15 +230,16 @@ export const CompilePane = forwardRef<
               {viewMode === "pdf" ? "View log" : "View PDF"}
             </Button>
             {run?.has_pdf && (
-              <a
+              <button
+                type="button"
                 className={styles.downloadLink}
-                href={`${apiOrigin()}/api/projects/${projectId}/compile-runs/${run.id}/pdf`}
-                download={`${project?.name || "document"}.pdf`}
+                onClick={handleDownload}
+                disabled={downloading}
                 title="Download the compiled PDF"
               >
                 <Download size={14} aria-hidden="true" />
-                Download
-              </a>
+                {downloading ? "Downloading…" : "Download"}
+              </button>
             )}
             <Button
               variant="secondary"
