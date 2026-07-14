@@ -265,17 +265,11 @@ class Template(models.Model):
     source_url = models.URLField()
     category = models.CharField(max_length=100, blank=True)
     zip_storage_key = models.CharField(max_length=255)
-    thumbnail_storage_key = models.CharField(max_length=255, null=True, blank=True)
-    # Set at upload time from the thumbnail's own content type — unlike
-    # ProjectFile, a Template has no logical "path" to re-derive a content
-    # type from at serve time via mimetypes.guess_type, so it's stored
-    # explicitly instead.
-    thumbnail_content_type = models.CharField(max_length=100, null=True, blank=True)
     created_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)
     # False only under SiteSettings.template_contribution_mode == "review_required" —
     # see templates_api.py. Unpublished templates are invisible to GET
     # /api/templates (the public gallery) but visible to admins via
-    # GET /api/templates/pending.
+    # GET /api/templates/all.
     is_published = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

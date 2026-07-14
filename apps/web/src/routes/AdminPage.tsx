@@ -4,7 +4,7 @@ import { ArrowLeft, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 
-import { PendingTemplatesPanel } from "../components/admin/PendingTemplatesPanel";
+import { TemplatesAdminPanel } from "../components/admin/TemplatesAdminPanel";
 import { SiteSettingsPanel } from "../components/admin/SiteSettingsPanel";
 import { SsoProvidersPanel } from "../components/admin/SsoProvidersPanel";
 import { Button } from "../components/ui/Button";
@@ -104,7 +104,7 @@ export function AdminPage() {
         ) : tab === "sso" ? (
           <SsoProvidersPanel />
         ) : tab === "templates" ? (
-          <PendingTemplatesPanel />
+          <TemplatesAdminPanel />
         ) : users === null ? (
           <PageSpinner />
         ) : (

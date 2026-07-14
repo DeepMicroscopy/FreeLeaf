@@ -17,6 +17,10 @@ def post_json(client, url, data=None):
     return client.post(url, data=json.dumps(data or {}), content_type="application/json")
 
 
+def patch_json(client, url, data=None):
+    return client.patch(url, data=json.dumps(data or {}), content_type="application/json")
+
+
 def _login_new_user(client, email, is_admin=False):
     user = User.objects.create(kind=User.Kind.EMAIL, email=email, is_admin=is_admin)
     login_as(client, user)
@@ -178,7 +182,7 @@ class TemplateCrudTests(ApiTestCase):
         self.regular = Client()
         _login_new_user(self.regular, "regular@example.com")
 
-    def _upload(self, client, name="My Template", source_url="https://example.com/t", with_thumbnail=False):
+    def _upload(self, client, name="My Template", source_url="https://example.com/t"):
         # name/source_url/etc. are query params, not multipart form fields —
         # matching files_api.py's upload_file's exact same convention (a
         # scalar param alongside a File() param defaults to query, per
@@ -187,8 +191,6 @@ class TemplateCrudTests(ApiTestCase):
 
         zip_bytes = _make_zip({"main.tex": b"x"})
         data = {"file": SimpleUploadedFile("t.zip", zip_bytes, content_type="application/zip")}
-        if with_thumbnail:
-            data["thumbnail"] = SimpleUploadedFile("thumb.png", b"\x89PNG\r\n\x1a\nfake", content_type="image/png")
         query = urlencode({"name": name, "source_url": source_url})
         return client.post(f"/api/templates?{query}", data)
 
@@ -215,11 +217,13 @@ class TemplateCrudTests(ApiTestCase):
         self.assertFalse(response.json()["is_published"])
 
         self.assertEqual(self.regular.get("/api/templates").json(), [])
-        pending = self.admin.get("/api/templates/pending").json()
-        self.assertEqual(len(pending), 1)
+        all_templates = self.admin.get("/api/templates/all").json()
+        self.assertEqual(len(all_templates), 1)
+        self.assertFalse(all_templates[0]["is_published"])
 
-        publish = self.admin.post(f"/api/templates/{pending[0]['id']}/publish")
+        publish = patch_json(self.admin, f"/api/templates/{all_templates[0]['id']}", {"is_published": True})
         self.assertEqual(publish.status_code, 200)
+        self.assertTrue(publish.json()["is_published"])
         self.assertEqual(len(self.regular.get("/api/templates").json()), 1)
 
     def test_open_mode_publishes_regular_submission_immediately(self):
@@ -232,22 +236,67 @@ class TemplateCrudTests(ApiTestCase):
         self.assertTrue(response.json()["is_published"])
         self.assertEqual(len(self.regular.get("/api/templates").json()), 1)
 
-    def test_regular_user_cannot_see_or_publish_pending_queue(self):
-        response = self.regular.get("/api/templates/pending")
+    def test_regular_user_cannot_see_all_templates(self):
+        response = self.regular.get("/api/templates/all")
         self.assertEqual(response.status_code, 403)
+
+    def test_admin_sees_unpublished_and_published_in_all_templates(self):
+        s = SiteSettings.load()
+        s.template_contribution_mode = SiteSettings.TemplateContributionMode.REVIEW_REQUIRED
+        s.save(update_fields=["template_contribution_mode"])
+        self._upload(self.regular, name="Pending One")
+        s.template_contribution_mode = SiteSettings.TemplateContributionMode.ADMIN_ONLY
+        s.save(update_fields=["template_contribution_mode"])
+        self._upload(self.admin, name="Published One")
+
+        all_templates = {t["name"]: t["is_published"] for t in self.admin.get("/api/templates/all").json()}
+        self.assertEqual(all_templates, {"Pending One": False, "Published One": True})
 
     def test_missing_source_url_rejected(self):
         response = self._upload(self.admin, source_url="")
         self.assertEqual(response.status_code, 400)
 
-    def test_thumbnail_served_with_correct_content_type(self):
-        create = self._upload(self.admin, with_thumbnail=True)
+    def test_admin_can_edit_template_fields(self):
+        create = self._upload(self.admin)
         template_id = create.json()["id"]
-        self.assertTrue(create.json()["has_thumbnail"])
+        response = patch_json(
+            self.admin, f"/api/templates/{template_id}",
+            {"name": "Renamed", "description": "New desc", "source_url": "https://example.com/new", "category": "thesis"},
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        self.assertEqual(body["name"], "Renamed")
+        self.assertEqual(body["description"], "New desc")
+        self.assertEqual(body["source_url"], "https://example.com/new")
+        self.assertEqual(body["category"], "thesis")
 
-        thumb = self.regular.get(f"/api/templates/{template_id}/thumbnail")
-        self.assertEqual(thumb.status_code, 200)
-        self.assertEqual(thumb["Content-Type"], "image/png")
+    def test_edit_is_partial_untouched_fields_unchanged(self):
+        create = self._upload(self.admin, name="Original", source_url="https://example.com/orig")
+        template_id = create.json()["id"]
+        response = patch_json(self.admin, f"/api/templates/{template_id}", {"category": "conference"})
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        self.assertEqual(body["name"], "Original")
+        self.assertEqual(body["source_url"], "https://example.com/orig")
+        self.assertEqual(body["category"], "conference")
+
+    def test_blank_name_rejected_on_edit(self):
+        create = self._upload(self.admin)
+        template_id = create.json()["id"]
+        response = patch_json(self.admin, f"/api/templates/{template_id}", {"name": "   "})
+        self.assertEqual(response.status_code, 400)
+
+    def test_regular_user_cannot_edit_template(self):
+        create = self._upload(self.admin)
+        template_id = create.json()["id"]
+        response = patch_json(self.regular, f"/api/templates/{template_id}", {"name": "Hacked"})
+        self.assertEqual(response.status_code, 403)
+
+    def test_edit_nonexistent_template_404s(self):
+        response = patch_json(
+            self.admin, "/api/templates/00000000-0000-0000-0000-000000000000", {"name": "X"},
+        )
+        self.assertEqual(response.status_code, 404)
 
     def test_admin_can_delete_template(self):
         create = self._upload(self.admin)

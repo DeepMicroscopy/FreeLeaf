@@ -14,7 +14,6 @@ import urllib.request
 import uuid
 import zipfile
 
-from django.http import HttpResponse
 from ninja import File, Router, Schema
 from ninja.errors import HttpError
 from ninja.files import UploadedFile
@@ -126,7 +125,6 @@ class TemplateOut(Schema):
     description: str
     source_url: str
     category: str
-    has_thumbnail: bool
     is_published: bool
     created_at: str
 
@@ -138,7 +136,6 @@ def _template_out(t: Template) -> TemplateOut:
         description=t.description,
         source_url=t.source_url,
         category=t.category,
-        has_thumbnail=bool(t.thumbnail_storage_key),
         is_published=t.is_published,
         created_at=t.created_at.isoformat(),
     )
@@ -150,19 +147,13 @@ def list_templates(request):
     return [_template_out(t) for t in Template.objects.filter(is_published=True).order_by("name")]
 
 
-@router.get("/templates/pending", response=list[TemplateOut])
-def list_pending_templates(request):
+@router.get("/templates/all", response=list[TemplateOut])
+def list_all_templates(request):
+    """Admin template management (Plan.md §9 extension) — every template
+    regardless of publish status, so the admin panel can edit/delete/
+    publish anything, not just review pending submissions."""
     require_admin(get_current_user(request))
-    return [_template_out(t) for t in Template.objects.filter(is_published=False).order_by("-created_at")]
-
-
-@router.get("/templates/{template_id}/thumbnail")
-def get_template_thumbnail(request, template_id: uuid.UUID):
-    template = Template.objects.filter(id=template_id).first()
-    if template is None or not template.thumbnail_storage_key:
-        raise HttpError(404, "No thumbnail.")
-    data = storage.get_object(template.thumbnail_storage_key)
-    return HttpResponse(data, content_type=template.thumbnail_content_type or "application/octet-stream")
+    return [_template_out(t) for t in Template.objects.all().order_by("-created_at")]
 
 
 def _template_storage_key(template_id, suffix: str) -> str:
@@ -177,7 +168,6 @@ def create_template(
     description: str = "",
     category: str = "",
     file: UploadedFile = File(...),
-    thumbnail: UploadedFile | None = File(None),
 ):
     user = get_current_user(request)
     if user is None:
@@ -215,16 +205,6 @@ def create_template(
     zip_key = _template_storage_key(template_id, "zip")
     storage.put_object(zip_key, zip_bytes, "application/zip")
 
-    thumbnail_key = None
-    thumbnail_content_type = None
-    if thumbnail is not None:
-        thumb_bytes = thumbnail.read()
-        if len(thumb_bytes) > 5 * 1024 * 1024:
-            raise HttpError(413, "Thumbnail image is too large (max 5MB).")
-        thumbnail_content_type = thumbnail.content_type or "application/octet-stream"
-        thumbnail_key = _template_storage_key(template_id, "thumbnail")
-        storage.put_object(thumbnail_key, thumb_bytes, thumbnail_content_type)
-
     is_published = mode != SiteSettings.TemplateContributionMode.REVIEW_REQUIRED
 
     template = Template.objects.create(
@@ -234,22 +214,52 @@ def create_template(
         source_url=clean_url,
         category=category.strip(),
         zip_storage_key=zip_key,
-        thumbnail_storage_key=thumbnail_key,
-        thumbnail_content_type=thumbnail_content_type,
         created_by=user,
         is_published=is_published,
     )
     return _template_out(template)
 
 
-@router.post("/templates/{template_id}/publish", response=TemplateOut)
-def publish_template(request, template_id: uuid.UUID):
+class TemplateUpdateIn(Schema):
+    name: str | None = None
+    description: str | None = None
+    source_url: str | None = None
+    category: str | None = None
+    is_published: bool | None = None
+
+
+@router.patch("/templates/{template_id}", response=TemplateOut)
+def update_template(request, template_id: uuid.UUID, payload: TemplateUpdateIn):
     require_admin(get_current_user(request))
     template = Template.objects.filter(id=template_id).first()
     if template is None:
         raise HttpError(404, "Template not found.")
-    template.is_published = True
-    template.save(update_fields=["is_published", "updated_at"])
+
+    update_fields = []
+    if payload.name is not None:
+        clean_name = payload.name.strip()
+        if not clean_name:
+            raise HttpError(400, "Template name can't be blank.")
+        template.name = clean_name
+        update_fields.append("name")
+    if payload.description is not None:
+        template.description = payload.description.strip()
+        update_fields.append("description")
+    if payload.source_url is not None:
+        clean_url = payload.source_url.strip()
+        if not clean_url:
+            raise HttpError(400, "Source URL can't be blank.")
+        template.source_url = clean_url
+        update_fields.append("source_url")
+    if payload.category is not None:
+        template.category = payload.category.strip()
+        update_fields.append("category")
+    if payload.is_published is not None:
+        template.is_published = payload.is_published
+        update_fields.append("is_published")
+
+    if update_fields:
+        template.save(update_fields=[*update_fields, "updated_at"])
     return _template_out(template)
 
 
@@ -260,7 +270,5 @@ def delete_template(request, template_id: uuid.UUID):
     if template is None:
         raise HttpError(404, "Template not found.")
     storage.delete_object(template.zip_storage_key)
-    if template.thumbnail_storage_key:
-        storage.delete_object(template.thumbnail_storage_key)
     template.delete()
     return {"detail": "Template deleted."}

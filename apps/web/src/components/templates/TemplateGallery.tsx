@@ -1,6 +1,6 @@
-import { api, apiOrigin } from "@freeleaf/shared";
+import { api } from "@freeleaf/shared";
 import type { components } from "@freeleaf/shared";
-import { ExternalLink, ImageOff } from "lucide-react";
+import { ExternalLink, FileText, LayoutGrid } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 
@@ -71,7 +71,7 @@ export function TemplateGallery({ onCreated, onCancel }: { onCreated: (projectId
     <div>
       {templates.length === 0 ? (
         <EmptyState
-          icon={<ImageOff size={28} aria-hidden="true" />}
+          icon={<LayoutGrid size={28} aria-hidden="true" />}
           title="No templates yet"
           description="Nobody's added a template to the gallery yet."
         />
@@ -80,12 +80,8 @@ export function TemplateGallery({ onCreated, onCancel }: { onCreated: (projectId
           {templates.map((t) => (
             <li key={t.id}>
               <button type="button" className={styles.card} onClick={() => selectTemplate(t)}>
-                <div className={styles.thumbnail}>
-                  {t.has_thumbnail ? (
-                    <img src={`${apiOrigin()}/api/templates/${t.id}/thumbnail`} alt="" />
-                  ) : (
-                    <ImageOff size={22} aria-hidden="true" />
-                  )}
+                <div className={styles.icon}>
+                  <FileText size={18} aria-hidden="true" />
                 </div>
                 <div className={styles.body}>
                   <p className={styles.name}>{t.name}</p>

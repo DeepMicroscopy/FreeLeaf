@@ -226,51 +226,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/templates/pending": {
+    "/api/templates/all": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List Pending Templates */
-        get: operations["projects_templates_api_list_pending_templates"];
+        /**
+         * List All Templates
+         * @description Admin template management (Plan.md §9 extension) — every template
+         *     regardless of publish status, so the admin panel can edit/delete/
+         *     publish anything, not just review pending submissions.
+         */
+        get: operations["projects_templates_api_list_all_templates"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/templates/{template_id}/thumbnail": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Template Thumbnail */
-        get: operations["projects_templates_api_get_template_thumbnail"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/templates/{template_id}/publish": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Publish Template */
-        post: operations["projects_templates_api_publish_template"];
         delete?: never;
         options?: never;
         head?: never;
@@ -291,7 +262,8 @@ export interface paths {
         delete: operations["projects_templates_api_delete_template"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Update Template */
+        patch: operations["projects_templates_api_update_template"];
         trace?: never;
     };
     "/api/projects": {
@@ -1228,12 +1200,23 @@ export interface components {
             source_url: string;
             /** Category */
             category: string;
-            /** Has Thumbnail */
-            has_thumbnail: boolean;
             /** Is Published */
             is_published: boolean;
             /** Created At */
             created_at: string;
+        };
+        /** TemplateUpdateIn */
+        TemplateUpdateIn: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Source Url */
+            source_url?: string | null;
+            /** Category */
+            category?: string | null;
+            /** Is Published */
+            is_published?: boolean | null;
         };
         /** ProjectCreateIn */
         ProjectCreateIn: {
@@ -2136,8 +2119,6 @@ export interface operations {
                      * Format: binary
                      */
                     file: string;
-                    /** Thumbnail */
-                    thumbnail?: string | null;
                 };
             };
         };
@@ -2153,7 +2134,7 @@ export interface operations {
             };
         };
     };
-    projects_templates_api_list_pending_templates: {
+    projects_templates_api_list_all_templates: {
         parameters: {
             query?: never;
             header?: never;
@@ -2169,48 +2150,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TemplateOut"][];
-                };
-            };
-        };
-    };
-    projects_templates_api_get_template_thumbnail: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                template_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    projects_templates_api_publish_template: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                template_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TemplateOut"];
                 };
             };
         };
@@ -2232,6 +2171,32 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    projects_templates_api_update_template: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemplateUpdateIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateOut"];
+                };
             };
         };
     };

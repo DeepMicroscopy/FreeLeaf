@@ -16,7 +16,6 @@ export function ContributeTemplateForm({ onDone, onCancel }: { onDone: () => voi
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("");
   const [zipFile, setZipFile] = useState<File | null>(null);
-  const [thumbnail, setThumbnail] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
@@ -33,11 +32,10 @@ export function ContributeTemplateForm({ onDone, onCancel }: { onDone: () => voi
         },
       },
       // Cast as any here to satisfy the strict OpenAPI schema type checker
-      body: { file: zipFile as any, thumbnail: thumbnail as any },
+      body: { file: zipFile as any },
       bodySerializer: (body) => {
         const form = new FormData();
         form.append("file", body.file);
-        if (body.thumbnail) form.append("thumbnail", body.thumbnail);
         return form;
       },
     });
@@ -83,10 +81,6 @@ export function ContributeTemplateForm({ onDone, onCancel }: { onDone: () => voi
       <label className={styles.fileField}>
         <span>Template .zip</span>
         <input type="file" accept=".zip" onChange={(e) => setZipFile(e.target.files?.[0] ?? null)} required />
-      </label>
-      <label className={styles.fileField}>
-        <span>Thumbnail image (optional)</span>
-        <input type="file" accept="image/*" onChange={(e) => setThumbnail(e.target.files?.[0] ?? null)} />
       </label>
       <div className={styles.actions}>
         <Button type="submit" loading={submitting} disabled={!name.trim() || !sourceUrl.trim() || !zipFile}>
