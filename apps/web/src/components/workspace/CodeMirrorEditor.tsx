@@ -35,6 +35,7 @@ import type { LintFinding } from "./polishingLint";
 import { findTabularEnvironments } from "./tableDesigner";
 import type { TabularMatch } from "./tableDesigner";
 import { tableDesignerGutter } from "./tableDesignerGutter";
+import { packageDocsGutter } from "./packageDocsGutter";
 import {
   computePolishingLintDecorations,
   polishingLintField,
@@ -308,6 +309,9 @@ interface CodeMirrorEditorProps {
    * wrong content — it returns false (and does nothing) if the range has
    * changed since the designer was opened. */
   onOpenTableDesigner?: (match: TabularMatch, applyEdit: (newText: string) => boolean) => void;
+  /** Called when the user clicks the gutter book icon on a `\usepackage`/
+   * `\RequirePackage` line, with the resolved package name. */
+  onOpenPackageDoc?: (packageName: string) => void;
   /** Marked-text ranges to highlight for existing comments (Plan.md §9
    * Phase 8 extension). */
   commentAnchors?: CommentAnchor[];
@@ -345,6 +349,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
     polishingEnabled,
     onLintFindings,
     onOpenTableDesigner,
+    onOpenPackageDoc,
     commentAnchors,
     onAddComment,
     onCommentAnchorClick,
@@ -434,6 +439,12 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
   const [commentMenu, setCommentMenu] = useState<{ x: number; y: number; from: number; to: number; text: string; line: number } | null>(null);
   const onOpenTableDesignerRef = useRef(onOpenTableDesigner);
   onOpenTableDesignerRef.current = onOpenTableDesigner;
+  const onOpenPackageDocRef = useRef(onOpenPackageDoc);
+  onOpenPackageDocRef.current = onOpenPackageDoc;
+  const handlePackageDocsGutterClickRef = useRef((_packageName: string) => {});
+  handlePackageDocsGutterClickRef.current = (packageName: string) => {
+    onOpenPackageDocRef.current?.(packageName);
+  };
   const handleTableGutterClickRef = useRef((_lineNumber: number) => {});
   handleTableGutterClickRef.current = (lineNumber: number) => {
     const view = viewRef.current;
@@ -766,6 +777,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
             commentAnchorsField,
             polishingLintField,
             tableDesignerGutter((lineNumber) => handleTableGutterClickRef.current(lineNumber)),
+            packageDocsGutter((packageName) => handlePackageDocsGutterClickRef.current(packageName)),
           ],
         });
 

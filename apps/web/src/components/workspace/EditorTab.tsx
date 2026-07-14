@@ -21,6 +21,7 @@ import { SplitPane } from "./SplitPane";
 import { serializeTabular } from "./tableDesigner";
 import type { TabularMatch, TableGridModel } from "./tableDesigner";
 import { TableDesignerDialog } from "./TableDesignerDialog";
+import { PackageDocDialog } from "./PackageDocDialog";
 import styles from "./EditorTab.module.css";
 
 type SnapshotOut = components["schemas"]["SnapshotOut"];
@@ -298,6 +299,9 @@ export function EditorTab() {
     applyEdit: (newText: string) => boolean;
   } | null>(null);
 
+  // Package Docs gutter: opened from a gutter icon on a \usepackage line.
+  const [packageDoc, setPackageDoc] = useState<string | null>(null);
+
   const handleOpenTableDesigner = useCallback(
     (match: TabularMatch, applyEdit: (newText: string) => boolean) => {
       if (!match.supported) {
@@ -465,6 +469,7 @@ export function EditorTab() {
               polishingEnabled={mode === "polishing"}
               onLintFindings={setLintFindings}
               onOpenTableDesigner={handleOpenTableDesigner}
+              onOpenPackageDoc={setPackageDoc}
               commentAnchors={commentAnchors}
               onAddComment={handleAddCommentFromSelection}
               onCommentAnchorClick={handleCommentAnchorClick}
@@ -519,6 +524,7 @@ export function EditorTab() {
         onCancel={() => setTableDesigner(null)}
       />
     )}
+    {packageDoc && <PackageDocDialog packageName={packageDoc} onClose={() => setPackageDoc(null)} />}
     </>
   );
 }

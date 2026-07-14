@@ -8,6 +8,10 @@ import { applyAndCloseBrace } from "./completionUtils";
 // completes the *current* segment rather than the whole thing.
 const PACKAGE_COMMAND_RE = /\\(?:usepackage|RequirePackage)(?:\[[^[\]]*\])?\{([^{}]*)$/;
 
+// Closed-brace variant of PACKAGE_COMMAND_RE for scanning a *complete* line
+// (e.g. the package-docs gutter), rather than matching mid-typing.
+export const PACKAGE_LINE_RE = /\\(?:usepackage|RequirePackage)(?:\[[^[\]]*\])?\{([^{}]*)\}/;
+
 /** A curated list of commonly used CTAN packages — not exhaustive (that
  * would mean fetching/caching CTAN's full package index), but covers the
  * large majority of what real LaTeX documents actually `\usepackage`.

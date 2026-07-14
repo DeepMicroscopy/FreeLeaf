@@ -98,6 +98,24 @@
   color: var(--accent);
 }
 
+.packageDocsGutter {
+  width: 16px;
+}
+
+.packageDocsIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  color: var(--text-tertiary);
+}
+
+.packageDocsIcon:hover {
+  color: var(--accent);
+}
+
 .commentMenu {
   position: fixed;
   z-index: 50;
