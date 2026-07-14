@@ -180,10 +180,16 @@ def _create_project_from_zip_bytes(user: User, name: str, zip_bytes: bytes) -> P
     # A zip without a main.tex (Plan.md's default) otherwise silently leaves
     # ProjectSettings.main_doc_path at its model default of "main.tex" — a
     # file that doesn't exist — so every compile fails with no obvious cause.
-    # Pick the best available candidate up front instead: main.tex itself,
-    # else the sole .tex file, else the sole one with a \documentclass (a zip
-    # of multiple .tex files with no single obvious entry point is genuinely
-    # ambiguous — left at the model default, same as an empty project).
+    # Pick the best available candidate up front: main.tex itself, else the
+    # sole .tex file, else the sole one with a \documentclass. Beyond that,
+    # true ambiguity (multiple candidate entry points, e.g. several
+    # \documentclass files, or several plain .tex files with none) still
+    # can't be resolved *correctly* — but pointing at any real, existing
+    # file is strictly better than the alternative of pointing at nothing:
+    # a wrong guess is one Settings-tab click to fix, while a nonexistent
+    # default fails every compile with no obvious cause at all. Preferring
+    # a \documentclass file over a plain one when both exist is still a
+    # reasonable tiebreaker even in the ambiguous case.
     main_doc = None
     if "main.tex" in tex_paths:
         main_doc = "main.tex"
@@ -191,6 +197,10 @@ def _create_project_from_zip_bytes(user: User, name: str, zip_bytes: bytes) -> P
         main_doc = tex_paths[0]
     elif len(tex_paths_with_documentclass) == 1:
         main_doc = tex_paths_with_documentclass[0]
+    elif tex_paths_with_documentclass:
+        main_doc = sorted(tex_paths_with_documentclass)[0]
+    elif tex_paths:
+        main_doc = sorted(tex_paths)[0]
     if main_doc is not None:
         ProjectSettings.objects.create(project=project, main_doc_path=main_doc)
 

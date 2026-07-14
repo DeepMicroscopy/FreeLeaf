@@ -384,11 +384,25 @@ class ZipImportTests(ApiTestCase):
         settings_row = ProjectSettings.objects.get(project_id=response.json()["id"])
         self.assertEqual(settings_row.main_doc_path, "paper.tex")
 
-    def test_ambiguous_multi_tex_leaves_default(self):
-        zip_bytes = _make_zip({"a.tex": b"no documentclass here", "b.tex": b"nor here"})
+    def test_ambiguous_multi_tex_falls_back_to_first_by_name(self):
+        # Genuinely ambiguous (neither has \documentclass, no single obvious
+        # entry point) — but main_doc_path must still point at a real file,
+        # never the nonexistent "main.tex" model default, so compiling isn't
+        # broken outright. Deterministic tiebreak: alphabetically first.
+        zip_bytes = _make_zip({"b.tex": b"no documentclass here", "a.tex": b"nor here"})
         response = self._import(self.owner, "P", zip_bytes)
         settings_row = ProjectSettings.objects.get_or_create(project_id=response.json()["id"])[0]
-        self.assertEqual(settings_row.main_doc_path, "main.tex")
+        self.assertEqual(settings_row.main_doc_path, "a.tex")
+
+    def test_ambiguous_multiple_documentclass_files_falls_back_to_first_by_name(self):
+        zip_bytes = _make_zip({
+            "paperB.tex": b"\\documentclass{article}",
+            "paperA.tex": b"\\documentclass{article}",
+            "notes.tex": b"no documentclass here",
+        })
+        response = self._import(self.owner, "P", zip_bytes)
+        settings_row = ProjectSettings.objects.get_or_create(project_id=response.json()["id"])[0]
+        self.assertEqual(settings_row.main_doc_path, "paperA.tex")
 
 
 class ZipExportTests(ApiTestCase):
