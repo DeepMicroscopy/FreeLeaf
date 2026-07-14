@@ -1,20 +1,17 @@
-/** Downscales a PNG's pixel dimensions to match a target DPI at its current
- * physical (print) size — the standard "resample to N dpi" workflow. Never
- * upscales: a target DPI above the source's is clamped to a no-op scale.
- * The PNG's own compression level isn't controllable via the Canvas API
- * (`toBlob`'s quality argument only affects JPEG/WebP) — dimensions are the
- * only real lever available here, which is exactly what a DPI-driven resize
- * needs anyway. */
+/** Re-encodes a PNG at the given target pixel dimensions. The caller (see
+ * ResizeImageDialog.tsx) works out those target dimensions from whatever
+ * combination of DPI and/or physical size the user set — this function just
+ * does the actual downscale + re-encode. The PNG's own compression level
+ * isn't controllable via the Canvas API (`toBlob`'s quality argument only
+ * affects JPEG/WebP) — pixel dimensions are the only real file-size lever
+ * available here. */
 export async function resizePng(
   sourceBlob: Blob,
-  sourceDpi: number,
-  targetDpi: number,
-  widthPx: number,
-  heightPx: number,
+  targetWidthPx: number,
+  targetHeightPx: number,
 ): Promise<{ blob: Blob; widthPx: number; heightPx: number }> {
-  const scale = Math.min(1, targetDpi / sourceDpi);
-  const newWidth = Math.max(1, Math.round(widthPx * scale));
-  const newHeight = Math.max(1, Math.round(heightPx * scale));
+  const newWidth = Math.max(1, Math.round(targetWidthPx));
+  const newHeight = Math.max(1, Math.round(targetHeightPx));
 
   const bitmap = await createImageBitmap(sourceBlob);
   const canvas = document.createElement("canvas");

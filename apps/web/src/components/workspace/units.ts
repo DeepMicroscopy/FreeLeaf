@@ -16,9 +16,16 @@ export function detectMeasurementSystem(): MeasurementSystem {
   }
 }
 
-export function pxToLength(px: number, dpi: number, system: MeasurementSystem): number {
-  const inches = px / dpi;
+export function inchesToDisplay(inches: number, system: MeasurementSystem): number {
   return system === "imperial" ? inches : inches * 2.54;
+}
+
+export function displayToInches(value: number, system: MeasurementSystem): number {
+  return system === "imperial" ? value : value / 2.54;
+}
+
+export function pxToLength(px: number, dpi: number, system: MeasurementSystem): number {
+  return inchesToDisplay(px / dpi, system);
 }
 
 export function formatLength(px: number, dpi: number, system: MeasurementSystem): string {
