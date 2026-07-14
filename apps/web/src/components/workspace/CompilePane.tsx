@@ -6,6 +6,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
 import { Spinner } from "../ui/Spinner";
+import { useToast } from "../ui/Toast";
 import { useWorkspace } from "../../lib/workspace";
 import { PdfViewer } from "./PdfViewer";
 import type { PdfViewerHandle } from "./PdfViewer";
@@ -51,6 +52,7 @@ export const CompilePane = forwardRef<
     runRef.current = run;
     const onJumpToSourceRef = useRef(onJumpToSource);
     onJumpToSourceRef.current = onJumpToSource;
+    const { show } = useToast();
 
     const handleSourceClick = useCallback(
       async (page: number, x: number, y: number) => {
@@ -72,17 +74,29 @@ export const CompilePane = forwardRef<
       }
       inFlightRef.current = true;
       setCompiling(true);
-      const { data } = await api.POST("/api/projects/{project_id}/compile", {
-        params: { path: { project_id: projectId } },
-      });
-      if (data) setRun(data);
-      inFlightRef.current = false;
-      setCompiling(false);
+      try {
+        // A long compile can outlast a reverse proxy's read timeout (a real
+        // production case: nginx returns a 504 with an HTML body, which
+        // openapi-fetch can't parse as JSON and throws) — without this
+        // try/finally, that exception skipped setCompiling(false) entirely
+        // and left the UI stuck showing "Compiling…" forever, with no way
+        // to recover short of a full page reload.
+        const { data } = await api.POST("/api/projects/{project_id}/compile", {
+          params: { path: { project_id: projectId } },
+        });
+        if (data) setRun(data);
+        else show("Compile request failed — please try again.", "error");
+      } catch {
+        show("Lost the connection while compiling — please try again.", "error");
+      } finally {
+        inFlightRef.current = false;
+        setCompiling(false);
+      }
       if (rerunRequestedRef.current) {
         rerunRequestedRef.current = false;
         compile();
       }
-    }, [projectId]);
+    }, [projectId, show]);
 
     useImperativeHandle(
       ref,
