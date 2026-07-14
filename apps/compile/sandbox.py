@@ -63,11 +63,20 @@ CONTAINER_JOBS_DIR = Path(os.environ.get("COMPILE_JOBS_CONTAINER_DIR", "/var/lib
 HOST_JOBS_DIR = os.environ.get("COMPILE_JOBS_HOST_DIR")
 
 ENGINE_COMMANDS = {
+    # Deliberately no -halt-on-error: that stops the engine at the very
+    # first error, which for pdfTeX-family engines means no PDF gets
+    # written at all — even when the document has just one recoverable
+    # issue (an undefined \ref, a missing optional package) and would
+    # otherwise compile to a perfectly usable PDF. -interaction=nonstopmode
+    # alone already guarantees the batch run never blocks waiting for
+    # input (the actual requirement in this non-interactive sandbox); it
+    # additionally makes the engine skip past an error and keep going to
+    # the end of the document instead of aborting.
     "pdflatex": (
-        "pdflatex -synctex=1 -no-shell-escape -interaction=nonstopmode -halt-on-error %O %S"
+        "pdflatex -synctex=1 -no-shell-escape -interaction=nonstopmode %O %S"
     ),
     "xelatex": (
-        "xelatex -synctex=1 -no-shell-escape -interaction=nonstopmode -halt-on-error %O %S"
+        "xelatex -synctex=1 -no-shell-escape -interaction=nonstopmode %O %S"
     ),
 }
 
@@ -148,7 +157,12 @@ def run_job(tar_bytes: bytes, compiler: str, main_file: str) -> CompileResult:
         "latexmk",
         mode_flag,
         "-interaction=nonstopmode",
-        "-halt-on-error",
+        # -f: "force continued processing past errors" (verified via
+        # `latexmk --help` against the actual installed binary) — keeps
+        # latexmk running its full recipe (further passes, bibtex/biber)
+        # even if an earlier pass reported errors, mirroring the same
+        # "push through to a usable PDF" choice made in ENGINE_COMMANDS.
+        "-f",
         "-outdir=/work/out",
         "-e",
         f"${var_name}=q/{engine_cmd}/",
@@ -184,7 +198,12 @@ def run_job(tar_bytes: bytes, compiler: str, main_file: str) -> CompileResult:
         try:
             wait_result = container.wait(timeout=WALL_CLOCK_TIMEOUT_SECONDS)
             exit_code = wait_result.get("StatusCode")
-            status = "success" if exit_code == 0 else "failed"
+            # Provisional — with -halt-on-error/-f removed above, latexmk
+            # commonly exits nonzero even when it *did* push through
+            # recoverable errors and produce a perfectly usable PDF (e.g. an
+            # undefined \ref). The exit code alone is no longer a reliable
+            # signal; whether a PDF actually landed (checked below) is.
+            status = "success"
         except Exception:
             status = "timeout"
             exit_code = None
@@ -205,7 +224,7 @@ def run_job(tar_bytes: bytes, compiler: str, main_file: str) -> CompileResult:
         synctex_bytes = _read_capped(out_dir / (Path(main_file).stem + ".synctex.gz"))
 
         if status == "success" and pdf_bytes is None:
-            status = "failed"  # latexmk reported 0 but no PDF landed — treat as failure
+            status = "failed"  # no PDF actually landed — genuinely nothing to show
 
         return CompileResult(
             status=status,
