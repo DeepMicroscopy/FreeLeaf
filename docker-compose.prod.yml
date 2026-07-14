@@ -85,10 +85,22 @@ services:
     # VOLUMES REMOVED (Code is baked straight into the image)
     ports:
       - "127.0.0.1:8002:8000" # localhost-only debug access; nginx reaches it via the internal network regardless
+    # --timeout 100: gunicorn's default (30s) killed the worker mid-request
+    # for any /compile call that legitimately took longer — the sandbox's
+    # own wall-clock cap is 60s by itself, and compile_api.py's own upstream
+    # HTTP call to the compile service is allowed up to 90s once MinIO
+    # materialization/container spin-up overhead is added in. 100s sits just
+    # above that 90s ceiling so compile_api.py gets to finish and return a
+    # clean, well-formed response before gunicorn would give up on it —
+    # apps/web/nginx.conf's /api/ proxy_read_timeout (120s) then has enough
+    # headroom past *that* to actually receive it. A split-subdomain
+    # deployment's own separate reverse proxy in front of the api host
+    # (bypassing nginx.conf entirely) needs its own read/proxy timeout
+    # raised to match — that's external infrastructure this repo can't set.
     command: >
       sh -c "python manage.py migrate --settings=config.settings --noinput &&
              python manage.py collectstatic --settings=config.settings --noinput &&
-             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3"
+             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 100"
     depends_on:
       postgres:
         condition: service_healthy

@@ -36,4 +36,7 @@ USER appuser
 EXPOSE 8000
 
 # 7. Production WSGI command
-CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3"]
+# --timeout 100: see the matching comment in docker-compose.prod.yml (which
+# overrides this CMD in the documented deployment path — kept in sync here
+# too for anyone running the image directly without compose).
+CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "100"]
