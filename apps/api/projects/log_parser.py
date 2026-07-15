@@ -44,8 +44,15 @@ _UNDEF_CMD_RE = re.compile(r"(?:^<recently read>\s+|^l\.\d+\s+)\\([a-zA-Z]+)")
 # once a later pass resolves them. Each engine invocation announces itself
 # with a "This is pdfTeX/XeTeX/LuaTeX, Version ..." banner, so only the
 # segment after the *last* one reflects the compile's final, authoritative
-# state.
-_RUN_START_RE = re.compile(r"^This is \S*TeX,", re.MULTILINE)
+# state. Real bug found live: a naive `\S*TeX,` also matches BibTeX's own
+# "This is BibTeX, Version ..." banner (Bib + TeX) — for any document using
+# \bibliography (bibtex, not biblatex/biber), latexmk's real rule order is
+# pdflatex → bibtex → pdflatex → bibtex-again-if-needed, so bibtex's banner
+# can legitimately be the *last* "This is ...TeX," line in the whole log,
+# silently discarding the final pdflatex run's real errors/warnings (they'd
+# never be reported at all). Anchored to the three actual engines by name so
+# a tool whose name happens to end in "TeX" can't be mistaken for one.
+_RUN_START_RE = re.compile(r"^This is (?:pdf|Xe|Lua)TeX,", re.MULTILINE)
 
 
 def _last_engine_run(log: str) -> str:

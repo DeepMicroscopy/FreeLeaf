@@ -134,6 +134,35 @@ of your error message was never \\def'ed.
 Output written on main.pdf (1 page, 11628 bytes).
 """
 
+TRAILING_BIBTEX_RUN_LOG = """\
+This is pdfTeX, Version 3.141592653-2.6-1.40.24 (TeX Live 2022/Debian) (preloaded format=pdflatex)
+entering extended mode
+(./main.tex
+(/work/out/main.aux)
+
+! Undefined control sequence.
+l.16 \\multirow
+              {2}{*}{1 3 3} & 4 & 5 \\\\
+
+LaTeX Warning: Citation `shannon1948' on page 1 undefined on input line 5.
+Output written on /work/out/main.pdf (1 page, 20000 bytes).
+This is BibTeX, Version 0.99d
+The top-level auxiliary file: main.aux
+This is pdfTeX, Version 3.141592653-2.6-1.40.24 (TeX Live 2022/Debian) (preloaded format=pdflatex)
+entering extended mode
+(./main.tex
+(/work/out/main.aux)
+
+! Undefined control sequence.
+l.16 \\multirow
+              {2}{*}{1 3 3} & 4 & 5 \\\\
+
+LaTeX Warning: There were undefined references.
+Output written on /work/out/main.pdf (1 page, 23564 bytes).
+This is BibTeX, Version 0.99d
+The top-level auxiliary file: main.aux
+"""
+
 OVERFULL_HBOX_LOG = """\
 This is pdfTeX, Version 3.141592653-2.6-1.40.24 (TeX Live 2022/Debian) (preloaded format=pdflatex)
 entering extended mode
@@ -207,6 +236,20 @@ class ParseLogTests(SimpleTestCase):
         parsed = parse_log(UNDEF_MULTIROW_LOG)
         self.assertEqual(len(parsed.errors), 1)
         self.assertEqual(parsed.errors[0].message, "Undefined control sequence: \\multirow")
+
+    def test_trailing_bibtex_run_does_not_shadow_the_real_final_pdflatex_run(self):
+        # Real bug: for a \bibliography (bibtex, not biblatex) document,
+        # latexmk's actual rule order can legitimately end on a bibtex
+        # invocation (pdflatex -> bibtex -> pdflatex -> bibtex again) — its
+        # "This is BibTeX, Version ..." banner also matches a naive
+        # `This is \S*TeX,` pattern, so `_last_engine_run` was treating it as
+        # the final engine run and silently discarding the real last
+        # pdflatex run's errors/warnings entirely.
+        parsed = parse_log(TRAILING_BIBTEX_RUN_LOG)
+        self.assertEqual(len(parsed.errors), 1)
+        self.assertEqual(parsed.errors[0].message, "Undefined control sequence: \\multirow")
+        self.assertEqual(len(parsed.warnings), 1)
+        self.assertEqual(parsed.warnings[0].message, "There were undefined references.")
 
     def test_warning_resolved_by_a_later_rerun_is_not_reported(self):
         # latexmk reruns pdflatex after bibtex resolves citations; only the
