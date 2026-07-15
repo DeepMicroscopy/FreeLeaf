@@ -291,6 +291,10 @@ export interface CodeMirrorEditorHandle {
    * `replacement` (`""` to delete it outright, `\label{newKey}` to
    * rename). False if that occurrence no longer exists. */
   applyLabelFix: (key: string, occurrenceIndex: number, replacement: string) => boolean;
+  /** Escapes the first unescaped `&` on the given 1-indexed line (i.e. not
+   * already preceded by `\`) by inserting a `\` before it. False if the
+   * line has no unescaped `&` left (already fixed, or the line shifted). */
+  applyEscapeAmpersand: (lineNumber: number) => boolean;
 }
 
 interface CodeMirrorEditorProps {
@@ -438,6 +442,16 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
       const target = occurrences[occurrenceIndex];
       if (!target) return false;
       view.dispatch({ changes: { from: target.from, to: target.to, insert: replacement }, userEvent: "input" });
+      return true;
+    },
+    applyEscapeAmpersand: (lineNumber: number) => {
+      const view = viewRef.current;
+      if (!view || lineNumber < 1 || lineNumber > view.state.doc.lines) return false;
+      const line = view.state.doc.line(lineNumber);
+      const idx = [...line.text].findIndex((ch, i) => ch === "&" && line.text[i - 1] !== "\\");
+      if (idx === -1) return false;
+      const pos = line.from + idx;
+      view.dispatch({ changes: { from: pos, to: pos, insert: "\\" }, userEvent: "input" });
       return true;
     },
   }));

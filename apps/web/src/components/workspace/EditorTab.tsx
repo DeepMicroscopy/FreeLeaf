@@ -25,6 +25,7 @@ import { PackageDocDialog } from "./PackageDocDialog";
 import { AddPackageDialog } from "./AddPackageDialog";
 import { MissingFileFixDialog } from "./MissingFileFixDialog";
 import { DuplicateLabelFixDialog } from "./DuplicateLabelFixDialog";
+import { EscapeAmpersandDialog } from "./EscapeAmpersandDialog";
 import { findLabelOccurrences } from "./refCompletion";
 import { uploadSingleFile } from "./fileUpload";
 import styles from "./EditorTab.module.css";
@@ -313,6 +314,7 @@ export function EditorTab() {
   const [addPackageFix, setAddPackageFix] = useState<{ package: string; commandOrEnv: string } | null>(null);
   const [missingFileFix, setMissingFileFix] = useState<{ filename: string; fatal: boolean } | null>(null);
   const [duplicateLabelFix, setDuplicateLabelFix] = useState<string | null>(null);
+  const [ampersandFix, setAmpersandFix] = useState<number | null>(null);
   const [missingFileUploading, setMissingFileUploading] = useState(false);
 
   const handleConfirmAddPackage = useCallback(() => {
@@ -388,6 +390,18 @@ export function EditorTab() {
     },
     [duplicateLabelFix, show],
   );
+
+  const handleConfirmEscapeAmpersand = useCallback(() => {
+    if (ampersandFix == null) return;
+    const ok = codeMirrorRef.current?.applyEscapeAmpersand(ampersandFix);
+    setAmpersandFix(null);
+    if (ok) {
+      show("Escaped.");
+      compilePaneRef.current?.triggerCompile();
+    } else {
+      show("That line changed elsewhere — please try again.", "error");
+    }
+  }, [ampersandFix, show]);
 
   const handleOpenTableDesigner = useCallback(
     (match: TabularMatch, applyEdit: (newText: string) => boolean) => {
@@ -593,6 +607,7 @@ export function EditorTab() {
                 onAddPackage={(pkg, commandOrEnv) => setAddPackageFix({ package: pkg, commandOrEnv })}
                 onFixMissingFile={(filename, fatal) => setMissingFileFix({ filename, fatal })}
                 onFixDuplicateLabel={setDuplicateLabelFix}
+                onFixUnescapedAmpersand={setAmpersandFix}
               />
             }
           />
@@ -605,6 +620,7 @@ export function EditorTab() {
             onAddPackage={(pkg, commandOrEnv) => setAddPackageFix({ package: pkg, commandOrEnv })}
             onFixMissingFile={(filename, fatal) => setMissingFileFix({ filename, fatal })}
             onFixDuplicateLabel={setDuplicateLabelFix}
+            onFixUnescapedAmpersand={setAmpersandFix}
           />
         )
       }
@@ -644,6 +660,13 @@ export function EditorTab() {
         onRename={handleRenameLabelOccurrence}
         onDelete={handleDeleteLabelOccurrence}
         onCancel={() => setDuplicateLabelFix(null)}
+      />
+    )}
+    {ampersandFix != null && (
+      <EscapeAmpersandDialog
+        line={ampersandFix}
+        onConfirm={handleConfirmEscapeAmpersand}
+        onCancel={() => setAmpersandFix(null)}
       />
     )}
     </>

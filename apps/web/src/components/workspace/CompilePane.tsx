@@ -37,9 +37,19 @@ export const CompilePane = forwardRef<
     onAddPackage?: (pkg: string, commandOrEnv: string) => void;
     onFixMissingFile?: (filename: string, fatal: boolean) => void;
     onFixDuplicateLabel?: (label: string) => void;
+    onFixUnescapedAmpersand?: (line: number) => void;
   }
 >(function CompilePane(
-  { projectId, canWrite, onJumpToSource, onRunChanged, onAddPackage, onFixMissingFile, onFixDuplicateLabel },
+  {
+    projectId,
+    canWrite,
+    onJumpToSource,
+    onRunChanged,
+    onAddPackage,
+    onFixMissingFile,
+    onFixDuplicateLabel,
+    onFixUnescapedAmpersand,
+  },
   ref,
 ) {
     const { project } = useWorkspace();
@@ -83,8 +93,13 @@ export const CompilePane = forwardRef<
     onJumpToSourceRef.current = onJumpToSource;
     const autoOpenFixesRef = useRef(autoOpenFixes);
     autoOpenFixesRef.current = autoOpenFixes;
-    const fixHandlersRef = useRef<FixHandlers>({ onAddPackage, onFixMissingFile, onFixDuplicateLabel });
-    fixHandlersRef.current = { onAddPackage, onFixMissingFile, onFixDuplicateLabel };
+    const fixHandlersRef = useRef<FixHandlers>({
+      onAddPackage,
+      onFixMissingFile,
+      onFixDuplicateLabel,
+      onFixUnescapedAmpersand,
+    });
+    fixHandlersRef.current = { onAddPackage, onFixMissingFile, onFixDuplicateLabel, onFixUnescapedAmpersand };
     const { show } = useToast();
     const [downloading, setDownloading] = useState(false);
 
@@ -349,6 +364,7 @@ export const CompilePane = forwardRef<
                 onAddPackage={onAddPackage}
                 onFixMissingFile={onFixMissingFile}
                 onFixDuplicateLabel={onFixDuplicateLabel}
+                onFixUnescapedAmpersand={onFixUnescapedAmpersand}
               />
               <DiagnosticsList run={run} />
             </>
@@ -376,6 +392,8 @@ function fixLabel(c: FixCandidate): string {
       return `File not found: ${c.filename}`;
     case "duplicate-label":
       return `Label defined multiple times: ${c.label}`;
+    case "unescaped-ampersand":
+      return `Line ${c.line}: unescaped &`;
   }
 }
 
@@ -383,6 +401,7 @@ interface FixHandlers {
   onAddPackage?: (pkg: string, commandOrEnv: string) => void;
   onFixMissingFile?: (filename: string, fatal: boolean) => void;
   onFixDuplicateLabel?: (label: string) => void;
+  onFixUnescapedAmpersand?: (line: number) => void;
 }
 
 /** Shared by the manual "Fix" button click and the auto-open-on-compile
@@ -391,7 +410,8 @@ interface FixHandlers {
 function dispatchFix(c: FixCandidate, handlers: FixHandlers) {
   if (c.kind === "add-package") handlers.onAddPackage?.(c.package, c.commandOrEnv);
   else if (c.kind === "missing-file") handlers.onFixMissingFile?.(c.filename, c.fatal);
-  else handlers.onFixDuplicateLabel?.(c.label);
+  else if (c.kind === "duplicate-label") handlers.onFixDuplicateLabel?.(c.label);
+  else handlers.onFixUnescapedAmpersand?.(c.line);
 }
 
 function SuggestedFixesList({
@@ -401,6 +421,7 @@ function SuggestedFixesList({
   onAddPackage,
   onFixMissingFile,
   onFixDuplicateLabel,
+  onFixUnescapedAmpersand,
 }: FixHandlers & {
   run: CompileRunOut;
   autoOpenFixes: boolean;
@@ -408,7 +429,7 @@ function SuggestedFixesList({
 }) {
   const candidates = matchFixes(run.errors, run.warnings, run.has_pdf);
   if (candidates.length === 0) return null;
-  const handlers = { onAddPackage, onFixMissingFile, onFixDuplicateLabel };
+  const handlers = { onAddPackage, onFixMissingFile, onFixDuplicateLabel, onFixUnescapedAmpersand };
 
   return (
     <div className={styles.fixes}>

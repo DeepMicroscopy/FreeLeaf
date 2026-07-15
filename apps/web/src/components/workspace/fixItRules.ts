@@ -14,7 +14,8 @@ export interface Diagnostic {
 export type FixCandidate =
   | { kind: "add-package"; package: string; commandOrEnv: string }
   | { kind: "missing-file"; filename: string; fatal: boolean }
-  | { kind: "duplicate-label"; label: string };
+  | { kind: "duplicate-label"; label: string }
+  | { kind: "unescaped-ampersand"; line: number };
 
 /** Undefined-control-sequence commands that are provided by exactly one
  * common package — deliberately excludes `\multicolumn` (confirmed via a
@@ -70,6 +71,11 @@ const UNDEFINED_COMMAND_RE = /^Undefined control sequence: \\(\S+)/;
 const UNDEFINED_ENV_RE = /^Environment (\S+) undefined\.?/;
 const FILE_NOT_FOUND_RE = /File `([^']+)' not found/;
 const DUPLICATE_LABEL_RE = /Label `([^']+)' multiply defined/;
+// Verified via a real sandbox compile: `This is Blubber & co` outside any
+// tabular/align-like environment produces this exact, self-contained error
+// (no separate command-name extraction needed, unlike "Undefined control
+// sequence.") — recoverable, the compile still produces a PDF.
+const MISPLACED_AMPERSAND_RE = /^Misplaced alignment tab character &\.?/;
 
 function candidateKey(c: FixCandidate): string {
   switch (c.kind) {
@@ -79,6 +85,8 @@ function candidateKey(c: FixCandidate): string {
       return `missing-file:${c.filename}`;
     case "duplicate-label":
       return `duplicate-label:${c.label}`;
+    case "unescaped-ampersand":
+      return `unescaped-ampersand:${c.line}`;
   }
 }
 
@@ -104,6 +112,10 @@ export function matchFixes(errors: Diagnostic[], warnings: Diagnostic[], hasPdf:
     if (envMatch) {
       const pkg = ENVIRONMENT_TO_PACKAGE[envMatch[1]];
       if (pkg) candidates.push({ kind: "add-package", package: pkg, commandOrEnv: envMatch[1] });
+      continue;
+    }
+    if (MISPLACED_AMPERSAND_RE.test(d.message) && d.line != null) {
+      candidates.push({ kind: "unescaped-ampersand", line: d.line });
       continue;
     }
   }
