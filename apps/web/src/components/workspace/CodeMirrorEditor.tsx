@@ -33,8 +33,9 @@ import type { DuplicateChoice } from "./DuplicateDialog";
 import { DuplicateDialog } from "./DuplicateDialog";
 import { lintLatex } from "./polishingLint";
 import type { LintFinding } from "./polishingLint";
-import { findTabularEnvironments } from "./tableDesigner";
+import { findTabularEnvironments, serializeTabular } from "./tableDesigner";
 import type { TabularMatch } from "./tableDesigner";
+import { looksLikeHtmlTable, parseHtmlTableToGridModel } from "./tablePaste";
 import { tableDesignerGutter } from "./tableDesignerGutter";
 import { packageDocsGutter } from "./packageDocsGutter";
 import {
@@ -784,11 +785,36 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
             EditorView.domEventHandlers({
               paste: (event, view) => {
                 const text = event.clipboardData?.getData("text/plain") ?? "";
-                if (!looksLikeBibtex(text)) return false;
-                event.preventDefault();
-                const pos = view.state.selection.main.head;
-                void resolveAndCiteRef.current(text, view, pos);
-                return true;
+                if (looksLikeBibtex(text)) {
+                  event.preventDefault();
+                  const pos = view.state.selection.main.head;
+                  void resolveAndCiteRef.current(text, view, pos);
+                  return true;
+                }
+                // Excel/Word both populate text/html on copy with a real
+                // <table> carrying the formatting the plain-text clipboard
+                // entry throws away — convert it into a real tabular
+                // instead of dumping unstructured tab-separated text.
+                const html = event.clipboardData?.getData("text/html") ?? "";
+                if (looksLikeHtmlTable(html)) {
+                  const model = parseHtmlTableToGridModel(html);
+                  if (model) {
+                    event.preventDefault();
+                    const sel = view.state.selection.main;
+                    const latex = serializeTabular("tabular", model);
+                    view.dispatch({
+                      changes: { from: sel.from, to: sel.to, insert: latex },
+                      selection: { anchor: sel.from + latex.length },
+                      // Same suggestion-tagging discipline as the BibTeX
+                      // paste-insert above — a reviewer can't bypass
+                      // suggestions by pasting a table instead of typing one.
+                      userEvent: "input.paste",
+                    });
+                    show(`Inserted a ${model.rows.length}×${model.columns.length} table.`);
+                    return true;
+                  }
+                }
+                return false;
               },
               drop: (event, view) => {
                 const file = event.dataTransfer?.files?.[0];
