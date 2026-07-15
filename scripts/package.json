@@ -1,0 +1,9 @@
+{
+  "name": "freeleaf-scripts",
+  "private": true,
+  "type": "module",
+  "description": "Standalone maintenance scripts — not part of the pnpm workspace (see pnpm-workspace.yaml). Install locally in this directory before running anything here: npm install && npx playwright install chromium",
+  "devDependencies": {
+    "playwright": "^1.48.0"
+  }
+}

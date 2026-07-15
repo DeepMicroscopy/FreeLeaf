@@ -17,7 +17,7 @@ description: Open, self-hostable, real-time collaborative LaTeX editing.
     <a class="button secondary" href="https://github.com/{{ site.repository }}#readme">Self-hosting guide</a>
   </div>
   <div class="hero-shot">
-    <img src="{{ '/assets/img/comments-marked-text.png' | relative_url }}" alt="FreeLeaf editor with a marked-text comment thread open">
+    <img src="{{ '/assets/img/hero-workspace.png' | relative_url }}" alt="FreeLeaf editor with a compiled paper, syntax highlighting, and a live PDF preview">
   </div>
 </section>
 
