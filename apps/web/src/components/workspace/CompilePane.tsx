@@ -10,6 +10,8 @@ import { useToast } from "../ui/Toast";
 import { useWorkspace } from "../../lib/workspace";
 import { PdfViewer } from "./PdfViewer";
 import type { PdfViewerHandle } from "./PdfViewer";
+import { matchFixes } from "./fixItRules";
+import type { FixCandidate } from "./fixItRules";
 import styles from "./CompilePane.module.css";
 
 type CompileRunOut = components["schemas"]["CompileRunOut"];
@@ -29,8 +31,17 @@ export const CompilePane = forwardRef<
     canWrite: boolean;
     onJumpToSource?: (file: string, line: number) => void;
     onRunChanged?: (run: CompileRunOut | null) => void;
+    /** Fix-it assistant (fixItRules.ts) — CompilePane only matches
+     * candidates from the current run's diagnostics; EditorTab owns the
+     * actual doc mutation (it has the CodeMirror ref). */
+    onAddPackage?: (pkg: string, commandOrEnv: string) => void;
+    onFixMissingFile?: (filename: string, fatal: boolean) => void;
+    onFixDuplicateLabel?: (label: string) => void;
   }
->(function CompilePane({ projectId, canWrite, onJumpToSource, onRunChanged }, ref) {
+>(function CompilePane(
+  { projectId, canWrite, onJumpToSource, onRunChanged, onAddPackage, onFixMissingFile, onFixDuplicateLabel },
+  ref,
+) {
     const { project } = useWorkspace();
     const [run, setRunState] = useState<CompileRunOut | null>(null);
     const onRunChangedRef = useRef(onRunChanged);
@@ -289,7 +300,15 @@ export const CompilePane = forwardRef<
             </>
           )}
           {run && (run.errors.length > 0 || run.warnings.length > 0) && (
-            <DiagnosticsList run={run} />
+            <>
+              <SuggestedFixesList
+                run={run}
+                onAddPackage={onAddPackage}
+                onFixMissingFile={onFixMissingFile}
+                onFixDuplicateLabel={onFixDuplicateLabel}
+              />
+              <DiagnosticsList run={run} />
+            </>
           )}
         </div>
       </div>
@@ -304,6 +323,53 @@ function StatusLabel({ run, compiling }: { run: CompileRunOut | null; compiling:
     return <span className={[styles.status, styles.ok].join(" ")}>Compiled successfully</span>;
   }
   return <span className={[styles.status, styles.bad].join(" ")}>{run.status === "timeout" ? "Timed out" : "Compile failed"}</span>;
+}
+
+function fixLabel(c: FixCandidate): string {
+  switch (c.kind) {
+    case "add-package":
+      return `${c.commandOrEnv} needs \\usepackage{${c.package}}`;
+    case "missing-file":
+      return `File not found: ${c.filename}`;
+    case "duplicate-label":
+      return `Label defined multiple times: ${c.label}`;
+  }
+}
+
+function SuggestedFixesList({
+  run,
+  onAddPackage,
+  onFixMissingFile,
+  onFixDuplicateLabel,
+}: {
+  run: CompileRunOut;
+  onAddPackage?: (pkg: string, commandOrEnv: string) => void;
+  onFixMissingFile?: (filename: string, fatal: boolean) => void;
+  onFixDuplicateLabel?: (label: string) => void;
+}) {
+  const candidates = matchFixes(run.errors, run.warnings, run.has_pdf);
+  if (candidates.length === 0) return null;
+
+  return (
+    <div className={styles.fixes}>
+      {candidates.map((c, i) => (
+        <div key={i} className={styles.fix}>
+          <span className={styles.fixLabel}>{fixLabel(c)}</span>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              if (c.kind === "add-package") onAddPackage?.(c.package, c.commandOrEnv);
+              else if (c.kind === "missing-file") onFixMissingFile?.(c.filename, c.fatal);
+              else onFixDuplicateLabel?.(c.label);
+            }}
+          >
+            Fix
+          </Button>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function DiagnosticsList({ run }: { run: CompileRunOut }) {

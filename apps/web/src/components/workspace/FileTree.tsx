@@ -21,6 +21,7 @@ import { useToast } from "../ui/Toast";
 import { useWorkspace } from "../../lib/workspace";
 import type { ProjectFileOut } from "../../lib/workspace";
 import { FILE_SIZE_WARN_BYTES } from "./fileSize";
+import { uploadSingleFile } from "./fileUpload";
 import { buildTree } from "./treeUtils";
 import type { TreeNode } from "./treeUtils";
 import styles from "./FileTree.module.css";
@@ -159,17 +160,7 @@ async function uploadFiles(fileList: FileList | File[], targetFolder = "") {
     for (const file of Array.from(fileList)) {
       const name = sanitizeFileName(file.name);
       const path = targetFolder ? `${targetFolder}/${name}` : name;
-      const { error } = await api.POST("/api/projects/{project_id}/files/upload", {
-        params: { path: { project_id: projectId }, query: { path } },
-        // Cast as any here to satisfy the strict OpenAPI schema type checker
-        body: { file: file as any },
-        bodySerializer: (body) => {
-          const form = new FormData();
-          // body.file here will still correctly reference your original native File object
-          form.append("file", body.file);
-          return form;
-        },
-      });
+      const { error } = await uploadSingleFile(projectId, path, file);
       if (error) show(`Could not upload "${file.name}": ${errorMessage(error, "unknown error")}`, "error");
     }
     await refreshFiles();

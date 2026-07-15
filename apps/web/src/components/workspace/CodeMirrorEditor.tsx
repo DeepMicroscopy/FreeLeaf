@@ -27,7 +27,8 @@ import {
 } from "./includegraphicsCompletion";
 import { latexSyntaxHighlighting } from "./latexHighlight";
 import { packageCompletionSource } from "./packageCompletion";
-import { extractLabels, refCompletionSource } from "./refCompletion";
+import { extractLabels, findLabelOccurrences, refCompletionSource } from "./refCompletion";
+import { PACKAGE_LINE_RE } from "./packageCompletion";
 import type { DuplicateChoice } from "./DuplicateDialog";
 import { DuplicateDialog } from "./DuplicateDialog";
 import { lintLatex } from "./polishingLint";
@@ -270,6 +271,26 @@ export interface CodeMirrorEditorHandle {
    * suggestions.ts. */
   acceptAllSuggestions: () => void;
   rejectAllSuggestions: () => void;
+  /** Fix-it assistant (fixItRules.ts) — each of these re-derives its target
+   * position fresh from the *live* document at call time (same discipline
+   * as the Table Designer's save: never trust a possibly-stale snapshot of
+   * the text for where to edit), so a concurrent edit elsewhere can't cause
+   * a wrong-position write. All three dispatch as normal tagged
+   * `userEvent: "input"` edits, so they still become suggestions while
+   * Reviewing, same as every other programmatic edit in this app. */
+  /** Inserts `\usepackage{pkg}` after the last existing `\usepackage`/
+   * `\RequirePackage` line, or after `\documentclass{...}` if there is
+   * none, or at the very top as a last resort. Always succeeds. */
+  applyAddPackage: (pkg: string) => boolean;
+  /** Replaces the first literal occurrence of `oldFilename` with
+   * `newFilename`. False if `oldFilename` no longer appears anywhere. */
+  applyMissingFileFix: (oldFilename: string, newFilename: string) => boolean;
+  /** Re-scans the live document for `\label{key}` occurrences (same order
+   * `findLabelOccurrences` used to build the picker list) and replaces the
+   * `occurrenceIndex`-th one's *entire* `\label{key}` text with
+   * `replacement` (`""` to delete it outright, `\label{newKey}` to
+   * rename). False if that occurrence no longer exists. */
+  applyLabelFix: (key: string, occurrenceIndex: number, replacement: string) => boolean;
 }
 
 interface CodeMirrorEditorProps {
@@ -372,6 +393,52 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
     },
     rejectAllSuggestions: () => {
       if (ytextRef.current) rejectAllSuggestions(ytextRef.current, suggestionSpansRef.current);
+    },
+    applyAddPackage: (pkg: string) => {
+      const view = viewRef.current;
+      if (!view) return false;
+      const lines = view.state.doc.toString().split("\n");
+      let anchorLine = -1; // 1-indexed CodeMirror line number to insert after
+      for (let i = 0; i < lines.length; i++) {
+        if (PACKAGE_LINE_RE.test(lines[i])) anchorLine = i + 1;
+      }
+      if (anchorLine === -1) {
+        for (let i = 0; i < lines.length; i++) {
+          if (/\\documentclass(\[[^[\]]*\])?\{[^{}]*\}/.test(lines[i])) {
+            anchorLine = i + 1;
+            break;
+          }
+        }
+      }
+      const insertText = `\\usepackage{${pkg}}`;
+      if (anchorLine === -1) {
+        view.dispatch({ changes: { from: 0, to: 0, insert: `${insertText}\n` }, userEvent: "input" });
+      } else {
+        const pos = view.state.doc.line(anchorLine).to;
+        view.dispatch({ changes: { from: pos, to: pos, insert: `\n${insertText}` }, userEvent: "input" });
+      }
+      return true;
+    },
+    applyMissingFileFix: (oldFilename: string, newFilename: string) => {
+      const view = viewRef.current;
+      if (!view) return false;
+      const text = view.state.doc.toString();
+      const idx = text.indexOf(oldFilename);
+      if (idx === -1) return false;
+      view.dispatch({
+        changes: { from: idx, to: idx + oldFilename.length, insert: newFilename },
+        userEvent: "input",
+      });
+      return true;
+    },
+    applyLabelFix: (key: string, occurrenceIndex: number, replacement: string) => {
+      const view = viewRef.current;
+      if (!view) return false;
+      const occurrences = findLabelOccurrences(view.state.doc.toString(), key);
+      const target = occurrences[occurrenceIndex];
+      if (!target) return false;
+      view.dispatch({ changes: { from: target.from, to: target.to, insert: replacement }, userEvent: "input" });
+      return true;
     },
   }));
   const changeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

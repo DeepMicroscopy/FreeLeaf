@@ -22,6 +22,11 @@ import { serializeTabular } from "./tableDesigner";
 import type { TabularMatch, TableGridModel } from "./tableDesigner";
 import { TableDesignerDialog } from "./TableDesignerDialog";
 import { PackageDocDialog } from "./PackageDocDialog";
+import { AddPackageDialog } from "./AddPackageDialog";
+import { MissingFileFixDialog } from "./MissingFileFixDialog";
+import { DuplicateLabelFixDialog } from "./DuplicateLabelFixDialog";
+import { findLabelOccurrences } from "./refCompletion";
+import { uploadSingleFile } from "./fileUpload";
 import styles from "./EditorTab.module.css";
 
 type SnapshotOut = components["schemas"]["SnapshotOut"];
@@ -52,6 +57,7 @@ export function EditorTab() {
     canWrite,
     canEditText,
     refreshFiles,
+    currentFileText,
     setCurrentFileText,
     jumpToLineRef,
   } = useWorkspace();
@@ -302,6 +308,87 @@ export function EditorTab() {
   // Package Docs gutter: opened from a gutter icon on a \usepackage line.
   const [packageDoc, setPackageDoc] = useState<string | null>(null);
 
+  // Fix-it assistant (fixItRules.ts): pattern-matched suggested fixes shown
+  // in CompilePane's diagnostics list.
+  const [addPackageFix, setAddPackageFix] = useState<{ package: string; commandOrEnv: string } | null>(null);
+  const [missingFileFix, setMissingFileFix] = useState<{ filename: string; fatal: boolean } | null>(null);
+  const [duplicateLabelFix, setDuplicateLabelFix] = useState<string | null>(null);
+  const [missingFileUploading, setMissingFileUploading] = useState(false);
+
+  const handleConfirmAddPackage = useCallback(() => {
+    if (!addPackageFix) return;
+    const ok = codeMirrorRef.current?.applyAddPackage(addPackageFix.package);
+    setAddPackageFix(null);
+    if (ok) {
+      show(`Added \\usepackage{${addPackageFix.package}}.`);
+      compilePaneRef.current?.triggerCompile();
+    }
+  }, [addPackageFix, show]);
+
+  const handlePickExistingFile = useCallback(
+    (path: string) => {
+      if (!missingFileFix) return;
+      const ok = codeMirrorRef.current?.applyMissingFileFix(missingFileFix.filename, path);
+      setMissingFileFix(null);
+      if (ok) {
+        show("Reference updated.");
+        compilePaneRef.current?.triggerCompile();
+      } else {
+        show("That reference changed elsewhere — please try again.", "error");
+      }
+    },
+    [missingFileFix, show],
+  );
+
+  const handleUploadMissingFile = useCallback(
+    async (file: File) => {
+      if (!missingFileFix) return;
+      setMissingFileUploading(true);
+      const renamed = new File([file], missingFileFix.filename, { type: file.type });
+      const { error } = await uploadSingleFile(projectId, "", renamed);
+      setMissingFileUploading(false);
+      if (error) {
+        show((error as { detail?: string }).detail ?? "Could not upload that file.", "error");
+        return;
+      }
+      await refreshFiles();
+      setMissingFileFix(null);
+      show("File uploaded.");
+      compilePaneRef.current?.triggerCompile();
+    },
+    [missingFileFix, projectId, refreshFiles, show],
+  );
+
+  const handleRenameLabelOccurrence = useCallback(
+    (occurrenceIndex: number, newKey: string) => {
+      if (!duplicateLabelFix) return;
+      const ok = codeMirrorRef.current?.applyLabelFix(duplicateLabelFix, occurrenceIndex, `\\label{${newKey}}`);
+      setDuplicateLabelFix(null);
+      if (ok) {
+        show("Label renamed.");
+        compilePaneRef.current?.triggerCompile();
+      } else {
+        show("That label changed elsewhere — please try again.", "error");
+      }
+    },
+    [duplicateLabelFix, show],
+  );
+
+  const handleDeleteLabelOccurrence = useCallback(
+    (occurrenceIndex: number) => {
+      if (!duplicateLabelFix) return;
+      const ok = codeMirrorRef.current?.applyLabelFix(duplicateLabelFix, occurrenceIndex, "");
+      setDuplicateLabelFix(null);
+      if (ok) {
+        show("Label removed.");
+        compilePaneRef.current?.triggerCompile();
+      } else {
+        show("That label changed elsewhere — please try again.", "error");
+      }
+    },
+    [duplicateLabelFix, show],
+  );
+
   const handleOpenTableDesigner = useCallback(
     (match: TabularMatch, applyEdit: (newText: string) => boolean) => {
       if (!match.supported) {
@@ -503,6 +590,9 @@ export function EditorTab() {
                 canWrite={canWrite}
                 onJumpToSource={handleJumpToSource}
                 onRunChanged={setLatestRun}
+                onAddPackage={(pkg, commandOrEnv) => setAddPackageFix({ package: pkg, commandOrEnv })}
+                onFixMissingFile={(filename, fatal) => setMissingFileFix({ filename, fatal })}
+                onFixDuplicateLabel={setDuplicateLabelFix}
               />
             }
           />
@@ -512,6 +602,9 @@ export function EditorTab() {
             projectId={projectId}
             canWrite={canWrite}
             onJumpToSource={handleJumpToSource}
+            onAddPackage={(pkg, commandOrEnv) => setAddPackageFix({ package: pkg, commandOrEnv })}
+            onFixMissingFile={(filename, fatal) => setMissingFileFix({ filename, fatal })}
+            onFixDuplicateLabel={setDuplicateLabelFix}
           />
         )
       }
@@ -525,6 +618,34 @@ export function EditorTab() {
       />
     )}
     {packageDoc && <PackageDocDialog packageName={packageDoc} onClose={() => setPackageDoc(null)} />}
+    {addPackageFix && (
+      <AddPackageDialog
+        packageName={addPackageFix.package}
+        commandOrEnv={addPackageFix.commandOrEnv}
+        onConfirm={handleConfirmAddPackage}
+        onCancel={() => setAddPackageFix(null)}
+      />
+    )}
+    {missingFileFix && (
+      <MissingFileFixDialog
+        filename={missingFileFix.filename}
+        fatal={missingFileFix.fatal}
+        files={files}
+        uploading={missingFileUploading}
+        onPickExisting={handlePickExistingFile}
+        onUpload={handleUploadMissingFile}
+        onCancel={() => setMissingFileFix(null)}
+      />
+    )}
+    {duplicateLabelFix && (
+      <DuplicateLabelFixDialog
+        label={duplicateLabelFix}
+        occurrences={findLabelOccurrences(currentFileText, duplicateLabelFix)}
+        onRename={handleRenameLabelOccurrence}
+        onDelete={handleDeleteLabelOccurrence}
+        onCancel={() => setDuplicateLabelFix(null)}
+      />
+    )}
     </>
   );
 }

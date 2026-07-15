@@ -179,13 +179,13 @@ class TriggerCompileTests(ApiTestCase):
         response = post_json(self.owner, f"/api/projects/{self.project_id}/compile")
         body = response.json()
         self.assertEqual(len(body["errors"]), 1)
-        self.assertEqual(body["errors"][0]["message"], "Undefined control sequence.")
+        self.assertEqual(body["errors"][0]["message"], "Undefined control sequence: \\bogus")
         self.assertEqual(body["errors"][0]["file"], "main.tex")
         self.assertEqual(body["errors"][0]["line"], 3)
         self.assertEqual(body["warnings"], [])
 
         run = CompileRun.objects.get(id=body["id"])
-        self.assertEqual(run.errors[0]["message"], "Undefined control sequence.")
+        self.assertEqual(run.errors[0]["message"], "Undefined control sequence: \\bogus")
 
     @patch("projects.compile_api.dispatch_compile")
     def test_compile_uses_the_projects_configured_compiler(self, mock_dispatch):

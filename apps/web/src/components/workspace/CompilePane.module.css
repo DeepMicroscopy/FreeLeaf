@@ -80,6 +80,29 @@
   word-break: break-word;
 }
 
+.fixes {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px solid var(--border-subtle);
+  padding: var(--space-2) var(--space-3);
+}
+
+.fix {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: 12.5px;
+}
+
+.fixLabel {
+  min-width: 0;
+  overflow-wrap: break-word;
+  color: var(--text-primary);
+}
+
 .diagnostics {
   flex-shrink: 0;
   max-height: 40%;

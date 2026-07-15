@@ -25,6 +25,17 @@ _ON_INPUT_LINE_RE = re.compile(r"on input line (\d+)")
 _BOX_WARNING_RE = re.compile(r"^(Overfull|Underfull) \\([hv])box .*?(?:at lines? (\d+)(?:--(\d+))?)?\s*$")
 _FILE_TOKEN_RE = re.compile(r"\((?P<open>\.{1,2}/[^\s()]+|/[^\s()]+)|(?P<close>\))")
 
+# "! Undefined control sequence." carries no useful detail by itself — the
+# actual offending command only shows up on a following context line, either
+# directly (`l.4 \toprule`) or, when the error was raised while re-reading a
+# macro expansion rather than the source directly, via an intervening
+# `<recently read> \bottomrule` line first. Both shapes confirmed against
+# real sandbox output (see log_parser tests) — grabbing just the letters
+# after the backslash (not `\S+`) so a command immediately followed by an
+# argument, e.g. `l.4 \multirow{2}{*}{x}`, doesn't swallow the braces too.
+_UNDEFINED_CS_MESSAGE = "Undefined control sequence."
+_UNDEF_CMD_RE = re.compile(r"(?:^<recently read>\s+|^l\.\d+\s+)\\([a-zA-Z]+)")
+
 # latexmk reruns the engine (pdflatex/xelatex) several times per compile to
 # resolve citations/references/labels, and our captured "log" is its stdout
 # for *all* of those reruns concatenated (see apps/compile/sandbox.py — it's
@@ -84,6 +95,15 @@ def parse_log(log: str) -> ParsedLog:
                 return int(m.group(1))
         return None
 
+    def find_undefined_command(start: int) -> str | None:
+        for j in range(start, min(start + 15, len(lines))):
+            if _ERROR_RE.match(lines[j]):
+                break  # next error — stop, don't misattribute its context
+            m = _UNDEF_CMD_RE.match(lines[j])
+            if m:
+                return m.group(1)
+        return None
+
     for i, line in enumerate(lines):
         box_match = _BOX_WARNING_RE.match(line)
         # Box-warning lines carry a "(795.00232pt too wide)" aside whose
@@ -98,9 +118,14 @@ def parse_log(log: str) -> ParsedLog:
 
         error_match = _ERROR_RE.match(line)
         if error_match and not _ERROR_TRAILER_RE.match(line):
+            message = error_match.group(1).strip()
+            if message == _UNDEFINED_CS_MESSAGE:
+                command = find_undefined_command(i + 1)
+                if command:
+                    message = f"{message[:-1]}: \\{command}"
             result.errors.append(
                 Diagnostic(
-                    message=error_match.group(1).strip(),
+                    message=message,
                     file=current_source_file(),
                     line=find_line_number(i + 1),
                 )
