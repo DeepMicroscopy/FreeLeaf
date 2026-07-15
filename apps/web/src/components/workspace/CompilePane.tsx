@@ -50,6 +50,24 @@ export const CompilePane = forwardRef<
       setRunState(next);
       onRunChangedRef.current?.(next);
     }, []);
+    // Fix-it assistant: whether a suggested fix's dialog opens by itself
+    // right after a compile finds one, instead of requiring a click on
+    // "Fix" — a personal workflow preference (some collaborators find an
+    // auto-popping dialog helpful, others find it intrusive), so it's kept
+    // client-side per project rather than a shared ProjectSettings field,
+    // same reasoning as the editing-mode selector's own localStorage split.
+    const autoOpenFixesKey = `freeleaf.autoOpenFixes.${projectId}`;
+    const [autoOpenFixes, setAutoOpenFixesState] = useState(() => {
+      const raw = localStorage.getItem(autoOpenFixesKey);
+      return raw === null ? true : raw === "true";
+    });
+    const setAutoOpenFixes = useCallback(
+      (value: boolean) => {
+        setAutoOpenFixesState(value);
+        localStorage.setItem(autoOpenFixesKey, String(value));
+      },
+      [autoOpenFixesKey],
+    );
     const [compiling, setCompiling] = useState(false);
     const [loadingLast, setLoadingLast] = useState(true);
     const [viewMode, setViewMode] = useState<"pdf" | "log">("pdf");
@@ -63,6 +81,10 @@ export const CompilePane = forwardRef<
     runRef.current = run;
     const onJumpToSourceRef = useRef(onJumpToSource);
     onJumpToSourceRef.current = onJumpToSource;
+    const autoOpenFixesRef = useRef(autoOpenFixes);
+    autoOpenFixesRef.current = autoOpenFixes;
+    const fixHandlersRef = useRef<FixHandlers>({ onAddPackage, onFixMissingFile, onFixDuplicateLabel });
+    fixHandlersRef.current = { onAddPackage, onFixMissingFile, onFixDuplicateLabel };
     const { show } = useToast();
     const [downloading, setDownloading] = useState(false);
 
@@ -111,47 +133,66 @@ export const CompilePane = forwardRef<
       [projectId],
     );
 
-    const compile = useCallback(async () => {
-      if (inFlightRef.current) {
-        rerunRequestedRef.current = true;
-        return;
-      }
-      inFlightRef.current = true;
-      setCompiling(true);
-      try {
-        // A long compile can outlast a reverse proxy's read timeout (a real
-        // production case: nginx returns a 504 with an HTML body, which
-        // openapi-fetch can't parse as JSON and throws) — without this
-        // try/finally, that exception skipped setCompiling(false) entirely
-        // and left the UI stuck showing "Compiling…" forever, with no way
-        // to recover short of a full page reload.
-        const { data } = await api.POST("/api/projects/{project_id}/compile", {
-          params: { path: { project_id: projectId } },
-        });
-        if (data) setRun(data);
-        else show("Compile request failed — please try again.", "error");
-      } catch {
-        show("Lost the connection while compiling — please try again.", "error");
-      } finally {
-        inFlightRef.current = false;
-        setCompiling(false);
-      }
-      if (rerunRequestedRef.current) {
-        rerunRequestedRef.current = false;
-        compile();
-      }
-    }, [projectId, show]);
+    // Auto-opening a fix dialog makes sense for a compile the user actually
+    // asked for (Recompile, Cmd+S) — popping one during the silent,
+    // debounced auto-compile-after-every-edit-pause would steal focus from
+    // the editor mid-typing, which is exactly the "intrusive" failure mode
+    // the auto-open preference exists to let people avoid. So only the
+    // explicit path ever auto-opens, regardless of the preference.
+    const explicitRerunRequestedRef = useRef(false);
+
+    const compile = useCallback(
+      async (explicit: boolean) => {
+        if (inFlightRef.current) {
+          rerunRequestedRef.current = true;
+          if (explicit) explicitRerunRequestedRef.current = true;
+          return;
+        }
+        inFlightRef.current = true;
+        setCompiling(true);
+        try {
+          // A long compile can outlast a reverse proxy's read timeout (a real
+          // production case: nginx returns a 504 with an HTML body, which
+          // openapi-fetch can't parse as JSON and throws) — without this
+          // try/finally, that exception skipped setCompiling(false) entirely
+          // and left the UI stuck showing "Compiling…" forever, with no way
+          // to recover short of a full page reload.
+          const { data } = await api.POST("/api/projects/{project_id}/compile", {
+            params: { path: { project_id: projectId } },
+          });
+          if (data) {
+            setRun(data);
+            if (explicit && autoOpenFixesRef.current) {
+              const candidates = matchFixes(data.errors, data.warnings, data.has_pdf);
+              if (candidates.length > 0) dispatchFix(candidates[0], fixHandlersRef.current);
+            }
+          } else show("Compile request failed — please try again.", "error");
+        } catch {
+          show("Lost the connection while compiling — please try again.", "error");
+        } finally {
+          inFlightRef.current = false;
+          setCompiling(false);
+        }
+        if (rerunRequestedRef.current) {
+          rerunRequestedRef.current = false;
+          const rerunExplicit = explicitRerunRequestedRef.current;
+          explicitRerunRequestedRef.current = false;
+          compile(rerunExplicit);
+        }
+      },
+      [projectId, show],
+    );
 
     useImperativeHandle(
       ref,
       () => ({
         scheduleAutoCompile: () => {
           if (timerRef.current) clearTimeout(timerRef.current);
-          timerRef.current = setTimeout(compile, AUTO_COMPILE_DEBOUNCE_MS);
+          timerRef.current = setTimeout(() => compile(false), AUTO_COMPILE_DEBOUNCE_MS);
         },
         triggerCompile: () => {
           if (timerRef.current) clearTimeout(timerRef.current);
-          compile();
+          compile(true);
         },
         jumpToPdf: async (file: string, line: number) => {
           const currentRun = runRef.current;
@@ -255,7 +296,7 @@ export const CompilePane = forwardRef<
             <Button
               variant="secondary"
               size="sm"
-              onClick={compile}
+              onClick={() => compile(true)}
               loading={compiling}
               disabled={!canWrite}
               title={canWrite ? undefined : "You don't have permission to compile this project."}
@@ -303,6 +344,8 @@ export const CompilePane = forwardRef<
             <>
               <SuggestedFixesList
                 run={run}
+                autoOpenFixes={autoOpenFixes}
+                onAutoOpenFixesChange={setAutoOpenFixes}
                 onAddPackage={onAddPackage}
                 onFixMissingFile={onFixMissingFile}
                 onFixDuplicateLabel={onFixDuplicateLabel}
@@ -336,34 +379,54 @@ function fixLabel(c: FixCandidate): string {
   }
 }
 
-function SuggestedFixesList({
-  run,
-  onAddPackage,
-  onFixMissingFile,
-  onFixDuplicateLabel,
-}: {
-  run: CompileRunOut;
+interface FixHandlers {
   onAddPackage?: (pkg: string, commandOrEnv: string) => void;
   onFixMissingFile?: (filename: string, fatal: boolean) => void;
   onFixDuplicateLabel?: (label: string) => void;
+}
+
+/** Shared by the manual "Fix" button click and the auto-open-on-compile
+ * path (see `compile()`'s success handler) — same dispatch either way, just
+ * a different trigger. */
+function dispatchFix(c: FixCandidate, handlers: FixHandlers) {
+  if (c.kind === "add-package") handlers.onAddPackage?.(c.package, c.commandOrEnv);
+  else if (c.kind === "missing-file") handlers.onFixMissingFile?.(c.filename, c.fatal);
+  else handlers.onFixDuplicateLabel?.(c.label);
+}
+
+function SuggestedFixesList({
+  run,
+  autoOpenFixes,
+  onAutoOpenFixesChange,
+  onAddPackage,
+  onFixMissingFile,
+  onFixDuplicateLabel,
+}: FixHandlers & {
+  run: CompileRunOut;
+  autoOpenFixes: boolean;
+  onAutoOpenFixesChange: (value: boolean) => void;
 }) {
   const candidates = matchFixes(run.errors, run.warnings, run.has_pdf);
   if (candidates.length === 0) return null;
+  const handlers = { onAddPackage, onFixMissingFile, onFixDuplicateLabel };
 
   return (
     <div className={styles.fixes}>
+      <div className={styles.fixesHeader}>
+        <span className={styles.fixesHeading}>Suggested fixes</span>
+        <label className={styles.autoOpenToggle}>
+          <input
+            type="checkbox"
+            checked={autoOpenFixes}
+            onChange={(e) => onAutoOpenFixesChange(e.target.checked)}
+          />
+          Open automatically after compiling
+        </label>
+      </div>
       {candidates.map((c, i) => (
         <div key={i} className={styles.fix}>
           <span className={styles.fixLabel}>{fixLabel(c)}</span>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              if (c.kind === "add-package") onAddPackage?.(c.package, c.commandOrEnv);
-              else if (c.kind === "missing-file") onFixMissingFile?.(c.filename, c.fatal);
-              else onFixDuplicateLabel?.(c.label);
-            }}
-          >
+          <Button variant="secondary" size="sm" onClick={() => dispatchFix(c, handlers)}>
             Fix
           </Button>
         </div>
