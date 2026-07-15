@@ -880,31 +880,35 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
               // rich-text attributes for a plain insert with none of its
               // own (the same Quill-delta-compatible behavior
               // ensureSuggestionTag's own doc comment already relies on,
-              // in the opposite direction) — so typing right after a
-              // suggestion made earlier while Reviewing would silently
-              // inherit its `sugg` tag even after switching back to
-              // Writing, making new edits look like they're still being
+              // in the opposite direction) — so typing right after (or
+              // inside) a suggestion made earlier while Reviewing would
+              // silently inherit its `sugg` tag even after switching back
+              // to Writing, making new edits look like they're still being
               // tracked. yCollab mirrors a plain CodeMirror transaction
               // into Y.Text synchronously within view.update() (same
               // assumption the suggest-mode branch below already makes,
               // calling ensureSuggestionTag right after its own
               // view.update()), so by this point the insertion already
               // landed — explicitly clear any inherited suggestion attrs
-              // on exactly what was just typed.
+              // on exactly what was just typed. Uses `toB` (the position in
+              // *this transaction's own resulting document*) directly
+              // rather than re-deriving it from `fromA`/`toA`, unlike
+              // planSuggestionRewrite below — that function computes a
+              // *different* resulting document (deletions suppressed, so
+              // its own position bookkeeping is necessary); this branch
+              // applies `trs` completely unchanged via `view.update(trs)`
+              // above, so CodeMirror's own `toB` is already exactly right,
+              // including correctly chaining across more than one
+              // transaction in a single dispatch (each transaction's `toB`
+              // is relative to *its own* start state, i.e. the previous
+              // transaction's result) — no manual cross-transaction
+              // position tracking needed, and none to get wrong.
               const yt = ytextRef.current;
               if (yt) {
-                let newPos = 0;
-                let prevToA = 0;
                 for (const tr of trs) {
                   if (!tr.docChanged) continue;
-                  tr.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
-                    newPos += fromA - prevToA;
-                    prevToA = toA;
-                    newPos += toA - fromA;
-                    if (inserted.length > 0) {
-                      yt.format(newPos, inserted.length, CLEAR_SUGGESTION_ATTRS);
-                      newPos += inserted.length;
-                    }
+                  tr.changes.iterChanges((_fromA, _toA, fromB, _toB, inserted) => {
+                    if (inserted.length > 0) yt.format(fromB, inserted.length, CLEAR_SUGGESTION_ATTRS);
                   });
                 }
               }
