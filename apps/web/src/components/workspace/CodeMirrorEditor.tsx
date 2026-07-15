@@ -44,6 +44,7 @@ import {
 } from "./polishingLintExtension";
 import {
   acceptAllSuggestions,
+  CLEAR_SUGGESTION_ATTRS,
   colorForUserId,
   computeSuggestionSpans,
   ensureSuggestionTag,
@@ -875,6 +876,38 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
           dispatchTransactions: (trs, view) => {
             if (!suggestModeRef.current) {
               view.update(trs);
+              // Real bug: Yjs's Y.Text auto-inherits the *preceding* run's
+              // rich-text attributes for a plain insert with none of its
+              // own (the same Quill-delta-compatible behavior
+              // ensureSuggestionTag's own doc comment already relies on,
+              // in the opposite direction) — so typing right after a
+              // suggestion made earlier while Reviewing would silently
+              // inherit its `sugg` tag even after switching back to
+              // Writing, making new edits look like they're still being
+              // tracked. yCollab mirrors a plain CodeMirror transaction
+              // into Y.Text synchronously within view.update() (same
+              // assumption the suggest-mode branch below already makes,
+              // calling ensureSuggestionTag right after its own
+              // view.update()), so by this point the insertion already
+              // landed — explicitly clear any inherited suggestion attrs
+              // on exactly what was just typed.
+              const yt = ytextRef.current;
+              if (yt) {
+                let newPos = 0;
+                let prevToA = 0;
+                for (const tr of trs) {
+                  if (!tr.docChanged) continue;
+                  tr.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
+                    newPos += fromA - prevToA;
+                    prevToA = toA;
+                    newPos += toA - fromA;
+                    if (inserted.length > 0) {
+                      yt.format(newPos, inserted.length, CLEAR_SUGGESTION_ATTRS);
+                      newPos += inserted.length;
+                    }
+                  });
+                }
+              }
               return;
             }
             const rewritten: Transaction[] = [];
