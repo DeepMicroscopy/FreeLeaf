@@ -37,7 +37,7 @@ export function DuplicateLabelFixDialog({
     <div className={styles.overlay} role="presentation">
       <div className={styles.dialog} role="dialog" aria-modal="true" aria-label={`Label defined multiple times: ${label}`}>
         <div className={styles.header}>
-          <PenguinMascot pose="pencil" />
+          <PenguinMascot pose="feather" />
           <div>
             <h3 className={styles.title}>Label defined multiple times: {label}</h3>
             <p className={styles.hint}>Rename one to make it unique, or delete it.</p>

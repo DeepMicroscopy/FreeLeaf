@@ -33,7 +33,7 @@ export function AddPackageDialog({
     <div className={styles.overlay} role="presentation">
       <div className={styles.dialog} role="dialog" aria-modal="true" aria-label={`Add ${packageName} package`}>
         <div className={styles.header}>
-          <PenguinMascot pose="wrench" />
+          <PenguinMascot pose="hammer" />
           <div>
             <h3 className={styles.title}>Add \usepackage{`{${packageName}}`}?</h3>
             <p className={styles.hint}>

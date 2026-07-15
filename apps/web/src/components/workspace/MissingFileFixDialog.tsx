@@ -49,7 +49,7 @@ export function MissingFileFixDialog({
     <div className={styles.overlay} role="presentation">
       <div className={styles.dialog} role="dialog" aria-modal="true" aria-label={`File not found: ${filename}`}>
         <div className={styles.header}>
-          <PenguinMascot pose="magnifier" />
+          <PenguinMascot pose="puzzle" />
           <div>
             <h3 className={styles.title}>File not found: {filename}</h3>
             <p className={styles.hint}>{fatal ? "This is blocking the compile entirely." : "The compile continues without it, using a placeholder."}</p>
