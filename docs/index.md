@@ -28,6 +28,7 @@ description: Open, self-hostable, real-time collaborative LaTeX editing.
   <a href="#comments">Comments on marked text</a>
   <a href="#review">Suggested edits &amp; review</a>
   <a href="#tables">Table Designer</a>
+  <a href="#paste-table">Paste a table from Excel/Word</a>
   <a href="#package-docs">Package documentation</a>
   <a href="#templates">Templates &amp; GitHub import</a>
   <a href="#navigation">Outline, figures &amp; search</a>
@@ -123,7 +124,22 @@ description: Open, self-hostable, real-time collaborative LaTeX editing.
   </div>
 </section>
 
-<section class="feature reverse" id="package-docs">
+<section class="feature reverse" id="paste-table">
+  <div class="feature-text">
+    <h2>Paste a table straight from Excel or Word</h2>
+    <p>
+      Copy a table out of a spreadsheet or a Word doc and paste it in — it lands as a real,
+      formatted <code>tabular</code> block: bold, italics, and underline preserved, merged
+      cells become <code>\multicolumn</code>/<code>\multirow</code>, column alignment
+      inferred from the source. No manual re-typing, no losing the formatting.
+    </p>
+  </div>
+  <div class="feature-shot">
+    <img src="{{ '/assets/img/paste-table-compiled.png' | relative_url }}" alt="A table pasted from a spreadsheet, converted into a formatted LaTeX tabular and compiled">
+  </div>
+</section>
+
+<section class="feature" id="package-docs">
   <div class="feature-text">
     <h2>Package documentation, right in the gutter</h2>
     <p>
@@ -137,7 +153,7 @@ description: Open, self-hostable, real-time collaborative LaTeX editing.
   </div>
 </section>
 
-<section class="feature" id="templates">
+<section class="feature reverse" id="templates">
   <div class="feature-text">
     <h2>Start from a template, a GitHub repo, or a blank page</h2>
     <p>
@@ -151,7 +167,7 @@ description: Open, self-hostable, real-time collaborative LaTeX editing.
   </div>
 </section>
 
-<section class="feature reverse" id="navigation">
+<section class="feature" id="navigation">
   <div class="feature-text">
     <h2>Navigate long documents fast</h2>
     <p>
@@ -165,7 +181,7 @@ description: Open, self-hostable, real-time collaborative LaTeX editing.
   </div>
 </section>
 
-<section class="feature" id="compile">
+<section class="feature reverse" id="compile">
   <div class="feature-text">
     <h2>Sandboxed compiling, with real SyncTeX</h2>
     <p>
@@ -179,7 +195,7 @@ description: Open, self-hostable, real-time collaborative LaTeX editing.
   </div>
 </section>
 
-<section class="feature reverse" id="history">
+<section class="feature" id="history">
   <div class="feature-text">
     <h2>Version history you can actually read</h2>
     <p>
@@ -193,7 +209,7 @@ description: Open, self-hostable, real-time collaborative LaTeX editing.
   </div>
 </section>
 
-<section class="feature" id="signin">
+<section class="feature reverse" id="signin">
   <div class="feature-text">
     <h2>Sign in the way your institution already works</h2>
     <p>
