@@ -28,17 +28,30 @@ export const suggestionDecorationsField = StateField.define<DecorationSet>({
  * "inserted a space" would otherwise be fully counted yet completely
  * invisible. Render those as a small standalone marker widget instead. */
 class SuggestionMarkerWidget extends WidgetType {
+  // 1. Explicitly declare the fields at the class level
+  private readonly label: string;
+  private readonly color: string;
+  private readonly colorLight: string;
+  private readonly kind: SuggestionKind;
+
   constructor(
-    private readonly label: string,
-    private readonly color: string,
-    private readonly colorLight: string,
-    private readonly kind: SuggestionKind,
+    label: string,
+    color: string,
+    colorLight: string,
+    kind: SuggestionKind,
   ) {
     super();
+    // 2. Manually assign them
+    this.label = label;
+    this.color = color;
+    this.colorLight = colorLight;
+    this.kind = kind;
   }
+
   eq(other: SuggestionMarkerWidget): boolean {
     return other.label === this.label && other.color === this.color && other.kind === this.kind;
   }
+
   toDOM(): HTMLElement {
     const el = document.createElement("span");
     el.textContent = this.label;
