@@ -231,10 +231,16 @@ Live edits from both collaborators merge here.
   async citations(browser) {
     const page = await (await newContext(browser, createSession("Citations"))).newPage();
     await newProject(page, "Citations Demo");
-    await setDoc(page, String.raw`\documentclass{article}\begin{document}\end{document}`);
+    await setDoc(page, "\\documentclass{article}\n\\begin{document}\n\n\\end{document}\n");
+    await page.click(".cm-content");
+    await page.keyboard.press("Meta+Home");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+
     // Paste-detection only fires on a real clipboard `paste` DOM event, not
     // typed keystrokes — simulate one to seed a library entry.
-    const bibtex = "@article{turing1936,\n  author = {Alan Turing},\n  title = {On Computable Numbers},\n  year = {1936}\n}\n";
+    const bibtex = "@article{turing1936computable, title={On computable numbers, with an application to the Entscheidungsproblem}, author={Turing, Alan Mathison and others}, journal={J. of Math}, volume={58},  number={345-363}, pages={5}, year={1936},  publisher={Wiley Online Library} }";
+    await shoot(page, "cite-before");
     await page.evaluate((bib) => {
       const dt = new DataTransfer();
       dt.setData("text/plain", bib);
@@ -242,11 +248,12 @@ Live edits from both collaborators merge here.
       document.querySelector(".cm-content").dispatchEvent(evt);
     }, bibtex);
     await page.waitForTimeout(800);
-    await page.click(".cm-content");
-    await page.keyboard.press("Meta+A");
-    await setDoc(page, String.raw`\documentclass{article}\begin{document}See \cite{tur`);
-    await page.waitForTimeout(600);
-    await shoot(page, "cite-autocomplete");
+    await shoot(page, "cite-insert");
+    await page.click("text=Library");
+    await page.waitForTimeout(500);
+    await shoot(page, "cite-library");
+
+
   },
 
   async comments(browser) {
