@@ -45,13 +45,15 @@ import {
 } from "./polishingLintExtension";
 import {
   acceptAllSuggestions,
+  acceptSuggestionAt,
   CLEAR_SUGGESTION_ATTRS,
   colorForUserId,
   computeSuggestionSpans,
   ensureSuggestionTag,
   rejectAllSuggestions,
+  rejectSuggestionAt,
 } from "./suggestions";
-import type { SuggestionSpan } from "./suggestions";
+import type { SuggestionKind, SuggestionSpan } from "./suggestions";
 import { isSuggestableEdit, planSuggestionRewrite } from "./suggestionRewrite";
 import {
   computeSuggestionDecorations,
@@ -273,6 +275,15 @@ export interface CodeMirrorEditorHandle {
    * suggestions.ts. */
   acceptAllSuggestions: () => void;
   rejectAllSuggestions: () => void;
+  /** Selects `[from, to)` and centers it in the viewport — drives the
+   * Reviewing-mode "N of M" suggestion browser's Prev/Next buttons. */
+  scrollToSuggestion: (from: number, to: number) => void;
+  /** Resolves exactly one suggestion by position — the browser's
+   * Accept/Reject buttons acting on whichever one is currently focused
+   * (re-reads the live span at that position, same no-op-if-stale
+   * discipline as the hover tooltip's own Accept/Reject). */
+  acceptSuggestionAt: (from: number, to: number, kind: SuggestionKind) => void;
+  rejectSuggestionAt: (from: number, to: number, kind: SuggestionKind) => void;
   /** Fix-it assistant (fixItRules.ts) — each of these re-derives its target
    * position fresh from the *live* document at call time (same discipline
    * as the Table Designer's save: never trust a possibly-stale snapshot of
@@ -325,6 +336,10 @@ interface CodeMirrorEditorProps {
    * whenever it changes — drives the Reviewing-mode toolbar's "N pending
    * suggestions" label and enables/disables its Accept/Reject-all buttons. */
   onSuggestionCountChange?: (count: number) => void;
+  /** Fires with the full current suggestion span list alongside the count
+   * above — drives the Reviewing-mode suggestion browser's Prev/Next (needs
+   * each span's position/kind to jump to and act on, not just how many). */
+  onSuggestionSpansChange?: (spans: SuggestionSpan[]) => void;
   /** Polishing mode's static lint checks (Plan.md §9 Phase 8) — see
    * polishingLint.ts. */
   polishingEnabled?: boolean;
@@ -373,6 +388,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
     suggestMode,
     canModerateSuggestions,
     onSuggestionCountChange,
+    onSuggestionSpansChange,
     polishingEnabled,
     onLintFindings,
     onOpenTableDesigner,
@@ -399,6 +415,21 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
     },
     rejectAllSuggestions: () => {
       if (ytextRef.current) rejectAllSuggestions(ytextRef.current, suggestionSpansRef.current);
+    },
+    scrollToSuggestion: (from: number, to: number) => {
+      const view = viewRef.current;
+      if (!view) return;
+      view.dispatch({
+        selection: { anchor: from, head: to },
+        effects: EditorView.scrollIntoView(from, { y: "center" }),
+      });
+      view.focus();
+    },
+    acceptSuggestionAt: (from: number, to: number, kind: SuggestionKind) => {
+      if (ytextRef.current) acceptSuggestionAt(ytextRef.current, from, to, kind);
+    },
+    rejectSuggestionAt: (from: number, to: number, kind: SuggestionKind) => {
+      if (ytextRef.current) rejectSuggestionAt(ytextRef.current, from, to, kind);
     },
     applyAddPackage: (pkg: string) => {
       const view = viewRef.current;
@@ -479,6 +510,8 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
   const suggestionSpansRef = useRef<SuggestionSpan[]>([]);
   const onSuggestionCountChangeRef = useRef(onSuggestionCountChange);
   onSuggestionCountChangeRef.current = onSuggestionCountChange;
+  const onSuggestionSpansChangeRef = useRef(onSuggestionSpansChange);
+  onSuggestionSpansChangeRef.current = onSuggestionSpansChange;
   const recomputeSuggestionsRef = useRef(() => {});
   recomputeSuggestionsRef.current = () => {
     const view = viewRef.current;
@@ -488,6 +521,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
     suggestionSpansRef.current = spans;
     view.dispatch({ effects: setSuggestionDecorations.of(computeSuggestionDecorations(spans, ytext.toString())) });
     onSuggestionCountChangeRef.current?.(spans.length);
+    onSuggestionSpansChangeRef.current?.(spans);
   };
   const polishingEnabledRef = useRef(polishingEnabled);
   polishingEnabledRef.current = polishingEnabled;

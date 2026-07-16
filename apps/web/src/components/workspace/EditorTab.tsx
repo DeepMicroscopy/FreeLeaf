@@ -1,6 +1,6 @@
 import { api } from "@freeleaf/shared";
 import type { components } from "@freeleaf/shared";
-import { FileQuestion, MessageSquare, Search } from "lucide-react";
+import { ChevronDown, ChevronUp, FileQuestion, MessageSquare, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "../ui/Button";
@@ -13,6 +13,7 @@ import type { CodeMirrorEditorHandle, JumpTarget } from "./CodeMirrorEditor";
 import { CommentsPane } from "./CommentsPane";
 import type { PendingCommentAnchor } from "./CommentsPane";
 import { CompilePane } from "./CompilePane";
+import type { SuggestionSpan } from "./suggestions";
 import type { CompilePaneHandle } from "./CompilePane";
 import { ImagePreviewPane } from "./ImagePreviewPane";
 import { ModeSwitcher } from "./ModeSwitcher";
@@ -225,6 +226,43 @@ export function EditorTab() {
   const [baselineId, setBaselineId] = useState<string | null>(null);
   const [trackChangesBusy, setTrackChangesBusy] = useState(false);
   const [suggestionCount, setSuggestionCount] = useState(0);
+  const [suggestionSpans, setSuggestionSpans] = useState<SuggestionSpan[]>([]);
+  const [suggestionIndex, setSuggestionIndex] = useState(0);
+
+  // A file switch invalidates whatever suggestion the browser bar was
+  // parked on — start back at the first one in the new file.
+  useEffect(() => {
+    setSuggestionIndex(0);
+  }, [selectedFile?.id]);
+
+  const currentSuggestion =
+    suggestionSpans.length > 0 ? suggestionSpans[Math.min(suggestionIndex, suggestionSpans.length - 1)] : null;
+
+  const handlePrevSuggestion = useCallback(() => {
+    if (suggestionSpans.length === 0) return;
+    const nextIndex = (suggestionIndex - 1 + suggestionSpans.length) % suggestionSpans.length;
+    setSuggestionIndex(nextIndex);
+    const target = suggestionSpans[nextIndex];
+    codeMirrorRef.current?.scrollToSuggestion(target.from, target.to);
+  }, [suggestionIndex, suggestionSpans]);
+
+  const handleNextSuggestion = useCallback(() => {
+    if (suggestionSpans.length === 0) return;
+    const nextIndex = (suggestionIndex + 1) % suggestionSpans.length;
+    setSuggestionIndex(nextIndex);
+    const target = suggestionSpans[nextIndex];
+    codeMirrorRef.current?.scrollToSuggestion(target.from, target.to);
+  }, [suggestionIndex, suggestionSpans]);
+
+  const handleAcceptCurrentSuggestion = useCallback(() => {
+    if (!currentSuggestion) return;
+    codeMirrorRef.current?.acceptSuggestionAt(currentSuggestion.from, currentSuggestion.to, currentSuggestion.kind);
+  }, [currentSuggestion]);
+
+  const handleRejectCurrentSuggestion = useCallback(() => {
+    if (!currentSuggestion) return;
+    codeMirrorRef.current?.rejectSuggestionAt(currentSuggestion.from, currentSuggestion.to, currentSuggestion.kind);
+  }, [currentSuggestion]);
 
   const loadSnapshots = useCallback(async () => {
     const { data } = await api.GET("/api/projects/{project_id}/snapshots", {
@@ -539,8 +577,23 @@ export function EditorTab() {
               <span className={styles.trackChangesHint}>
                 {suggestionCount} suggestion{suggestionCount === 1 ? "" : "s"} pending in this file
               </span>
+              <Button variant="ghost" size="sm" onClick={handlePrevSuggestion} title="Previous suggestion">
+                <ChevronUp size={14} aria-hidden="true" />
+              </Button>
+              <Button variant="ghost" size="sm" onClick={handleNextSuggestion} title="Next suggestion">
+                <ChevronDown size={14} aria-hidden="true" />
+              </Button>
+              <span className={styles.trackChangesHint}>
+                {Math.min(suggestionIndex, suggestionSpans.length - 1) + 1} of {suggestionSpans.length}
+              </span>
               {canWrite && (
                 <>
+                  <Button variant="secondary" size="sm" onClick={handleAcceptCurrentSuggestion} disabled={!currentSuggestion}>
+                    Accept
+                  </Button>
+                  <Button variant="danger" size="sm" onClick={handleRejectCurrentSuggestion} disabled={!currentSuggestion}>
+                    Reject
+                  </Button>
                   <Button variant="secondary" size="sm" onClick={handleAcceptAllSuggestions}>
                     Accept all
                   </Button>
@@ -567,6 +620,7 @@ export function EditorTab() {
               suggestMode={mode === "reviewing"}
               canModerateSuggestions={canWrite}
               onSuggestionCountChange={setSuggestionCount}
+              onSuggestionSpansChange={setSuggestionSpans}
               polishingEnabled={mode === "polishing"}
               onLintFindings={setLintFindings}
               onOpenTableDesigner={handleOpenTableDesigner}
