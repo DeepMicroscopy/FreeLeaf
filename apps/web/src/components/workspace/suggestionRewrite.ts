@@ -30,14 +30,53 @@ export interface SuggestionRewritePlan {
   selectionAnchor: number | null;
 }
 
+/** Splits a raw deleted range `[fromA, toA)` (old-document coordinates)
+ * against the document's existing *unaccepted* insertion spans (same
+ * coordinate space) into ordered sub-ranges, each tagged `retract: true`
+ * (falls inside a still-pending insertion — nobody has accepted it yet, so
+ * deleting it should just make it vanish) or `retract: false` (falls on
+ * already-real text, or on an already-tracked deletion — the normal
+ * suppress-and-tag-as-"del" case). A single Backspace/Delete can span both
+ * in one go (e.g. selecting "brown fox" where "brown" is your own pending
+ * suggestion and " fox" is real text). */
+function splitDeletionRange(
+  fromA: number,
+  toA: number,
+  pendingInsertions: { from: number; to: number }[],
+): { from: number; to: number; retract: boolean }[] {
+  const overlaps = pendingInsertions
+    .map((s) => ({ from: Math.max(s.from, fromA), to: Math.min(s.to, toA) }))
+    .filter((s) => s.to > s.from)
+    .sort((a, b) => a.from - b.from);
+
+  const segments: { from: number; to: number; retract: boolean }[] = [];
+  let cursor = fromA;
+  for (const ov of overlaps) {
+    if (ov.from > cursor) segments.push({ from: cursor, to: ov.from, retract: false });
+    segments.push({ from: ov.from, to: ov.to, retract: true });
+    cursor = ov.to;
+  }
+  if (cursor < toA) segments.push({ from: cursor, to: toA, retract: false });
+  return segments;
+}
+
 /** Turns "what the user just typed/deleted" into "what should actually
- * happen to the document while suggesting": deletions never remove text
- * (only Accept does that later), and insertions land immediately after
- * whatever they would have replaced, so a like-for-like replacement shows
- * as adjacent struck-through-old / underlined-new rather than a silent
- * swap. Pure function over CodeMirror's own change-iteration API — no Yjs,
- * no EditorView, so it's testable with a plain EditorState. */
-export function planSuggestionRewrite(tr: Transaction): SuggestionRewritePlan {
+ * happen to the document while suggesting": deletions of *real* text never
+ * remove it (only Accept does that later) — but deleting text that's still
+ * a pending, unaccepted insertion suggestion (anyone's — it was never part
+ * of the "real" document to begin with) actually removes it, matching how
+ * Google Docs/Word suggesting mode collapses a retracted draft insertion
+ * instead of layering a redundant "suggested deletion of a suggested
+ * insertion" on top. Plain insertions land immediately after whatever they
+ * would have replaced, so a like-for-like replacement shows as adjacent
+ * struck-through-old / underlined-new rather than a silent swap. Pure
+ * function over CodeMirror's own change-iteration API plus a caller-supplied
+ * snapshot of existing spans — no Yjs, no EditorView, so it's testable with
+ * a plain EditorState. */
+export function planSuggestionRewrite(
+  tr: Transaction,
+  pendingInsertions: { from: number; to: number }[] = [],
+): SuggestionRewritePlan {
   if (!tr.docChanged) return { changes: null, formatOps: [], selectionAnchor: null };
 
   const changes: ChangeSpec[] = [];
@@ -54,9 +93,19 @@ export function planSuggestionRewrite(tr: Transaction): SuggestionRewritePlan {
     prevToA = toA;
 
     if (toA > fromA) {
-      if (deletionStart === null) deletionStart = newPos;
-      formatOps.push({ kind: "del", from: newPos, to: newPos + (toA - fromA) });
-      newPos += toA - fromA;
+      for (const seg of splitDeletionRange(fromA, toA, pendingInsertions)) {
+        const segLen = seg.to - seg.from;
+        if (seg.retract) {
+          // Was never real, accepted content — actually delete it, don't
+          // suppress-and-tag. Doesn't advance newPos: it's gone from the
+          // resulting document, not kept in place like a tracked deletion.
+          changes.push({ from: seg.from, to: seg.to, insert: "" });
+        } else {
+          if (deletionStart === null) deletionStart = newPos;
+          formatOps.push({ kind: "del", from: newPos, to: newPos + segLen });
+          newPos += segLen;
+        }
+      }
     }
     if (inserted.length > 0) {
       sawInsertion = true;

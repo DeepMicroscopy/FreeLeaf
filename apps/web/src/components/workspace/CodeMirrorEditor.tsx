@@ -486,7 +486,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
     if (!view || !ytext) return;
     const spans = computeSuggestionSpans(ytext);
     suggestionSpansRef.current = spans;
-    view.dispatch({ effects: setSuggestionDecorations.of(computeSuggestionDecorations(spans)) });
+    view.dispatch({ effects: setSuggestionDecorations.of(computeSuggestionDecorations(spans, ytext.toString())) });
     onSuggestionCountChangeRef.current?.(spans.length);
   };
   const polishingEnabledRef = useRef(polishingEnabled);
@@ -942,9 +942,18 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
             }
             const rewritten: Transaction[] = [];
             const formatOps: { kind: "ins" | "del"; from: number; to: number }[] = [];
+            // Snapshot once per dispatch (not per transaction): still-pending
+            // insertions get actually deleted rather than double-tagged when
+            // removed before anyone accepts them — see splitDeletionRange's
+            // doc comment in suggestionRewrite.ts.
+            const pendingInsertions = ytextRef.current
+              ? computeSuggestionSpans(ytextRef.current)
+                  .filter((s) => s.kind === "ins")
+                  .map((s) => ({ from: s.from, to: s.to }))
+              : [];
             for (const tr of trs) {
               if (isSuggestableEdit(tr)) {
-                const plan = planSuggestionRewrite(tr);
+                const plan = planSuggestionRewrite(tr, pendingInsertions);
                 if (plan.changes) {
                   const spec: TransactionSpec = { changes: plan.changes, scrollIntoView: tr.scrollIntoView };
                   if (plan.selectionAnchor != null) spec.selection = { anchor: plan.selectionAnchor };

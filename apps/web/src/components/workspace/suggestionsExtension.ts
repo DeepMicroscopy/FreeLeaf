@@ -1,10 +1,10 @@
-import { Decoration, EditorView, closeHoverTooltips, hoverTooltip } from "@codemirror/view";
+import { Decoration, EditorView, WidgetType, closeHoverTooltips, hoverTooltip } from "@codemirror/view";
 import type { DecorationSet } from "@codemirror/view";
 import { StateEffect, StateField } from "@codemirror/state";
 import type * as Y from "yjs";
 
 import { acceptSuggestionAt, colorForUserId, rejectSuggestionAt } from "./suggestions";
-import type { SuggestionSpan } from "./suggestions";
+import type { SuggestionKind, SuggestionSpan } from "./suggestions";
 
 export const setSuggestionDecorations = StateEffect.define<DecorationSet>();
 
@@ -21,13 +21,59 @@ export const suggestionDecorationsField = StateField.define<DecorationSet>({
   provide: (f) => EditorView.decorations.from(f),
 });
 
-/** One `Decoration.mark` per span, colored per-author (same color the
+/** A `Decoration.mark` colors the *characters* in its range — but a span
+ * that covers only whitespace/newlines has no rendered glyph for a browser
+ * to color at all (CodeMirror renders each line break as a line boundary,
+ * not a character), so a suggestion like "deleted this newline" or
+ * "inserted a space" would otherwise be fully counted yet completely
+ * invisible. Render those as a small standalone marker widget instead. */
+class SuggestionMarkerWidget extends WidgetType {
+  constructor(
+    private readonly label: string,
+    private readonly color: string,
+    private readonly colorLight: string,
+    private readonly kind: SuggestionKind,
+  ) {
+    super();
+  }
+  eq(other: SuggestionMarkerWidget): boolean {
+    return other.label === this.label && other.color === this.color && other.kind === this.kind;
+  }
+  toDOM(): HTMLElement {
+    const el = document.createElement("span");
+    el.textContent = this.label;
+    el.style.cssText = [
+      "display:inline-block",
+      `color:${this.color}`,
+      `background-color:${this.colorLight}`,
+      "border-radius:2px",
+      "padding:0 2px",
+      "font-size:0.85em",
+      this.kind === "ins" ? `text-decoration:underline;text-decoration-color:${this.color}` : "text-decoration:line-through",
+    ].join(";");
+    return el;
+  }
+}
+
+const WHITESPACE_ONLY = /^\s*$/;
+
+/** One decoration per span, colored per-author (same color the
  * collaborator's presence cursor uses) — insertions get an underline,
- * deletions a strikethrough, both over a light author-colored background. */
-export function computeSuggestionDecorations(spans: SuggestionSpan[]): DecorationSet {
+ * deletions a strikethrough, both over a light author-colored background.
+ * Whitespace/newline-only spans fall back to a small marker widget (see
+ * SuggestionMarkerWidget) since a mark decoration would render nothing. */
+export function computeSuggestionDecorations(spans: SuggestionSpan[], docText: string): DecorationSet {
   if (spans.length === 0) return Decoration.none;
   const decorations = spans.map((span) => {
     const { color, colorLight } = colorForUserId(span.authorId);
+    const covered = docText.slice(span.from, span.to);
+    if (WHITESPACE_ONLY.test(covered)) {
+      const label = covered.includes("\n") ? "⏎" : "·";
+      return Decoration.widget({
+        widget: new SuggestionMarkerWidget(label, color, colorLight, span.kind),
+        side: span.kind === "ins" ? 1 : -1,
+      }).range(span.from);
+    }
     const style =
       span.kind === "ins"
         ? `background-color:${colorLight};text-decoration:underline;text-decoration-color:${color};text-decoration-thickness:2px;`
