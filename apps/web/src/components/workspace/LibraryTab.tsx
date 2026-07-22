@@ -4,7 +4,7 @@ import { BookOpen, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import { useState } from "react";
 import type { ClipboardEvent, DragEvent } from "react";
 
-import { useBibliography } from "../../lib/bibliography";
+import { useBibDoc, useBibliography } from "../../lib/bibliography";
 import { useWorkspace } from "../../lib/workspace";
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
@@ -16,11 +16,19 @@ import { EntryForm } from "./EntryForm";
 import styles from "./LibraryTab.module.css";
 
 export function LibraryTab() {
-  const { entries, loading, addEntries, updateEntry, deleteEntry, findNearDuplicate, findByKey } = useBibliography();
-  const { canWrite } = useWorkspace();
+  const central = useBibliography();
+  const { addEntries, findNearDuplicate, findByKey } = central;
+  const { canWrite, projectId, files } = useWorkspace();
   const { show } = useToast();
   const [formEntry, setFormEntry] = useState<BibEntry | "new" | null>(null);
   const [dragOver, setDragOver] = useState(false);
+
+  const bibFiles = files.filter((f) => f.type === "bib");
+  const centralFile = bibFiles.find((f) => f.id === central.centralFileId) ?? null;
+  const [viewFileId, setViewFileId] = useState<string | null>(null);
+  const isCentral = viewFileId === null || viewFileId === central.centralFileId;
+  const otherDoc = useBibDoc(projectId, isCentral ? null : viewFileId);
+  const { entries, loading, updateEntry, deleteEntry } = isCentral ? central : otherDoc;
   const [dupModal, setDupModal] = useState<{
     existing: BibEntry;
     incoming: { key: string; fields: Record<string, string> };
@@ -72,8 +80,9 @@ export function LibraryTab() {
       else if (conflicts.length > 0) alreadyKnownKeys.push(entry.key); // race: key taken between our check and now
     }
     if (addedKeys.length > 0) {
-      const suffix = alreadyKnownKeys.length > 0 ? `, already had: ${alreadyKnownKeys.join(", ")}` : "";
-      show(`Added reference${addedKeys.length === 1 ? "" : "s"}: ${addedKeys.join(", ")}${suffix}.`);
+      const alreadyHadSuffix = alreadyKnownKeys.length > 0 ? `, already had: ${alreadyKnownKeys.join(", ")}` : "";
+      const centralSuffix = isCentral ? "" : ` (added to ${centralFile?.path ?? "the central library"}, not the file you're viewing)`;
+      show(`Added reference${addedKeys.length === 1 ? "" : "s"}: ${addedKeys.join(", ")}${alreadyHadSuffix}.${centralSuffix}`);
     } else if (alreadyKnownKeys.length > 0) {
       show(`Already in the library: ${alreadyKnownKeys.join(", ")} — nothing added.`, "error");
     }
@@ -122,9 +131,26 @@ export function LibraryTab() {
       onDrop={handleDrop}
     >
       <div className={styles.toolbar}>
-        <span className={styles.hint}>
-          <Upload size={13} aria-hidden="true" /> Paste or drop a .bib file anywhere here to import it
-        </span>
+        <div className={styles.toolbarLeft}>
+          {bibFiles.length > 1 && (
+            <select
+              className={styles.fileSelect}
+              value={viewFileId ?? central.centralFileId ?? ""}
+              onChange={(e) => setViewFileId(e.target.value)}
+              aria-label="Bib file to view"
+            >
+              {bibFiles.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.path}
+                  {f.id === central.centralFileId ? " (central)" : ""}
+                </option>
+              ))}
+            </select>
+          )}
+          <span className={styles.hint}>
+            <Upload size={13} aria-hidden="true" /> Paste or drop a .bib file anywhere here to import it
+          </span>
+        </div>
         {canWrite && (
           <Button size="sm" onClick={() => setFormEntry("new")}>
             <Plus size={14} aria-hidden="true" />
@@ -136,7 +162,7 @@ export function LibraryTab() {
       {formEntry && (
         <EntryForm
           initial={formEntry === "new" ? null : formEntry}
-          existingKeys={entries.map((e) => e.key)}
+          existingKeys={(formEntry === "new" ? central.entries : entries).map((e) => e.key)}
           onCancel={() => setFormEntry(null)}
           onSubmit={(next) => {
             if (formEntry === "new") {

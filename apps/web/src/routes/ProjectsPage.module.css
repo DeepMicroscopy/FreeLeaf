@@ -52,6 +52,45 @@
   letter-spacing: -0.01em;
 }
 
+.titleActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.viewToggle {
+  display: flex;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.viewToggleButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: var(--bg-surface);
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.viewToggleButton + .viewToggleButton {
+  border-left: 1px solid var(--border-subtle);
+}
+
+.viewToggleButton:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.viewToggleActive {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 .chooser {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
@@ -154,6 +193,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
+}
+
+.cardThumbnail {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .cardBody {
@@ -183,6 +229,82 @@
   color: var(--text-tertiary);
   margin-top: 3px;
   overflow-wrap: break-word;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.table th {
+  text-align: left;
+  padding: 8px var(--space-3);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.table td {
+  padding: 8px var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+}
+
+.sortHeader {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  padding: 0;
+}
+
+.sortHeader:hover {
+  color: var(--text-primary);
+}
+
+.rowNameButton {
+  border: none;
+  background: transparent;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+}
+
+.rowNameButton:hover {
+  color: var(--accent-700);
+}
+
+.rowActions {
+  display: flex;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.iconButton:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .dropOverlay {

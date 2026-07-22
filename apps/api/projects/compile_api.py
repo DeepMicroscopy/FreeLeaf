@@ -23,6 +23,7 @@ from .authz import get_authorized_project, require_role
 from .log_parser import Diagnostic, parse_log
 from .models import BibEngine, Compiler, CompileRun, FileType, ProjectSettings, Role
 from .paths import InvalidPathError, normalize_path
+from .thumbnails import render_first_page_png
 
 logger = logging.getLogger(__name__)
 
@@ -229,8 +230,19 @@ def trigger_compile(request, project_id: uuid.UUID):
     run_id = uuid.uuid4()
     pdf_key = None
     if result.get("pdf_base64"):
+        pdf_bytes = base64.b64decode(result["pdf_base64"])
         pdf_key = f"compiles/{project_id}/{run_id}.pdf"
-        storage.put_object(pdf_key, base64.b64decode(result["pdf_base64"]), "application/pdf")
+        storage.put_object(pdf_key, pdf_bytes, "application/pdf")
+
+        if result["status"] == CompileRun.Status.SUCCESS:
+            try:
+                thumb_key = f"compiles/{project_id}/{run_id}.thumb.png"
+                storage.put_object(thumb_key, render_first_page_png(pdf_bytes), "image/png")
+            except Exception:
+                logger.exception("Thumbnail generation failed for project %s", project_id)
+            else:
+                project.thumbnail_storage_key = thumb_key
+                project.save(update_fields=["thumbnail_storage_key"])
 
     log_text = result.get("log") or ""
     log_key = f"compiles/{project_id}/{run_id}.log"
@@ -273,6 +285,20 @@ def get_compile_pdf(request, project_id: uuid.UUID, run_id: uuid.UUID):
     run = project.compile_runs.filter(id=run_id).first()
     if not run or not run.pdf_key:
         raise HttpError(404, "No PDF for this compile run.")
+    return HttpResponse(storage.get_object(run.pdf_key), content_type="application/pdf")
+
+
+@router.get("/projects/{project_id}/pdf")
+def get_latest_pdf(request, project_id: uuid.UUID):
+    """The most recent successful compile's PDF, for the project-overview
+    dashboard's "Download PDF" action — a project-level counterpart to
+    get_compile_pdf's per-run endpoint. CompileRun's default ordering
+    (-started_at) makes "latest" a plain .first()."""
+    user = get_current_user(request)
+    project, _membership = get_authorized_project(user, project_id)
+    run = project.compile_runs.filter(status=CompileRun.Status.SUCCESS).exclude(pdf_key=None).first()
+    if not run:
+        raise HttpError(404, "This project hasn't compiled successfully yet.")
     return HttpResponse(storage.get_object(run.pdf_key), content_type="application/pdf")
 
 

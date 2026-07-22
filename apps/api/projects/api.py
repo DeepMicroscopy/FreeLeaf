@@ -21,6 +21,7 @@ from core.session import get_current_user, log_in
 from core.tokens import hash_token
 
 from .authz import get_authorized_project, require_role
+from .compile_api import get_or_create_settings
 from .files_api import create_main_tex, storage_key_for
 from .models import FileType, Membership, Project, ProjectFile, ProjectSettings, Role, ShareLink, touch_project
 from .paths import InvalidPathError, guess_file_type, normalize_path, sanitize_path
@@ -40,6 +41,8 @@ class ProjectOut(Schema):
     created_at: str
     updated_at: str
     last_edited_by_name: str | None = None
+    owner_name: str | None = None
+    has_thumbnail: bool = False
 
 
 def _project_out(project: Project, role: str) -> ProjectOut:
@@ -54,6 +57,12 @@ def _project_out(project: Project, role: str) -> ProjectOut:
             if project.last_edited_by
             else None
         ),
+        owner_name=(
+            project.owner.display_name or project.owner.email
+            if project.owner
+            else None
+        ),
+        has_thumbnail=bool(project.thumbnail_storage_key),
     )
 
 
@@ -251,6 +260,55 @@ def export_project_zip(request, project_id: uuid.UUID):
     response = HttpResponse(build_project_zip_bytes(project), content_type="application/zip")
     response["Content-Disposition"] = f'attachment; filename="{safe_name}.zip"'
     return response
+
+
+@router.get("/projects/{project_id}/thumbnail")
+def get_project_thumbnail(request, project_id: uuid.UUID):
+    """Page-1 PNG of the project's most recent successful compile, for the
+    overview dashboard's grid view. Same access level as /export — any
+    member. See compile_api.trigger_compile for how thumbnail_storage_key
+    gets populated."""
+    user = get_current_user(request)
+    project, _membership = get_authorized_project(user, project_id)
+    if not project.thumbnail_storage_key:
+        raise HttpError(404, "No thumbnail for this project yet.")
+    return HttpResponse(storage.get_object(project.thumbnail_storage_key), content_type="image/png")
+
+
+class ProjectDuplicateIn(Schema):
+    name: str | None = None
+
+
+@router.post("/projects/{project_id}/duplicate", response=ProjectOut)
+def duplicate_project(request, project_id: uuid.UUID, payload: ProjectDuplicateIn):
+    """Clones a project's current file state into a brand-new project
+    owned by the requesting user — reuses the same zip export/import path
+    as /export and /import so file-copying gets identical, already-tested
+    validation for free. Doesn't clone compile history, snapshots, or
+    comments: a duplicate is a fresh copy, not a full history clone."""
+    user = get_current_user(request)
+    if user.kind == User.Kind.ANONYMOUS:
+        raise HttpError(403, "Anonymous users can't create projects — sign in with ORCID or email.")
+    source_project, _membership = get_authorized_project(user, project_id)
+
+    name = (payload.name or "").strip() or f"{source_project.name} (copy)"
+    zip_bytes = build_project_zip_bytes(source_project)
+    new_project = _create_project_from_zip_bytes(user, name, zip_bytes)
+
+    # _create_project_from_zip_bytes guesses main_doc_path from the zip's
+    # contents; the source project's own settings already correctly
+    # reference real paths (preserved 1:1 by the zip round-trip), so copy
+    # them over directly instead of trusting that heuristic.
+    source_settings = get_or_create_settings(source_project)
+    new_settings = get_or_create_settings(new_project)
+    new_settings.main_doc_path = source_settings.main_doc_path
+    new_settings.central_bib_path = source_settings.central_bib_path
+    new_settings.compiler = source_settings.compiler
+    new_settings.bib_engine = source_settings.bib_engine
+    new_settings.cite_autocomplete_enabled = source_settings.cite_autocomplete_enabled
+    new_settings.save()
+
+    return _project_out(new_project, Role.OWNER)
 
 
 @router.get("/projects/{project_id}", response=ProjectOut)

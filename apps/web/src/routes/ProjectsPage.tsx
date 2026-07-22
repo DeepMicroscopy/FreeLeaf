@@ -1,9 +1,24 @@
-import { api } from "@freeleaf/shared";
+import { api, apiOrigin } from "@freeleaf/shared";
 import type { components } from "@freeleaf/shared";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { FilePlus, FileText, Github, LayoutGrid, LogOut, Plus, ShieldCheck, Upload, Users } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Copy,
+  FileDown,
+  FilePlus,
+  FileText,
+  Github,
+  LayoutGrid,
+  List,
+  LogOut,
+  Plus,
+  ShieldCheck,
+  Upload,
+  Users,
+} from "lucide-react";
 
 import { ContributeTemplateForm } from "../components/templates/ContributeTemplateForm";
 import { TemplateGallery } from "../components/templates/TemplateGallery";
@@ -14,10 +29,18 @@ import { PageSpinner } from "../components/ui/Spinner";
 import { useToast } from "../components/ui/Toast";
 import { useAuth } from "../lib/auth";
 import { useSiteInfo } from "../lib/siteInfo";
+import type { ProjectsSortKey } from "../lib/projectsView";
+import { useProjectsView } from "../lib/projectsView";
 import styles from "./ProjectsPage.module.css";
 
 type ProjectOut = components["schemas"]["ProjectOut"];
 type ChooserMode = "closed" | "choose" | "blank" | "template" | "github";
+
+const SORT_COLUMNS: { key: ProjectsSortKey; label: string }[] = [
+  { key: "name", label: "Title" },
+  { key: "owner", label: "Owner" },
+  { key: "updated_at", label: "Last modified" },
+];
 
 function parseGithubRepo(input: string): { owner: string; repo: string } | null {
   const trimmed = input.trim().replace(/^https?:\/\/github\.com\//i, "").replace(/\.git$/i, "").replace(/\/+$/, "");
@@ -32,6 +55,8 @@ export function ProjectsPage() {
   const navigate = useNavigate();
 
   const [projects, setProjects] = useState<ProjectOut[] | null>(null);
+  const view = useProjectsView();
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
   const [mode, setMode] = useState<ChooserMode>("closed");
   const [contributingTemplate, setContributingTemplate] = useState(false);
   const [newName, setNewName] = useState("");
@@ -171,6 +196,33 @@ export function ProjectsPage() {
     navigate(`/projects/${data.id}`);
   }
 
+  const sortedProjects = useMemo(() => {
+    if (!projects) return projects;
+    const sorted = [...projects].sort((a, b) => {
+      let cmp = 0;
+      if (view.sortKey === "name") cmp = a.name.localeCompare(b.name);
+      else if (view.sortKey === "owner") cmp = (a.owner_name ?? "").localeCompare(b.owner_name ?? "");
+      else cmp = a.updated_at.localeCompare(b.updated_at);
+      return view.sortDir === "asc" ? cmp : -cmp;
+    });
+    return sorted;
+  }, [projects, view.sortKey, view.sortDir]);
+
+  async function handleDuplicate(project: ProjectOut) {
+    setDuplicatingId(project.id);
+    const { data, error } = await api.POST("/api/projects/{project_id}/duplicate", {
+      params: { path: { project_id: project.id } },
+      body: {},
+    });
+    setDuplicatingId(null);
+    if (error || !data) {
+      show("Could not duplicate that project.", "error");
+      return;
+    }
+    setProjects((prev) => (prev ? [data, ...prev] : [data]));
+    show(`Duplicated as "${data.name}".`);
+  }
+
   return (
     <div className={styles.page}>
       <header className={styles.header}>
@@ -196,10 +248,32 @@ export function ProjectsPage() {
       <main className={styles.main}>
         <div className={styles.titleRow}>
           <h1 className={styles.pageTitle}>Your projects</h1>
-          <Button onClick={() => setMode((m) => (m === "closed" ? "choose" : "closed"))}>
-            <Plus size={16} aria-hidden="true" />
-            New project
-          </Button>
+          <div className={styles.titleActions}>
+            <div className={styles.viewToggle} role="group" aria-label="View">
+              <button
+                type="button"
+                className={[styles.viewToggleButton, view.mode === "grid" ? styles.viewToggleActive : ""].join(" ")}
+                aria-pressed={view.mode === "grid"}
+                aria-label="Grid view"
+                onClick={() => view.setMode("grid")}
+              >
+                <LayoutGrid size={15} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className={[styles.viewToggleButton, view.mode === "list" ? styles.viewToggleActive : ""].join(" ")}
+                aria-pressed={view.mode === "list"}
+                aria-label="List view"
+                onClick={() => view.setMode("list")}
+              >
+                <List size={15} aria-hidden="true" />
+              </button>
+            </div>
+            <Button onClick={() => setMode((m) => (m === "closed" ? "choose" : "closed"))}>
+              <Plus size={16} aria-hidden="true" />
+              New project
+            </Button>
+          </div>
         </div>
 
         <input ref={zipInputRef} type="file" accept=".zip" className="visually-hidden" onChange={handleZipFileChosen} />
@@ -319,22 +393,31 @@ export function ProjectsPage() {
           </form>
         )}
 
-        {projects === null ? (
+        {sortedProjects === null ? (
           <PageSpinner />
-        ) : projects.length === 0 ? (
+        ) : sortedProjects.length === 0 ? (
           <EmptyState
             icon={<FileText size={32} aria-hidden="true" />}
             title="No projects yet"
             description="Create your first project to start writing in LaTeX with a live PDF preview."
             action={<Button onClick={() => setMode("choose")}>Create a project</Button>}
           />
-        ) : (
+        ) : view.mode === "grid" ? (
           <ul className={styles.grid}>
-            {projects.map((p) => (
+            {sortedProjects.map((p) => (
               <li key={p.id}>
                 <button className={styles.card} onClick={() => navigate(`/projects/${p.id}`)}>
                   <div className={styles.cardIcon}>
-                    <FileText size={20} aria-hidden="true" />
+                    {p.has_thumbnail ? (
+                      <img
+                        src={`${apiOrigin()}/api/projects/${p.id}/thumbnail`}
+                        alt=""
+                        aria-hidden="true"
+                        className={styles.cardThumbnail}
+                      />
+                    ) : (
+                      <FileText size={20} aria-hidden="true" />
+                    )}
                   </div>
                   <div className={styles.cardBody}>
                     <p className={styles.cardName}>{p.name}</p>
@@ -352,6 +435,70 @@ export function ProjectsPage() {
               </li>
             ))}
           </ul>
+        ) : (
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                {SORT_COLUMNS.map((col) => (
+                  <th key={col.key}>
+                    <button type="button" className={styles.sortHeader} onClick={() => view.toggleSort(col.key)}>
+                      {col.label}
+                      {view.sortKey === col.key &&
+                        (view.sortDir === "asc" ? (
+                          <ArrowUp size={12} aria-hidden="true" />
+                        ) : (
+                          <ArrowDown size={12} aria-hidden="true" />
+                        ))}
+                    </button>
+                  </th>
+                ))}
+                <th aria-label="Actions" />
+              </tr>
+            </thead>
+            <tbody>
+              {sortedProjects.map((p) => (
+                <tr key={p.id}>
+                  <td>
+                    <button className={styles.rowNameButton} onClick={() => navigate(`/projects/${p.id}`)}>
+                      {p.name}
+                    </button>
+                  </td>
+                  <td>{p.owner_name ?? "—"}</td>
+                  <td title={new Date(p.updated_at).toLocaleString()}>{new Date(p.updated_at).toLocaleDateString()}</td>
+                  <td className={styles.rowActions}>
+                    <a
+                      className={styles.iconButton}
+                      href={`${apiOrigin()}/api/projects/${p.id}/export`}
+                      aria-label={`Download ${p.name} as zip`}
+                      title="Download zip"
+                    >
+                      <FileDown size={14} aria-hidden="true" />
+                    </a>
+                    {p.has_thumbnail && (
+                      <a
+                        className={styles.iconButton}
+                        href={`${apiOrigin()}/api/projects/${p.id}/pdf`}
+                        aria-label={`Download ${p.name}'s PDF`}
+                        title="Download PDF"
+                      >
+                        <Download size={14} aria-hidden="true" />
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      className={styles.iconButton}
+                      aria-label={`Duplicate ${p.name}`}
+                      title="Duplicate"
+                      disabled={duplicatingId === p.id}
+                      onClick={() => handleDuplicate(p)}
+                    >
+                      <Copy size={14} aria-hidden="true" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </main>
 

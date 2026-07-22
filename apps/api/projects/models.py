@@ -31,6 +31,9 @@ class Project(models.Model):
     last_edited_by = models.ForeignKey(
         User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
+    # Page-1 PNG of the most recent successful compile (see compile_api.py's
+    # trigger_compile); null until the project has compiled at least once.
+    thumbnail_storage_key = models.CharField(max_length=255, null=True, blank=True)
 
     def __str__(self):
         return self.name

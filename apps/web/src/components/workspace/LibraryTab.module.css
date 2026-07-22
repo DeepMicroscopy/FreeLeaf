@@ -27,6 +27,23 @@
   color: var(--text-tertiary);
 }
 
+.toolbarLeft {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.fileSelect {
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  max-width: 220px;
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;

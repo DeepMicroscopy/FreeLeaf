@@ -328,6 +328,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/thumbnail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Project Thumbnail
+         * @description Page-1 PNG of the project's most recent successful compile, for the
+         *     overview dashboard's grid view. Same access level as /export — any
+         *     member. See compile_api.trigger_compile for how thumbnail_storage_key
+         *     gets populated.
+         */
+        get: operations["projects_api_get_project_thumbnail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/duplicate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Duplicate Project
+         * @description Clones a project's current file state into a brand-new project
+         *     owned by the requesting user — reuses the same zip export/import path
+         *     as /export and /import so file-copying gets identical, already-tested
+         *     validation for free. Doesn't clone compile history, snapshots, or
+         *     comments: a duplicate is a fresh copy, not a full history clone.
+         */
+        post: operations["projects_api_duplicate_project"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}": {
         parameters: {
             query?: never;
@@ -612,6 +659,29 @@ export interface paths {
         };
         /** Get Compile Pdf */
         get: operations["projects_compile_api_get_compile_pdf"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Latest Pdf
+         * @description The most recent successful compile's PDF, for the project-overview
+         *     dashboard's "Download PDF" action — a project-level counterpart to
+         *     get_compile_pdf's per-run endpoint. CompileRun's default ordering
+         *     (-started_at) makes "latest" a plain .first().
+         */
+        get: operations["projects_compile_api_get_latest_pdf"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1170,6 +1240,13 @@ export interface components {
             updated_at: string;
             /** Last Edited By Name */
             last_edited_by_name?: string | null;
+            /** Owner Name */
+            owner_name?: string | null;
+            /**
+             * Has Thumbnail
+             * @default false
+             */
+            has_thumbnail: boolean;
         };
         /** FromTemplateIn */
         FromTemplateIn: {
@@ -1222,6 +1299,11 @@ export interface components {
         ProjectCreateIn: {
             /** Name */
             name: string;
+        };
+        /** ProjectDuplicateIn */
+        ProjectDuplicateIn: {
+            /** Name */
+            name?: string | null;
         };
         /** ProjectUpdateIn */
         ProjectUpdateIn: {
@@ -2296,6 +2378,52 @@ export interface operations {
             };
         };
     };
+    projects_api_get_project_thumbnail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    projects_api_duplicate_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectDuplicateIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectOut"];
+                };
+            };
+        };
+    };
     projects_api_get_project: {
         parameters: {
             query?: never;
@@ -2865,6 +2993,26 @@ export interface operations {
             path: {
                 project_id: string;
                 run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    projects_compile_api_get_latest_pdf: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
             };
             cookie?: never;
         };
