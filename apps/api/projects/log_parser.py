@@ -54,6 +54,42 @@ _UNDEF_CMD_RE = re.compile(r"(?:^<recently read>\s+|^l\.\d+\s+)\\([a-zA-Z]+)")
 # a tool whose name happens to end in "TeX" can't be mistaken for one.
 _RUN_START_RE = re.compile(r"^This is (?:pdf|Xe|Lua)TeX,", re.MULTILINE)
 
+# BibTeX/Biber warnings live in their own run segment, *before* the final
+# pdflatex/xelatex banner in a normal pdflatex->bibtex->pdflatex cycle — so
+# they fall outside _last_engine_run's slice and need their own whole-log
+# scan, run separately from the main per-line loop below. Verified against a
+# real compile log (docker exec into the dev sandbox, a project with an
+# empty-field bibtex entry and an undefined citekey under both `bibtex` and
+# `biber` backends): classic BibTeX prints one `Warning--...` line per issue
+# (no colon, double dash — confirmed real examples: `Warning--I didn't find
+# a database entry for "x"`, `Warning--empty title in y`); Biber uses its
+# own leveled-logger format, a bare `WARN - ...`/`ERROR - ...` line (real
+# example: `WARN - I didn't find a database entry for 'x' (section 0)`) —
+# note latexmk *also* reprints the same message wrapped as "Biber warning:
+# [N] Biber.pm:NNN> WARN - ..."; anchoring to line-start avoids matching
+# that wrapped duplicate. latexmk commonly reruns bibtex/biber more than
+# once, reprinting identical lines each time (confirmed live) — dedup by
+# exact message text, keeping first-seen order.
+_BIBTEX_WARNING_RE = re.compile(r"^Warning--(.+)", re.MULTILINE)
+_BIBER_WARNING_RE = re.compile(r"^WARN\s*-\s*(.+)", re.MULTILINE)
+_BIBER_ERROR_RE = re.compile(r"^ERROR\s*-\s*(.+)", re.MULTILINE)
+
+
+def _bib_diagnostics(log: str) -> tuple[list["Diagnostic"], list["Diagnostic"]]:
+    """BibTeX/Biber errors+warnings, deduped by message text. No `file` —
+    neither tool emits the `(file.tex` open/close tokens pdflatex does, and
+    a bib warning is about a citekey/entry, not a particular .tex file."""
+    seen_warnings: dict[str, None] = {}
+    for m in (*_BIBTEX_WARNING_RE.finditer(log), *_BIBER_WARNING_RE.finditer(log)):
+        seen_warnings.setdefault(m.group(1).strip(), None)
+    seen_errors: dict[str, None] = {}
+    for m in _BIBER_ERROR_RE.finditer(log):
+        seen_errors.setdefault(m.group(1).strip(), None)
+    return (
+        [Diagnostic(message=msg) for msg in seen_errors],
+        [Diagnostic(message=msg) for msg in seen_warnings],
+    )
+
 
 def _last_engine_run(log: str) -> str:
     starts = [m.start() for m in _RUN_START_RE.finditer(log)]
@@ -160,5 +196,9 @@ def parse_log(log: str) -> ParsedLog:
                     line=int(line_start) if line_start else None,
                 )
             )
+
+    bib_errors, bib_warnings = _bib_diagnostics(log)
+    result.errors.extend(bib_errors)
+    result.warnings.extend(bib_warnings)
 
     return result

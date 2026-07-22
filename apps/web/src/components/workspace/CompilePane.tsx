@@ -17,6 +17,11 @@ import styles from "./CompilePane.module.css";
 type CompileRunOut = components["schemas"]["CompileRunOut"];
 
 const AUTO_COMPILE_DEBOUNCE_MS = 800;
+// Compiling is a two-phase start/poll flow now (Plan.md project-overview
+// polish: live compile progress) — the sandbox's own wall-clock cap is 60s;
+// this leaves generous headroom above that for the polling loop itself.
+const COMPILE_POLL_INTERVAL_MS = 700;
+const MAX_COMPILE_POLL_MS = 100_000;
 
 export interface CompilePaneHandle {
   scheduleAutoCompile: () => void;
@@ -79,6 +84,8 @@ export const CompilePane = forwardRef<
       [autoOpenFixesKey],
     );
     const [compiling, setCompiling] = useState(false);
+    const [progressSteps, setProgressSteps] = useState<string[]>([]);
+    const pollTokenRef = useRef(0);
     const [loadingLast, setLoadingLast] = useState(true);
     const [viewMode, setViewMode] = useState<"pdf" | "log">("pdf");
     const [logText, setLogText] = useState<string | null>(null);
@@ -165,6 +172,53 @@ export const CompilePane = forwardRef<
         }
         inFlightRef.current = true;
         setCompiling(true);
+        setProgressSteps([]);
+        const myToken = ++pollTokenRef.current;
+        // Local helper (rather than early `return`s directly in the outer
+        // try) so its early exits don't skip the rerun-check code that
+        // follows the try/finally below — that logic must run regardless
+        // of how polling ended.
+        const pollUntilDone = async () => {
+          const { data: started } = await api.POST("/api/projects/{project_id}/compile", {
+            params: { path: { project_id: projectId } },
+          });
+          if (!started) {
+            show("Compile request failed — please try again.", "error");
+            return;
+          }
+
+          const deadline = Date.now() + MAX_COMPILE_POLL_MS;
+          for (;;) {
+            if (pollTokenRef.current !== myToken) return; // superseded by a newer compile, or unmounted
+            const { data: progress } = await api.GET("/api/projects/{project_id}/compile/{job_id}/progress", {
+              params: { path: { project_id: projectId, job_id: started.job_id } },
+            });
+            if (!progress) {
+              show("Lost the connection while compiling — please try again.", "error");
+              return;
+            }
+            if (pollTokenRef.current !== myToken) return;
+            setProgressSteps(progress.steps);
+
+            if (progress.done) {
+              if (progress.error) {
+                show(`Compile service error: ${progress.error}`, "error");
+              } else if (progress.run) {
+                setRun(progress.run);
+                if (explicit && autoOpenFixesRef.current) {
+                  const candidates = matchFixes(progress.run.errors, progress.run.warnings, progress.run.has_pdf);
+                  if (candidates.length > 0) dispatchFix(candidates[0], fixHandlersRef.current);
+                }
+              }
+              return;
+            }
+            if (Date.now() > deadline) {
+              show("Compile is taking unusually long — please try again.", "error");
+              return;
+            }
+            await new Promise((resolve) => setTimeout(resolve, COMPILE_POLL_INTERVAL_MS));
+          }
+        };
         try {
           // A long compile can outlast a reverse proxy's read timeout (a real
           // production case: nginx returns a 504 with an HTML body, which
@@ -172,16 +226,7 @@ export const CompilePane = forwardRef<
           // try/finally, that exception skipped setCompiling(false) entirely
           // and left the UI stuck showing "Compiling…" forever, with no way
           // to recover short of a full page reload.
-          const { data } = await api.POST("/api/projects/{project_id}/compile", {
-            params: { path: { project_id: projectId } },
-          });
-          if (data) {
-            setRun(data);
-            if (explicit && autoOpenFixesRef.current) {
-              const candidates = matchFixes(data.errors, data.warnings, data.has_pdf);
-              if (candidates.length > 0) dispatchFix(candidates[0], fixHandlersRef.current);
-            }
-          } else show("Compile request failed — please try again.", "error");
+          await pollUntilDone();
         } catch {
           show("Lost the connection while compiling — please try again.", "error");
         } finally {
@@ -251,6 +296,7 @@ export const CompilePane = forwardRef<
     useEffect(() => {
       return () => {
         if (timerRef.current) clearTimeout(timerRef.current);
+        pollTokenRef.current += 1; // stop any in-flight progress polling loop
       };
     }, []);
 
@@ -284,7 +330,7 @@ export const CompilePane = forwardRef<
     return (
       <div className={styles.pane}>
         <div className={styles.toolbar}>
-          <StatusLabel run={run} compiling={compiling} />
+          <StatusLabel run={run} compiling={compiling} progressSteps={progressSteps} />
           <div className={styles.toolbarActions}>
             <Button
               variant="secondary"
@@ -375,8 +421,24 @@ export const CompilePane = forwardRef<
   },
 );
 
-function StatusLabel({ run, compiling }: { run: CompileRunOut | null; compiling: boolean }) {
-  if (compiling) return <span className={styles.status}>Compiling…</span>;
+function StatusLabel({
+  run,
+  compiling,
+  progressSteps,
+}: {
+  run: CompileRunOut | null;
+  compiling: boolean;
+  progressSteps: string[];
+}) {
+  if (compiling) {
+    const currentStep = progressSteps[progressSteps.length - 1];
+    return (
+      <span className={styles.status}>
+        <Spinner size={12} />
+        {currentStep ? `Compiling… (${currentStep})` : "Compiling…"}
+      </span>
+    );
+  }
   if (!run) return <span className={styles.status}>PDF preview</span>;
   if (run.status === "success") {
     return <span className={[styles.status, styles.ok].join(" ")}>Compiled successfully</span>;

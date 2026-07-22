@@ -163,6 +163,70 @@ This is BibTeX, Version 0.99d
 The top-level auxiliary file: main.aux
 """
 
+
+# Trimmed from a real log captured against the live sandbox: a project using
+# classic \\bibliography{}/bibtex with one entry missing title/journal/year
+# and one \\cite{} key not present in the .bib at all. bibtex reruns once
+# (latexmk's usual pdflatex->bibtex->pdflatex->bibtex cycle), reprinting the
+# same four Warning-- lines both times — real evidence the parser needs to
+# dedup, not just capture.
+BIBTEX_WARNING_LOG = """\
+This is pdfTeX, Version 3.141592653-2.6-1.40.24 (TeX Live 2022/Debian) (preloaded format=pdflatex)
+entering extended mode
+(./main.tex
+(/work/out/main.aux)
+LaTeX Warning: Citation `missingfield' on page 1 undefined on input line 4.
+LaTeX Warning: Citation `doesnotexistatall' on page 1 undefined on input line 4
+Output written on /work/out/main.pdf (1 page, 20000 bytes).
+This is BibTeX, Version 0.99d
+The top-level auxiliary file: main.aux
+Warning--I didn't find a database entry for "doesnotexistatall"
+Warning--empty title in missingfield
+Warning--empty journal in missingfield
+Warning--empty year in missingfield
+This is pdfTeX, Version 3.141592653-2.6-1.40.24 (TeX Live 2022/Debian) (preloaded format=pdflatex)
+entering extended mode
+(./main.tex
+(/work/out/main.aux)
+LaTeX Warning: Citation `doesnotexistatall' on page 1 undefined on input line 4
+Output written on /work/out/main.pdf (1 page, 20000 bytes).
+This is BibTeX, Version 0.99d
+The top-level auxiliary file: main.aux
+Warning--I didn't find a database entry for "doesnotexistatall"
+Warning--empty title in missingfield
+Warning--empty journal in missingfield
+Warning--empty year in missingfield
+"""
+
+# Trimmed from a real biblatex+biber run, same missing-key/empty-field setup.
+# Biber uses its own leveled-logger format (`WARN - ...`); latexmk also
+# reprints the same message wrapped as "Biber warning: [N] Biber.pm:NNN>
+# WARN - ..." — the fixture keeps that wrapped duplicate line to prove the
+# parser's line-start anchor doesn't double-count it.
+BIBER_WARNING_LOG = """\
+This is pdfTeX, Version 3.141592653-2.6-1.40.24 (TeX Live 2022/Debian) (preloaded format=pdflatex)
+entering extended mode
+(./main.tex
+(/work/out/main.aux)
+LaTeX Warning: Citation 'doesnotexistatall' on page 1 undefined on input line 5
+Package biblatex Warning: Please (re)run Biber on the file:
+(biblatex)                main
+(biblatex)                and rerun LaTeX afterwards.
+Running 'biber  "/work/out/main.bcf"'
+INFO - This is Biber 2.18
+INFO - Found 1 citekeys in bib section 0
+WARN - I didn't find a database entry for 'doesnotexistatall' (section 0)
+INFO - WARNINGS: 1
+Biber warning: [84] Biber.pm:130> WARN - I didn't find a database entry for 'doesnotexistatall' (section 0)
+This is pdfTeX, Version 3.141592653-2.6-1.40.24 (TeX Live 2022/Debian) (preloaded format=pdflatex)
+entering extended mode
+(./main.tex
+(/work/out/main.aux)
+Package biblatex Warning: The following entry could not be found
+LaTeX Warning: Citation 'doesnotexistatall' on page 1 undefined on input line 5
+Output written on /work/out/main.pdf (1 page, 20000 bytes).
+"""
+
 OVERFULL_HBOX_LOG = """\
 This is pdfTeX, Version 3.141592653-2.6-1.40.24 (TeX Live 2022/Debian) (preloaded format=pdflatex)
 entering extended mode
@@ -258,3 +322,29 @@ class ParseLogTests(SimpleTestCase):
         parsed = parse_log(MULTI_RUN_RESOLVED_CITATION_LOG)
         self.assertEqual(parsed.warnings, [])
         self.assertEqual(parsed.errors, [])
+
+    def test_bibtex_warnings_are_captured_and_deduped_across_reruns(self):
+        parsed = parse_log(BIBTEX_WARNING_LOG)
+        bib_messages = {w.message for w in parsed.warnings if w.file is None}
+        self.assertEqual(
+            bib_messages,
+            {
+                'I didn\'t find a database entry for "doesnotexistatall"',
+                "empty title in missingfield",
+                "empty journal in missingfield",
+                "empty year in missingfield",
+            },
+        )
+        # Deduped, not just captured — the log has these lines twice (bibtex
+        # reran once) but each should be reported exactly once.
+        self.assertEqual(
+            len([w for w in parsed.warnings if w.message == "empty title in missingfield"]), 1
+        )
+
+    def test_biber_warnings_are_captured_without_double_counting_latexmks_wrapped_copy(self):
+        parsed = parse_log(BIBER_WARNING_LOG)
+        bib_messages = [w.message for w in parsed.warnings if w.file is None]
+        # Exactly one, not two — the fixture also contains latexmk's own
+        # "Biber warning: [84] Biber.pm:130> WARN - ..." wrapped duplicate of
+        # this same message, which the line-start anchor must not match.
+        self.assertEqual(bib_messages, ["I didn't find a database entry for 'doesnotexistatall' (section 0)"])

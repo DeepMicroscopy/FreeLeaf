@@ -1,7 +1,7 @@
 import { api } from "@freeleaf/shared";
 import type { components } from "@freeleaf/shared";
 import { useState } from "react";
-import { Check, Copy, Share2, X } from "lucide-react";
+import { Check, Copy, Crown, Share2, X } from "lucide-react";
 
 import { Button } from "../ui/Button";
 import { Spinner } from "../ui/Spinner";
@@ -87,6 +87,26 @@ export function ShareButton({ projectId }: { projectId: string }) {
     }
   }
 
+  async function transferOwnership(userId: string, displayName: string) {
+    if (
+      !window.confirm(
+        `Make ${displayName} the owner of this project? You'll become an editor and lose owner-only ` +
+          "controls (managing members, deleting the project).",
+      )
+    ) {
+      return;
+    }
+    const { data, error: reqError } = await api.POST(
+      "/api/projects/{project_id}/members/{member_user_id}/transfer-ownership",
+      { params: { path: { project_id: projectId, member_user_id: userId } } },
+    );
+    if (!reqError && data) {
+      setMembers(data);
+    }
+  }
+
+  const isOwner = members?.some((m) => m.is_you && m.role === "owner") ?? false;
+
   return (
     <div className={styles.wrapper}>
       <Button variant="secondary" size="sm" onClick={toggle} className={styles.trigger}>
@@ -157,6 +177,17 @@ export function ShareButton({ projectId }: { projectId: string }) {
                           <option value="reviewer">reviewer</option>
                           <option value="viewer">viewer</option>
                         </select>
+                        {isOwner && (
+                          <button
+                            type="button"
+                            className={styles.removeButton}
+                            aria-label={`Make ${m.display_name} the owner`}
+                            title="Make owner"
+                            onClick={() => transferOwnership(m.user_id, m.display_name)}
+                          >
+                            <Crown size={13} aria-hidden="true" />
+                          </button>
+                        )}
                         <button
                           type="button"
                           className={styles.removeButton}

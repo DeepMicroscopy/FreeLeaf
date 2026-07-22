@@ -30,10 +30,13 @@ API, enforcing every rule in §7:
 
 import io
 import os
+import re
 import shutil
 import tarfile
+import threading
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -81,6 +84,46 @@ ENGINE_COMMANDS = {
 }
 
 
+# Live step labels for the compile-progress spinner, keyed off the same
+# reliable engine-start banners apps/api's log_parser.py already trusts to
+# find "the real final run" — not latexmk's own free-text status lines,
+# whose exact wording isn't guaranteed. Verified against a real sandbox
+# compile: pdfTeX/XeTeX/LuaTeX/BibTeX all print "This is <engine>," at
+# start of line; Biber's own banner is different (leveled-logger format,
+# `INFO - This is Biber 2.18`) and gets its own pattern.
+_ENGINE_BANNER_RE = re.compile(rb"^This is (pdfTeX|XeTeX|LuaTeX|BibTeX),")
+_BIBER_BANNER_RE = re.compile(rb"^INFO - This is Biber")
+
+
+def _track_compile_steps(container, on_step: Callable[[str], None]) -> None:
+    """Best-effort: tails the container's combined stdout/stderr as it runs
+    (`container.logs(stream=True, follow=True)`) and calls `on_step(label)`
+    each time a new engine run starts, numbering reruns of the same engine
+    ("pdfTeX run 1", "pdfTeX run 2", ...). Runs in its own daemon thread
+    alongside the caller's `container.wait()`; any failure here (container
+    removed mid-stream, decode hiccup) is swallowed — the actual compile
+    result never depends on this, only the progress spinner does."""
+    counts: dict[str, int] = {}
+
+    def label_for(engine: str) -> str:
+        counts[engine] = counts.get(engine, 0) + 1
+        return f"{engine} run {counts[engine]}" if engine != "Biber" and engine != "BibTeX" else engine
+
+    buf = b""
+    try:
+        for chunk in container.logs(stream=True, follow=True):
+            buf += chunk
+            while b"\n" in buf:
+                line, buf = buf.split(b"\n", 1)
+                m = _ENGINE_BANNER_RE.match(line)
+                if m:
+                    on_step(label_for(m.group(1).decode()))
+                elif _BIBER_BANNER_RE.match(line):
+                    on_step(label_for("Biber"))
+    except Exception:
+        pass
+
+
 class CompileError(Exception):
     pass
 
@@ -125,7 +168,12 @@ def _safe_extract(tar_bytes: bytes, dest: Path) -> None:
         tar.extractall(dest)  # noqa: S202 - membership already validated above
 
 
-def run_job(tar_bytes: bytes, compiler: str, main_file: str) -> CompileResult:
+def run_job(
+    tar_bytes: bytes,
+    compiler: str,
+    main_file: str,
+    on_step: Callable[[str], None] | None = None,
+) -> CompileResult:
     if compiler not in ENGINE_COMMANDS:
         raise CompileError(f"unsupported compiler: {compiler}")
 
@@ -194,6 +242,9 @@ def run_job(tar_bytes: bytes, compiler: str, main_file: str) -> CompileResult:
             user="1000:1000",
             detach=True,
         )
+
+        if on_step is not None:
+            threading.Thread(target=_track_compile_steps, args=(container, on_step), daemon=True).start()
 
         try:
             wait_result = container.wait(timeout=WALL_CLOCK_TIMEOUT_SECONDS)

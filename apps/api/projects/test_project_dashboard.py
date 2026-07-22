@@ -36,6 +36,20 @@ def _login_new_user(client, email):
     login_as(client, user)
 
 
+def compile_and_finish(client, project_id, result):
+    """Same two-phase start+poll flow as test_compile.py's helper of the
+    same name (compiling is no longer one blocking call — see
+    compile_api.py) — duplicated rather than cross-imported, matching this
+    repo's convention of self-contained test modules."""
+    job_id = "job-1"
+    with patch("projects.compile_api.dispatch_compile_start", return_value=job_id):
+        post_json(client, f"/api/projects/{project_id}/compile")
+    status = {"done": True, "steps": [], "result": result, "error": None}
+    with patch("projects.compile_api.dispatch_compile_status", return_value=status):
+        progress = client.get(f"/api/projects/{project_id}/compile/{job_id}/progress")
+    return progress.json()["run"]
+
+
 class ThumbnailAndLatestPdfTests(ApiTestCase):
     def setUp(self):
         super().setUp()
@@ -44,21 +58,22 @@ class ThumbnailAndLatestPdfTests(ApiTestCase):
         create = post_json(self.owner, "/api/projects", {"name": "P"})
         self.project_id = create.json()["id"]
 
-    @patch("projects.compile_api.dispatch_compile")
-    def test_successful_compile_generates_thumbnail(self, mock_dispatch):
+    def test_successful_compile_generates_thumbnail(self):
         import base64
 
-        mock_dispatch.return_value = {
-            "status": "success",
-            "log": "ok",
-            "pdf_base64": base64.b64encode(_one_page_pdf()).decode(),
-            "synctex_base64": None,
-            "duration_ms": 1,
-            "exit_code": 0,
-            "compiler": "pdflatex",
-        }
-        response = post_json(self.owner, f"/api/projects/{self.project_id}/compile")
-        self.assertEqual(response.status_code, 200)
+        compile_and_finish(
+            self.owner,
+            self.project_id,
+            {
+                "status": "success",
+                "log": "ok",
+                "pdf_base64": base64.b64encode(_one_page_pdf()).decode(),
+                "synctex_base64": None,
+                "duration_ms": 1,
+                "exit_code": 0,
+                "compiler": "pdflatex",
+            },
+        )
 
         project = Project.objects.get(id=self.project_id)
         self.assertIsNotNone(project.thumbnail_storage_key)
@@ -72,41 +87,44 @@ class ThumbnailAndLatestPdfTests(ApiTestCase):
         response = self.owner.get(f"/api/projects/{self.project_id}/thumbnail")
         self.assertEqual(response.status_code, 404)
 
-    @patch("projects.compile_api.dispatch_compile")
-    def test_thumbnail_generation_failure_does_not_break_compile(self, mock_dispatch):
-        mock_dispatch.return_value = {
-            "status": "success",
-            "log": "ok",
-            "pdf_base64": "JVBERi0xLjQK",  # not a real/renderable PDF
-            "synctex_base64": None,
-            "duration_ms": 1,
-            "exit_code": 0,
-            "compiler": "pdflatex",
-        }
-        response = post_json(self.owner, f"/api/projects/{self.project_id}/compile")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["status"], "success")
+    def test_thumbnail_generation_failure_does_not_break_compile(self):
+        run = compile_and_finish(
+            self.owner,
+            self.project_id,
+            {
+                "status": "success",
+                "log": "ok",
+                "pdf_base64": "JVBERi0xLjQK",  # not a real/renderable PDF
+                "synctex_base64": None,
+                "duration_ms": 1,
+                "exit_code": 0,
+                "compiler": "pdflatex",
+            },
+        )
+        self.assertEqual(run["status"], "success")
         self.assertIsNone(Project.objects.get(id=self.project_id).thumbnail_storage_key)
 
     def test_latest_pdf_404s_with_no_successful_run(self):
         response = self.owner.get(f"/api/projects/{self.project_id}/pdf")
         self.assertEqual(response.status_code, 404)
 
-    @patch("projects.compile_api.dispatch_compile")
-    def test_latest_pdf_returns_most_recent_successful_run(self, mock_dispatch):
+    def test_latest_pdf_returns_most_recent_successful_run(self):
         import base64
 
         pdf_bytes = _one_page_pdf()
-        mock_dispatch.return_value = {
-            "status": "success",
-            "log": "ok",
-            "pdf_base64": base64.b64encode(pdf_bytes).decode(),
-            "synctex_base64": None,
-            "duration_ms": 1,
-            "exit_code": 0,
-            "compiler": "pdflatex",
-        }
-        post_json(self.owner, f"/api/projects/{self.project_id}/compile")
+        compile_and_finish(
+            self.owner,
+            self.project_id,
+            {
+                "status": "success",
+                "log": "ok",
+                "pdf_base64": base64.b64encode(pdf_bytes).decode(),
+                "synctex_base64": None,
+                "duration_ms": 1,
+                "exit_code": 0,
+                "compiler": "pdflatex",
+            },
+        )
 
         response = self.owner.get(f"/api/projects/{self.project_id}/pdf")
         self.assertEqual(response.status_code, 200)

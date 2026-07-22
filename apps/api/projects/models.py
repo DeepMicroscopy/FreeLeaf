@@ -151,6 +151,11 @@ class CompileRun(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="compile_runs")
+    # The compile service's job_id (Plan.md project-overview polish: live
+    # compile progress) — doubles as an idempotency key: the progress-poll
+    # endpoint checks this before re-finalizing, so two concurrent pollers
+    # racing to finalize the same job can't create two CompileRuns for it.
+    job_id = models.CharField(max_length=64, unique=True, null=True, blank=True)
     compiler = models.CharField(max_length=16, choices=Compiler.choices)
     status = models.CharField(max_length=16, choices=Status.choices)
     started_at = models.DateTimeField(auto_now_add=True)

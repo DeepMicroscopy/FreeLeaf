@@ -1,11 +1,12 @@
-import { api } from "@freeleaf/shared";
-import type { components } from "@freeleaf/shared";
+import { api, apiOrigin, findUnusedBibEntries } from "@freeleaf/shared";
+import type { BibEntry, components } from "@freeleaf/shared";
 import { ChevronDown, ChevronUp, FileQuestion, MessageSquare, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
 import { useToast } from "../ui/Toast";
+import { useBibliography } from "../../lib/bibliography";
 import { useEditingMode } from "../../lib/editingMode";
 import { useWorkspace } from "../../lib/workspace";
 import { CodeMirrorEditor } from "./CodeMirrorEditor";
@@ -29,6 +30,7 @@ import { DuplicateLabelFixDialog } from "./DuplicateLabelFixDialog";
 import { EscapeAmpersandDialog } from "./EscapeAmpersandDialog";
 import { findLabelOccurrences } from "./refCompletion";
 import { uploadSingleFile } from "./fileUpload";
+import { UnusedBibDialog } from "./UnusedBibDialog";
 import styles from "./EditorTab.module.css";
 
 type SnapshotOut = components["schemas"]["SnapshotOut"];
@@ -40,6 +42,11 @@ interface PolishingFinding {
   line: number | null;
   message: string;
   tone: "error" | "warning" | "lint";
+  /** Which file this finding belongs to — null/undefined for file-less
+   * findings (e.g. BibTeX/Biber warnings, which aren't tied to a .tex file)
+   * or lint findings (always the open file). Shown + used for cross-file
+   * jump only when it differs from the currently open file. */
+  file?: string | null;
 }
 
 // Automated version-history checkpoints (Plan.md §9 Phase 8): a snapshot
@@ -318,22 +325,80 @@ export function EditorTab() {
 
   // Polishing mode's aggressively-surfaced checks (Plan.md §9 Phase 8):
   // static lint findings (polishingLint.ts) plus the most recent compile
-  // run's already-parsed errors/warnings, merged into one list.
+  // run's already-parsed errors/warnings, merged into one list. Shows
+  // findings for *every* file in the project, not just the open one — a
+  // BibTeX/Biber warning has no file at all, and a warning in some other
+  // .tex file is still worth surfacing while polishing.
   const [lintFindings, setLintFindings] = useState<LintFinding[]>([]);
   const [latestRun, setLatestRun] = useState<CompileRunOut | null>(null);
 
   const polishingFindings: PolishingFinding[] =
     mode === "polishing"
       ? [
-          ...lintFindings.map((f, i) => ({ key: `lint-${i}`, line: f.line, message: f.message, tone: "lint" as const })),
-          ...(latestRun?.errors ?? [])
-            .filter((d) => !d.file || d.file === selectedFile?.path)
-            .map((d, i) => ({ key: `err-${i}`, line: d.line ?? null, message: d.message, tone: "error" as const })),
-          ...(latestRun?.warnings ?? [])
-            .filter((d) => !d.file || d.file === selectedFile?.path)
-            .map((d, i) => ({ key: `warn-${i}`, line: d.line ?? null, message: d.message, tone: "warning" as const })),
+          ...lintFindings.map((f, i) => ({
+            key: `lint-${i}`,
+            line: f.line,
+            message: f.message,
+            tone: "lint" as const,
+            file: selectedFile?.path,
+          })),
+          ...(latestRun?.errors ?? []).map((d, i) => ({
+            key: `err-${i}`,
+            line: d.line ?? null,
+            message: d.message,
+            tone: "error" as const,
+            file: d.file,
+          })),
+          ...(latestRun?.warnings ?? []).map((d, i) => ({
+            key: `warn-${i}`,
+            line: d.line ?? null,
+            message: d.message,
+            tone: "warning" as const,
+            file: d.file,
+          })),
         ]
       : [];
+
+  // Polishing mode's "unused references" check: bib entries whose key never
+  // appears in any \cite{}-family command across the project's .tex files.
+  // Recomputed (not live-typing-reactive) whenever polishing mode is
+  // entered or the file list/library changes — fetching every .tex file's
+  // saved content on every keystroke would be wasteful, and this is a
+  // warning, not a hard correctness requirement (same "reflects the last
+  // save/compile, not necessarily this instant" tradeoff CompileRun-based
+  // findings already make).
+  const { entries: bibEntries, deleteEntry: deleteBibEntry } = useBibliography();
+  const [unusedBibEntries, setUnusedBibEntries] = useState<BibEntry[]>([]);
+  const [showUnusedBibDialog, setShowUnusedBibDialog] = useState(false);
+
+  useEffect(() => {
+    if (mode !== "polishing") {
+      setUnusedBibEntries([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const texFiles = files.filter((f) => f.type === "tex");
+      const sources = await Promise.all(
+        texFiles.map(async (f) => {
+          const res = await fetch(`${apiOrigin()}/api/projects/${projectId}/files/${f.id}/content`, {
+            credentials: "include",
+          });
+          return res.ok ? res.text() : "";
+        }),
+      );
+      if (!cancelled) setUnusedBibEntries(findUnusedBibEntries(bibEntries, sources));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, files, bibEntries, projectId]);
+
+  const handleRemoveUnusedBibEntries = useCallback(() => {
+    for (const entry of unusedBibEntries) deleteBibEntry(entry.key);
+    setShowUnusedBibDialog(false);
+    show(`Removed ${unusedBibEntries.length} unused reference${unusedBibEntries.length === 1 ? "" : "s"}.`);
+  }, [unusedBibEntries, show]);
 
   // Table Designer (Plan.md §9 Phase 10): opened from a gutter icon inside
   // CodeMirrorEditor, which does the actual tabular parsing (it owns the
@@ -514,22 +579,43 @@ export function EditorTab() {
           </div>
           {mode === "polishing" && (
             <div className={styles.polishingPanel}>
-              {polishingFindings.length === 0 ? (
+              {unusedBibEntries.length > 0 && (
+                <div className={styles.unusedBibCallout}>
+                  <span>
+                    {unusedBibEntries.length} unused BibTeX entr{unusedBibEntries.length === 1 ? "y was" : "ies were"}{" "}
+                    found
+                  </span>
+                  <button
+                    type="button"
+                    className={styles.unusedBibButton}
+                    onClick={() => setShowUnusedBibDialog(true)}
+                  >
+                    Remove those
+                  </button>
+                </div>
+              )}
+              {polishingFindings.length === 0 && unusedBibEntries.length === 0 ? (
                 <div className={styles.polishingEmpty}>No issues found — nice and clean.</div>
-              ) : (
+              ) : polishingFindings.length === 0 ? null : (
                 <ul className={styles.polishingList}>
-                  {polishingFindings.map((f) => (
-                    <li key={f.key} className={[styles.polishingItem, styles[`polishing-${f.tone}`]].join(" ")}>
-                      {f.line != null ? (
-                        <button className={styles.polishingLine} onClick={() => handleJumpToLine(f.line!)}>
-                          L{f.line}
-                        </button>
-                      ) : (
-                        <span className={styles.polishingLine}>—</span>
-                      )}
-                      <span className={styles.polishingMessage}>{f.message}</span>
-                    </li>
-                  ))}
+                  {polishingFindings.map((f) => {
+                    const otherFile = f.file && f.file !== selectedFile?.path ? f.file : null;
+                    return (
+                      <li key={f.key} className={[styles.polishingItem, styles[`polishing-${f.tone}`]].join(" ")}>
+                        {f.line != null ? (
+                          <button
+                            className={styles.polishingLine}
+                            onClick={() => (otherFile ? handleJumpToSource(otherFile, f.line!) : handleJumpToLine(f.line!))}
+                          >
+                            {otherFile ? `${otherFile} L${f.line}` : `L${f.line}`}
+                          </button>
+                        ) : (
+                          <span className={styles.polishingLine}>{otherFile ?? "—"}</span>
+                        )}
+                        <span className={styles.polishingMessage}>{f.message}</span>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </div>
@@ -721,6 +807,13 @@ export function EditorTab() {
         line={ampersandFix}
         onConfirm={handleConfirmEscapeAmpersand}
         onCancel={() => setAmpersandFix(null)}
+      />
+    )}
+    {showUnusedBibDialog && (
+      <UnusedBibDialog
+        entries={unusedBibEntries}
+        onCancel={() => setShowUnusedBibDialog(false)}
+        onConfirm={handleRemoveUnusedBibEntries}
       />
     )}
     </>

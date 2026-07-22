@@ -1,7 +1,9 @@
 """Fast, CI-friendly tests for the compile trigger/settings API.
 
-These mock dispatch_compile() (the HTTP call to apps/compile) so they don't
-need Docker-in-Docker or a real TeX Live image — that real, unmocked path
+These mock dispatch_compile_start()/dispatch_compile_status() (the two HTTP
+calls to apps/compile, now a two-phase start/poll flow — see
+compile_api.py's module docstring-equivalent comments) so they don't need
+Docker-in-Docker or a real TeX Live image — that real, unmocked path
 (sandbox behavior: shell-escape blocked, timeout enforced, path traversal
 rejected, both engines actually produce a PDF) is exercised by
 apps/compile's own integration test run against a live stack; see
@@ -11,6 +13,7 @@ and error handling when the compile service itself fails.
 """
 
 import json
+import uuid
 from unittest.mock import patch
 
 from django.test import Client
@@ -43,6 +46,36 @@ FAKE_SUCCESS = {
     "exit_code": 0,
     "compiler": "pdflatex",
 }
+
+
+def start_compile(client, project_id, job_id=None):
+    """Patches dispatch_compile_start to return a fixed job_id (a fresh
+    random one by default) and POSTs /compile. Returns (response, job_id) —
+    the mock is only active for this one call, matching how a real
+    dispatch_compile_start call is a single fire-and-forget POST."""
+    job_id = job_id or uuid.uuid4().hex
+    with patch("projects.compile_api.dispatch_compile_start", return_value=job_id) as mock_start:
+        response = post_json(client, f"/api/projects/{project_id}/compile")
+    return response, job_id, mock_start
+
+
+def poll_progress(client, project_id, job_id, *, done=True, steps=None, result=None, error=None):
+    """Patches dispatch_compile_status to return a fixed status payload and
+    GETs the progress endpoint once. Mirrors what a single frontend poll
+    round does."""
+    status = {"done": done, "steps": steps or [], "result": result, "error": error}
+    with patch("projects.compile_api.dispatch_compile_status", return_value=status):
+        return client.get(f"/api/projects/{project_id}/compile/{job_id}/progress")
+
+
+def compile_and_finish(client, project_id, result):
+    """Runs the full two-phase start+poll flow with the compile service's
+    eventual result fixed at `result`, returning the finalized run dict
+    (`progress.json()["run"]`) for tests that only care about the end state
+    — equivalent to the old single blocking POST /compile response."""
+    _start_response, job_id, _ = start_compile(client, project_id)
+    progress = poll_progress(client, project_id, job_id, done=True, result=result)
+    return progress.json()["run"]
 
 
 class ProjectSettingsTests(ApiTestCase):
@@ -118,90 +151,87 @@ class TriggerCompileTests(ApiTestCase):
         link = post_json(self.owner, f"/api/projects/{self.project_id}/share-links", {"role": "viewer"})
         viewer = Client()
         post_json(viewer, f"/api/share-links/{link.json()['token']}/join", {})
-        with patch("projects.compile_api.dispatch_compile") as mock_dispatch:
-            response = post_json(viewer, f"/api/projects/{self.project_id}/compile")
+        response, _job_id, mock_start = start_compile(viewer, self.project_id)
         self.assertEqual(response.status_code, 403)
-        mock_dispatch.assert_not_called()
+        mock_start.assert_not_called()
 
-    @patch("projects.compile_api.dispatch_compile")
-    def test_successful_compile_creates_run_and_stores_pdf(self, mock_dispatch):
-        mock_dispatch.return_value = FAKE_SUCCESS
-        response = post_json(self.owner, f"/api/projects/{self.project_id}/compile")
+    def test_start_compile_returns_a_job_id(self):
+        response, job_id, _ = start_compile(self.owner, self.project_id)
         self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual(body["status"], "success")
-        self.assertTrue(body["has_pdf"])
+        self.assertEqual(response.json()["job_id"], job_id)
 
-        run = CompileRun.objects.get(id=body["id"])
-        self.assertEqual(run.status, "success")
-        self.assertIsNotNone(run.pdf_key)
+    def test_successful_compile_creates_run_and_stores_pdf(self):
+        run = compile_and_finish(self.owner, self.project_id, FAKE_SUCCESS)
+        self.assertEqual(run["status"], "success")
+        self.assertTrue(run["has_pdf"])
 
-        pdf_response = self.owner.get(f"/api/projects/{self.project_id}/compile-runs/{run.id}/pdf")
+        db_run = CompileRun.objects.get(id=run["id"])
+        self.assertEqual(db_run.status, "success")
+        self.assertIsNotNone(db_run.pdf_key)
+
+        pdf_response = self.owner.get(f"/api/projects/{self.project_id}/compile-runs/{db_run.id}/pdf")
         self.assertEqual(pdf_response.status_code, 200)
         self.assertEqual(pdf_response.content, b"%PDF-1.4\n")
 
-        log_response = self.owner.get(f"/api/projects/{self.project_id}/compile-runs/{run.id}/log")
+        log_response = self.owner.get(f"/api/projects/{self.project_id}/compile-runs/{db_run.id}/log")
         self.assertEqual(log_response.status_code, 200)
         self.assertIn(b"all good", log_response.content)
 
-    @patch("projects.compile_api.dispatch_compile")
-    def test_failed_compile_has_no_pdf(self, mock_dispatch):
-        mock_dispatch.return_value = {
-            "status": "failed",
-            "log": "! Undefined control sequence.",
-            "pdf_base64": None,
-            "synctex_base64": None,
-            "duration_ms": 50,
-            "exit_code": 12,
-            "compiler": "pdflatex",
-        }
-        response = post_json(self.owner, f"/api/projects/{self.project_id}/compile")
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual(body["status"], "failed")
-        self.assertFalse(body["has_pdf"])
+    def test_failed_compile_has_no_pdf(self):
+        run = compile_and_finish(
+            self.owner,
+            self.project_id,
+            {
+                "status": "failed",
+                "log": "! Undefined control sequence.",
+                "pdf_base64": None,
+                "synctex_base64": None,
+                "duration_ms": 50,
+                "exit_code": 12,
+                "compiler": "pdflatex",
+            },
+        )
+        self.assertEqual(run["status"], "failed")
+        self.assertFalse(run["has_pdf"])
 
-        run_id = body["id"]
-        pdf_response = self.owner.get(f"/api/projects/{self.project_id}/compile-runs/{run_id}/pdf")
+        pdf_response = self.owner.get(f"/api/projects/{self.project_id}/compile-runs/{run['id']}/pdf")
         self.assertEqual(pdf_response.status_code, 404)
 
-    @patch("projects.compile_api.dispatch_compile")
-    def test_failed_compile_populates_parsed_errors(self, mock_dispatch):
-        mock_dispatch.return_value = {
-            "status": "failed",
-            "log": "(./main.tex\n! Undefined control sequence.\nl.3 \\bogus\n",
-            "pdf_base64": None,
-            "synctex_base64": None,
-            "duration_ms": 50,
-            "exit_code": 12,
-            "compiler": "pdflatex",
-        }
-        response = post_json(self.owner, f"/api/projects/{self.project_id}/compile")
-        body = response.json()
-        self.assertEqual(len(body["errors"]), 1)
-        self.assertEqual(body["errors"][0]["message"], "Undefined control sequence: \\bogus")
-        self.assertEqual(body["errors"][0]["file"], "main.tex")
-        self.assertEqual(body["errors"][0]["line"], 3)
-        self.assertEqual(body["warnings"], [])
+    def test_failed_compile_populates_parsed_errors(self):
+        run = compile_and_finish(
+            self.owner,
+            self.project_id,
+            {
+                "status": "failed",
+                "log": "(./main.tex\n! Undefined control sequence.\nl.3 \\bogus\n",
+                "pdf_base64": None,
+                "synctex_base64": None,
+                "duration_ms": 50,
+                "exit_code": 12,
+                "compiler": "pdflatex",
+            },
+        )
+        self.assertEqual(len(run["errors"]), 1)
+        self.assertEqual(run["errors"][0]["message"], "Undefined control sequence: \\bogus")
+        self.assertEqual(run["errors"][0]["file"], "main.tex")
+        self.assertEqual(run["errors"][0]["line"], 3)
+        self.assertEqual(run["warnings"], [])
 
-        run = CompileRun.objects.get(id=body["id"])
-        self.assertEqual(run.errors[0]["message"], "Undefined control sequence: \\bogus")
+        db_run = CompileRun.objects.get(id=run["id"])
+        self.assertEqual(db_run.errors[0]["message"], "Undefined control sequence: \\bogus")
 
-    @patch("projects.compile_api.dispatch_compile")
-    def test_compile_uses_the_projects_configured_compiler(self, mock_dispatch):
-        mock_dispatch.return_value = {**FAKE_SUCCESS, "compiler": "xelatex"}
+    def test_compile_uses_the_projects_configured_compiler(self):
         patch_json(self.owner, f"/api/projects/{self.project_id}/settings", {"compiler": "xelatex"})
-        post_json(self.owner, f"/api/projects/{self.project_id}/compile")
-        called_compiler = mock_dispatch.call_args.args[1]
+        _response, _job_id, mock_start = start_compile(self.owner, self.project_id)
+        called_compiler = mock_start.call_args.args[1]
         self.assertEqual(called_compiler, "xelatex")
 
     def test_stranger_without_access_gets_404(self):
         stranger = Client()
         post_json(stranger, "/api/auth/anonymous", {})
-        with patch("projects.compile_api.dispatch_compile") as mock_dispatch:
-            response = post_json(stranger, f"/api/projects/{self.project_id}/compile")
+        response, _job_id, mock_start = start_compile(stranger, self.project_id)
         self.assertEqual(response.status_code, 404)
-        mock_dispatch.assert_not_called()
+        mock_start.assert_not_called()
 
     def test_list_compile_runs_requires_membership(self):
         stranger = Client()
@@ -210,10 +240,55 @@ class TriggerCompileTests(ApiTestCase):
         self.assertEqual(response.status_code, 404)
 
 
+class CompileProgressTests(ApiTestCase):
+    def setUp(self):
+        super().setUp()
+        self.owner = Client()
+        _login_new_user(self.owner, "owner@example.com")
+        create = post_json(self.owner, "/api/projects", {"name": "P"})
+        self.project_id = create.json()["id"]
+
+    def test_in_progress_poll_returns_steps_without_a_run(self):
+        _response, job_id, _ = start_compile(self.owner, self.project_id)
+        progress = poll_progress(
+            self.owner, self.project_id, job_id, done=False, steps=["pdfTeX run 1"]
+        )
+        self.assertEqual(progress.status_code, 200)
+        body = progress.json()
+        self.assertFalse(body["done"])
+        self.assertEqual(body["steps"], ["pdfTeX run 1"])
+        self.assertIsNone(body["run"])
+
+    def test_polling_twice_after_done_does_not_create_a_second_run(self):
+        _response, job_id, _ = start_compile(self.owner, self.project_id)
+        first = poll_progress(self.owner, self.project_id, job_id, done=True, result=FAKE_SUCCESS)
+        second = poll_progress(self.owner, self.project_id, job_id, done=True, result=FAKE_SUCCESS)
+        self.assertEqual(first.json()["run"]["id"], second.json()["run"]["id"])
+        self.assertEqual(CompileRun.objects.filter(job_id=job_id).count(), 1)
+
+    def test_compile_service_error_is_surfaced_without_creating_a_run(self):
+        _response, job_id, _ = start_compile(self.owner, self.project_id)
+        progress = poll_progress(self.owner, self.project_id, job_id, done=True, error="sandbox exploded")
+        self.assertEqual(progress.status_code, 200)
+        body = progress.json()
+        self.assertTrue(body["done"])
+        self.assertEqual(body["error"], "sandbox exploded")
+        self.assertIsNone(body["run"])
+        self.assertEqual(CompileRun.objects.filter(job_id=job_id).count(), 0)
+
+    def test_stranger_cannot_poll_progress(self):
+        _response, job_id, _ = start_compile(self.owner, self.project_id)
+        stranger = Client()
+        post_json(stranger, "/api/auth/anonymous", {})
+        response = stranger.get(f"/api/projects/{self.project_id}/compile/{job_id}/progress")
+        self.assertEqual(response.status_code, 404)
+
+
 class SyncTexTests(ApiTestCase):
     """Mocks _dispatch_synctex() (the HTTP call to apps/compile's
     /synctex/forward and /synctex/backward), matching the same
-    dispatch_compile()-mocking convention used above."""
+    dispatch_compile_start()/dispatch_compile_status()-mocking convention
+    used above."""
 
     def setUp(self):
         super().setUp()
@@ -221,10 +296,8 @@ class SyncTexTests(ApiTestCase):
         _login_new_user(self.owner, "owner@example.com")
         create = post_json(self.owner, "/api/projects", {"name": "P"})
         self.project_id = create.json()["id"]
-        with patch("projects.compile_api.dispatch_compile") as mock_dispatch:
-            mock_dispatch.return_value = {**FAKE_SUCCESS, "synctex_base64": "aGVsbG8="}  # "hello"
-            run_response = post_json(self.owner, f"/api/projects/{self.project_id}/compile")
-        self.run_id = run_response.json()["id"]
+        run = compile_and_finish(self.owner, self.project_id, {**FAKE_SUCCESS, "synctex_base64": "aGVsbG8="})
+        self.run_id = run["id"]
 
     def test_requires_login(self):
         response = Client().get(
@@ -280,10 +353,8 @@ class SyncTexTests(ApiTestCase):
         self.assertEqual(response.status_code, 200)
 
     def test_run_without_synctex_data_gets_404(self):
-        with patch("projects.compile_api.dispatch_compile") as mock_dispatch:
-            mock_dispatch.return_value = {**FAKE_SUCCESS, "synctex_base64": None}
-            run_response = post_json(self.owner, f"/api/projects/{self.project_id}/compile")
-        no_synctex_run_id = run_response.json()["id"]
+        run = compile_and_finish(self.owner, self.project_id, {**FAKE_SUCCESS, "synctex_base64": None})
+        no_synctex_run_id = run["id"]
         response = self.owner.get(
             f"/api/projects/{self.project_id}/compile-runs/{no_synctex_run_id}/synctex/forward",
             {"file": "main.tex", "line": 1},

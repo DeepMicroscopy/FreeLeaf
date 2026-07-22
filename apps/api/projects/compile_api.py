@@ -10,6 +10,7 @@ import uuid
 from urllib.parse import quote
 
 from django.conf import settings as django_settings
+from django.db import IntegrityError
 from django.http import HttpResponse
 from django.utils import timezone
 from ninja import Router, Schema
@@ -30,7 +31,12 @@ logger = logging.getLogger(__name__)
 router = Router(auth=SessionAuth())
 
 COMPILE_SERVICE_URL = os.environ.get("COMPILE_SERVICE_URL", "http://compile:8100")
-COMPILE_REQUEST_TIMEOUT_SECONDS = 90  # sandbox's own wall-clock cap is 60s; leave headroom
+# Compiling is no longer one blocking call — the compile service starts the
+# job in a background thread and returns its job_id right away, so both of
+# these are just "is the service reachable" timeouts now, not "wait out the
+# whole latexmk run" ones (that used to need up to 90s; see git history).
+DISPATCH_START_TIMEOUT_SECONDS = 10
+DISPATCH_STATUS_TIMEOUT_SECONDS = 10
 COLLAB_FLUSH_TIMEOUT_SECONDS = 5
 
 
@@ -79,17 +85,39 @@ def materialize_tar(project) -> bytes:
     return buf.getvalue()
 
 
-def dispatch_compile(tar_bytes: bytes, compiler: str, main_file: str) -> dict:
+def dispatch_compile_start(tar_bytes: bytes, compiler: str, main_file: str) -> str:
+    """Starts the job on the compile service and returns its job_id
+    immediately — apps/compile now runs the actual latexmk job in a
+    background thread rather than blocking the HTTP response on it (live
+    compile progress; see apps/compile/main.py)."""
     url = f"{COMPILE_SERVICE_URL}/compile?compiler={quote(compiler)}&main={quote(main_file)}"
     request = urllib.request.Request(
         url, data=tar_bytes, method="POST", headers={"Content-Type": "application/x-tar"}
     )
     try:
-        with urllib.request.urlopen(request, timeout=COMPILE_REQUEST_TIMEOUT_SECONDS) as response:
-            return json.loads(response.read())
+        with urllib.request.urlopen(request, timeout=DISPATCH_START_TIMEOUT_SECONDS) as response:
+            return json.loads(response.read())["job_id"]
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode(errors="replace")
         raise HttpError(400, f"Compile request rejected: {detail}") from exc
+    except urllib.error.URLError as exc:
+        raise HttpError(502, "Compile service is unavailable.") from exc
+
+
+def dispatch_compile_status(job_id: str) -> dict:
+    """Polls the compile service for a job's current progress steps, or its
+    final result once done. `{"done": bool, "steps": [...], "result": {...}
+    | None, "error": str | None}`."""
+    url = f"{COMPILE_SERVICE_URL}/compile/{quote(job_id)}/status"
+    request = urllib.request.Request(url, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=DISPATCH_STATUS_TIMEOUT_SECONDS) as response:
+            return json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            raise HttpError(404, "Unknown or expired compile job.") from exc
+        detail = exc.read().decode(errors="replace")
+        raise HttpError(400, f"Compile status request rejected: {detail}") from exc
     except urllib.error.URLError as exc:
         raise HttpError(502, "Compile service is unavailable.") from exc
 
@@ -216,8 +244,67 @@ def _diagnostic_dicts(diagnostics: list[Diagnostic]) -> list[dict]:
     return [{"message": d.message, "file": d.file, "line": d.line} for d in diagnostics]
 
 
-@router.post("/projects/{project_id}/compile", response=CompileRunOut)
-def trigger_compile(request, project_id: uuid.UUID):
+def _finalize_compile_run(project, job_id: str, compiler_fallback: str, result: dict) -> CompileRun:
+    """Turns a finished compile-service result into a persisted CompileRun —
+    the same storage/thumbnail/log-parsing work start_compile used to do
+    inline before compiling became two-phase. Called from
+    get_compile_progress the first time it observes a job as done.
+    `job_id` is unique on CompileRun, so a second poller racing to finalize
+    the same job lands on IntegrityError and just reads the winner's row
+    instead of creating a duplicate."""
+    run_id = uuid.uuid4()
+    pdf_key = None
+    if result.get("pdf_base64"):
+        pdf_bytes = base64.b64decode(result["pdf_base64"])
+        pdf_key = f"compiles/{project.id}/{run_id}.pdf"
+        storage.put_object(pdf_key, pdf_bytes, "application/pdf")
+
+        if result["status"] == CompileRun.Status.SUCCESS:
+            try:
+                thumb_key = f"compiles/{project.id}/{run_id}.thumb.png"
+                storage.put_object(thumb_key, render_first_page_png(pdf_bytes), "image/png")
+            except Exception:
+                logger.exception("Thumbnail generation failed for project %s", project.id)
+            else:
+                project.thumbnail_storage_key = thumb_key
+                project.save(update_fields=["thumbnail_storage_key"])
+
+    log_text = result.get("log") or ""
+    log_key = f"compiles/{project.id}/{run_id}.log"
+    storage.put_object(log_key, log_text.encode(), "text/plain; charset=utf-8")
+    parsed_log = parse_log(log_text)
+
+    synctex_key = None
+    if result.get("synctex_base64"):
+        synctex_key = f"compiles/{project.id}/{run_id}.synctex.gz"
+        storage.put_object(synctex_key, base64.b64decode(result["synctex_base64"]), "application/gzip")
+
+    try:
+        return CompileRun.objects.create(
+            id=run_id,
+            project=project,
+            job_id=job_id,
+            compiler=result.get("compiler", compiler_fallback),
+            status=result["status"],
+            finished_at=timezone.now(),
+            pdf_key=pdf_key,
+            log_key=log_key,
+            synctex_key=synctex_key,
+            exit_code=result.get("exit_code"),
+            duration_ms=result.get("duration_ms"),
+            errors=_diagnostic_dicts(parsed_log.errors),
+            warnings=_diagnostic_dicts(parsed_log.warnings),
+        )
+    except IntegrityError:
+        return CompileRun.objects.get(job_id=job_id)
+
+
+class CompileStartOut(Schema):
+    job_id: str
+
+
+@router.post("/projects/{project_id}/compile", response=CompileStartOut)
+def start_compile(request, project_id: uuid.UUID):
     user = get_current_user(request)
     project, membership = get_authorized_project(user, project_id)
     require_role(membership, Role.OWNER, Role.EDITOR)
@@ -225,50 +312,38 @@ def trigger_compile(request, project_id: uuid.UUID):
     settings_row = get_or_create_settings(project)
     flush_collab_rooms(project)
     tar_bytes = materialize_tar(project)
-    result = dispatch_compile(tar_bytes, settings_row.compiler, settings_row.main_doc_path)
+    job_id = dispatch_compile_start(tar_bytes, settings_row.compiler, settings_row.main_doc_path)
+    return CompileStartOut(job_id=job_id)
 
-    run_id = uuid.uuid4()
-    pdf_key = None
-    if result.get("pdf_base64"):
-        pdf_bytes = base64.b64decode(result["pdf_base64"])
-        pdf_key = f"compiles/{project_id}/{run_id}.pdf"
-        storage.put_object(pdf_key, pdf_bytes, "application/pdf")
 
-        if result["status"] == CompileRun.Status.SUCCESS:
-            try:
-                thumb_key = f"compiles/{project_id}/{run_id}.thumb.png"
-                storage.put_object(thumb_key, render_first_page_png(pdf_bytes), "image/png")
-            except Exception:
-                logger.exception("Thumbnail generation failed for project %s", project_id)
-            else:
-                project.thumbnail_storage_key = thumb_key
-                project.save(update_fields=["thumbnail_storage_key"])
+class CompileProgressOut(Schema):
+    done: bool
+    steps: list[str] = []
+    run: CompileRunOut | None = None
+    error: str | None = None
 
-    log_text = result.get("log") or ""
-    log_key = f"compiles/{project_id}/{run_id}.log"
-    storage.put_object(log_key, log_text.encode(), "text/plain; charset=utf-8")
-    parsed_log = parse_log(log_text)
 
-    synctex_key = None
-    if result.get("synctex_base64"):
-        synctex_key = f"compiles/{project_id}/{run_id}.synctex.gz"
-        storage.put_object(synctex_key, base64.b64decode(result["synctex_base64"]), "application/gzip")
+@router.get("/projects/{project_id}/compile/{job_id}/progress", response=CompileProgressOut)
+def get_compile_progress(request, project_id: uuid.UUID, job_id: str):
+    """Polled by the frontend every ~700ms after start_compile while a
+    compile is in flight (any project member may poll, like
+    list_compile_runs — no role restriction, this only reads status)."""
+    user = get_current_user(request)
+    project, _membership = get_authorized_project(user, project_id)
 
-    run = CompileRun.objects.create(
-        id=run_id,
-        project=project,
-        compiler=result.get("compiler", settings_row.compiler),
-        status=result["status"],
-        finished_at=timezone.now(),
-        pdf_key=pdf_key,
-        log_key=log_key,
-        synctex_key=synctex_key,
-        exit_code=result.get("exit_code"),
-        duration_ms=result.get("duration_ms"),
-        errors=_diagnostic_dicts(parsed_log.errors),
-        warnings=_diagnostic_dicts(parsed_log.warnings),
-    )
-    return _run_out(run)
+    already_finalized = project.compile_runs.filter(job_id=job_id).first()
+    if already_finalized is not None:
+        return CompileProgressOut(done=True, run=_run_out(already_finalized))
+
+    status = dispatch_compile_status(job_id)
+    if not status["done"]:
+        return CompileProgressOut(done=False, steps=status["steps"])
+    if status["error"]:
+        return CompileProgressOut(done=True, steps=status["steps"], error=status["error"])
+
+    settings_row = get_or_create_settings(project)
+    run = _finalize_compile_run(project, job_id, settings_row.compiler, status["result"])
+    return CompileProgressOut(done=True, run=_run_out(run))
 
 
 @router.get("/projects/{project_id}/compile-runs", response=list[CompileRunOut])

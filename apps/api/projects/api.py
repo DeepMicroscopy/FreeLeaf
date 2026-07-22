@@ -6,7 +6,7 @@ import uuid
 import zipfile
 from datetime import timedelta
 
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.http import HttpResponse
 from django.utils import timezone
 from ninja import File, Router, Schema
@@ -407,6 +407,44 @@ def update_member_role(request, project_id: uuid.UUID, member_user_id: uuid.UUID
         role=target.role,
         is_you=target.user_id == user.id,
     )
+
+
+@router.post("/projects/{project_id}/members/{member_user_id}/transfer-ownership", response=list[MemberOut])
+def transfer_ownership(request, project_id: uuid.UUID, member_user_id: uuid.UUID):
+    """Owner-only: makes `member_user_id` the (sole) new owner and demotes
+    the caller to editor — a real transfer, unlike update_member_role's
+    ability to merely add a co-owner. Also updates the cosmetic
+    `Project.owner` FK (feeds ProjectOut.owner_name; not itself part of the
+    authorization model, which is Membership.role alone — see authz.py)."""
+    user = get_current_user(request)
+    project, membership = get_authorized_project(user, project_id)
+    require_role(membership, Role.OWNER)
+
+    target = project.memberships.select_related("user").filter(user_id=member_user_id).first()
+    if target is None:
+        raise HttpError(404, "That user isn't a member of this project.")
+    if target.role == Role.OWNER:
+        raise HttpError(400, "That person is already the owner.")
+
+    with transaction.atomic():
+        target.role = Role.OWNER
+        target.save(update_fields=["role"])
+        membership.role = Role.EDITOR
+        membership.save(update_fields=["role"])
+        project.owner = target.user
+        project.save(update_fields=["owner"])
+
+    members = project.memberships.select_related("user").order_by("-role", "created_at")
+    return [
+        MemberOut(
+            user_id=m.user.id,
+            display_name=m.user.display_name or m.user.email or m.user.orcid_id or "Anonymous",
+            kind=m.user.kind,
+            role=m.role,
+            is_you=m.user_id == user.id,
+        )
+        for m in members
+    ]
 
 
 @router.delete("/projects/{project_id}/members/{member_user_id}")

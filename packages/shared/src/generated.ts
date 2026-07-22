@@ -434,6 +434,30 @@ export interface paths {
         patch: operations["projects_api_update_member_role"];
         trace?: never;
     };
+    "/api/projects/{project_id}/members/{member_user_id}/transfer-ownership": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transfer Ownership
+         * @description Owner-only: makes `member_user_id` the (sole) new owner and demotes
+         *     the caller to editor — a real transfer, unlike update_member_role's
+         *     ability to merely add a co-owner. Also updates the cosmetic
+         *     `Project.owner` FK (feeds ProjectOut.owner_name; not itself part of the
+         *     authorization model, which is Membership.role alone — see authz.py).
+         */
+        post: operations["projects_api_transfer_ownership"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/share-links": {
         parameters: {
             query?: never;
@@ -625,8 +649,30 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Trigger Compile */
-        post: operations["projects_compile_api_trigger_compile"];
+        /** Start Compile */
+        post: operations["projects_compile_api_start_compile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/compile/{job_id}/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Compile Progress
+         * @description Polled by the frontend every ~700ms after start_compile while a
+         *     compile is in flight (any project member may poll, like
+         *     list_compile_runs — no role restriction, this only reads status).
+         */
+        get: operations["projects_compile_api_get_compile_progress"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1430,6 +1476,24 @@ export interface components {
             bib_engine?: string | null;
             /** Cite Autocomplete Enabled */
             cite_autocomplete_enabled?: boolean | null;
+        };
+        /** CompileStartOut */
+        CompileStartOut: {
+            /** Job Id */
+            job_id: string;
+        };
+        /** CompileProgressOut */
+        CompileProgressOut: {
+            /** Done */
+            done: boolean;
+            /**
+             * Steps
+             * @default []
+             */
+            steps: string[];
+            run?: components["schemas"]["CompileRunOut"] | null;
+            /** Error */
+            error?: string | null;
         };
         /** CompileRunOut */
         CompileRunOut: {
@@ -2562,6 +2626,29 @@ export interface operations {
             };
         };
     };
+    projects_api_transfer_ownership: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                member_user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberOut"][];
+                };
+            };
+        };
+    };
     projects_api_list_share_links: {
         parameters: {
             query?: never;
@@ -2942,7 +3029,7 @@ export interface operations {
             };
         };
     };
-    projects_compile_api_trigger_compile: {
+    projects_compile_api_start_compile: {
         parameters: {
             query?: never;
             header?: never;
@@ -2959,7 +3046,30 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CompileRunOut"];
+                    "application/json": components["schemas"]["CompileStartOut"];
+                };
+            };
+        };
+    };
+    projects_compile_api_get_compile_progress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompileProgressOut"];
                 };
             };
         };
