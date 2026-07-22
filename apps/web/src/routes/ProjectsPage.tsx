@@ -7,6 +7,7 @@ import {
   ArrowDown,
   ArrowUp,
   Copy,
+  Download,
   FileDown,
   FilePlus,
   FileText,
