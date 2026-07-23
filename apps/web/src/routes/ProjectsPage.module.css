@@ -157,20 +157,20 @@
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-4);
 }
 
 .card {
   width: 100%;
   display: flex;
-  align-items: center;
-  gap: var(--space-3);
+  flex-direction: column;
+  align-items: stretch;
   text-align: left;
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
-  padding: var(--space-4);
+  overflow: hidden;
   transition: border-color 120ms var(--ease), box-shadow 120ms var(--ease), transform 80ms var(--ease);
 }
 
@@ -183,11 +183,14 @@
   transform: translateY(1px);
 }
 
-.cardIcon {
+/* A big preview banner sitting on top of the card — page-1 PDF thumbnail
+   when there is one, a generic placeholder icon otherwise. Fixed
+   aspect-ratio (roughly A4/Letter proportions) keeps every card in the grid
+   the same height regardless of whether it has a real thumbnail yet. */
+.cardPreview {
+  width: 100%;
+  aspect-ratio: 3 / 4;
   flex-shrink: 0;
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-md);
   background: var(--accent-soft);
   color: var(--accent);
   display: flex;
@@ -196,14 +199,16 @@
   overflow: hidden;
 }
 
-.cardThumbnail {
+.cardPreviewImage {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: top;
 }
 
 .cardBody {
   min-width: 0;
+  padding: var(--space-3) var(--space-4) var(--space-4);
 }
 
 .cardName {

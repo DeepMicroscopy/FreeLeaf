@@ -408,16 +408,16 @@ export function ProjectsPage() {
             {sortedProjects.map((p) => (
               <li key={p.id}>
                 <button className={styles.card} onClick={() => navigate(`/projects/${p.id}`)}>
-                  <div className={styles.cardIcon}>
+                  <div className={styles.cardPreview}>
                     {p.has_thumbnail ? (
                       <img
                         src={`${apiOrigin()}/api/projects/${p.id}/thumbnail`}
                         alt=""
                         aria-hidden="true"
-                        className={styles.cardThumbnail}
+                        className={styles.cardPreviewImage}
                       />
                     ) : (
-                      <FileText size={20} aria-hidden="true" />
+                      <FileText size={32} aria-hidden="true" />
                     )}
                   </div>
                   <div className={styles.cardBody}>
