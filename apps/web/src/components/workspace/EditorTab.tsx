@@ -28,6 +28,7 @@ import { AddPackageDialog } from "./AddPackageDialog";
 import { MissingFileFixDialog } from "./MissingFileFixDialog";
 import { DuplicateLabelFixDialog } from "./DuplicateLabelFixDialog";
 import { EscapeAmpersandDialog } from "./EscapeAmpersandDialog";
+import { NewAcronymDialog } from "./NewAcronymDialog";
 import { findLabelOccurrences } from "./refCompletion";
 import { uploadSingleFile } from "./fileUpload";
 import { UnusedBibDialog } from "./UnusedBibDialog";
@@ -420,6 +421,26 @@ export function EditorTab() {
   const [ampersandFix, setAmpersandFix] = useState<number | null>(null);
   const [missingFileUploading, setMissingFileUploading] = useState(false);
 
+  // Acronym autocomplete's "+ New acronym…" entry (acronymCompletion.ts).
+  const [newAcronym, setNewAcronym] = useState<{
+    prefillKey: string;
+    from: number;
+    to: number;
+    hasBlock: boolean;
+    existingKeys: string[];
+  } | null>(null);
+
+  const handleConfirmNewAcronym = useCallback(
+    (key: string, short: string | null, long: string) => {
+      if (!newAcronym) return;
+      const ok = codeMirrorRef.current?.applyNewAcronymEntry({ from: newAcronym.from, to: newAcronym.to, key, short, long });
+      setNewAcronym(null);
+      if (ok) show(`Added acronym "${key}".`);
+      else show("Couldn't add the acronym — the document changed, try again.", "error");
+    },
+    [newAcronym, show],
+  );
+
   const handleConfirmAddPackage = useCallback(() => {
     if (!addPackageFix) return;
     const ok = codeMirrorRef.current?.applyAddPackage(addPackageFix.package);
@@ -715,6 +736,7 @@ export function EditorTab() {
               onAddComment={handleAddCommentFromSelection}
               onCommentAnchorClick={handleCommentAnchorClick}
               onDocTextChange={setCurrentFileText}
+              onRequestNewAcronym={setNewAcronym}
             />
           </div>
         </div>
@@ -774,6 +796,15 @@ export function EditorTab() {
       />
     )}
     {packageDoc && <PackageDocDialog packageName={packageDoc} onClose={() => setPackageDoc(null)} />}
+    {newAcronym && (
+      <NewAcronymDialog
+        prefillKey={newAcronym.prefillKey}
+        hasBlock={newAcronym.hasBlock}
+        existingKeys={newAcronym.existingKeys}
+        onConfirm={handleConfirmNewAcronym}
+        onCancel={() => setNewAcronym(null)}
+      />
+    )}
     {addPackageFix && (
       <AddPackageDialog
         packageName={addPackageFix.package}

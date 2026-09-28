@@ -19,6 +19,7 @@ import { useBibliography } from "../../lib/bibliography";
 import { useWorkspace } from "../../lib/workspace";
 import { Spinner } from "../ui/Spinner";
 import { useToast } from "../ui/Toast";
+import { acronymCompletionSource, extractAcronyms, hasAcronymBlock, sanitizeAcronymKey } from "./acronymCompletion";
 import { citeCompletionSource } from "./citeCompletion";
 import { envCompletionSource } from "./envCompletion";
 import {
@@ -35,7 +36,7 @@ import { lintLatex } from "./polishingLint";
 import type { LintFinding } from "./polishingLint";
 import { findTabularEnvironments, serializeTabular } from "./tableDesigner";
 import type { TabularMatch } from "./tableDesigner";
-import { looksLikeHtmlTable, parseHtmlTableToGridModel } from "./tablePaste";
+import { escapeLatexText, looksLikeHtmlTable, parseHtmlTableToGridModel } from "./tablePaste";
 import { tableDesignerGutter } from "./tableDesignerGutter";
 import { packageDocsGutter } from "./packageDocsGutter";
 import {
@@ -308,6 +309,14 @@ export interface CodeMirrorEditorHandle {
    * already preceded by `\`) by inserting a `\` before it. False if the
    * line has no unescaped `&` left (already fixed, or the line shifted). */
   applyEscapeAmpersand: (lineNumber: number) => boolean;
+  /** Acronym autocomplete's "+ New acronym…" entry (acronymCompletion.ts):
+   * inserts `\acro{key}[short]{long}` into the existing `\begin{acronym}`
+   * block (creating `\usepackage{acronym}` and the block itself, right after
+   * `\begin{document}`, if neither exists yet), then drops the finished
+   * `\ac{key}` into the exact `[from, to)` range the completion was
+   * triggered from. False if that range no longer looks like what was typed
+   * (e.g. a concurrent edit moved it). */
+  applyNewAcronymEntry: (payload: { from: number; to: number; key: string; short: string | null; long: string }) => boolean;
 }
 
 interface CodeMirrorEditorProps {
@@ -371,6 +380,18 @@ interface CodeMirrorEditorProps {
    * Outline/Figures & Tables tabs (Plan.md §9 Phase 11) scan this rather
    * than reaching into the editor's own Yjs document. */
   onDocTextChange?: (text: string) => void;
+  /** Acronym autocomplete's "+ New acronym…" entry (acronymCompletion.ts):
+   * fires with the range the `\ac{...` completion was triggered from, plus
+   * whether a `\begin{acronym}` block already exists and the keys already
+   * defined in it, so the caller's dialog can prefill/validate before
+   * confirming via `applyNewAcronymEntry`. */
+  onRequestNewAcronym?: (payload: {
+    prefillKey: string;
+    from: number;
+    to: number;
+    hasBlock: boolean;
+    existingKeys: string[];
+  }) => void;
 }
 
 export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEditorProps>(function CodeMirrorEditor(
@@ -397,6 +418,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
     onAddComment,
     onCommentAnchorClick,
     onDocTextChange,
+    onRequestNewAcronym,
   },
   ref,
 ) {
@@ -447,7 +469,10 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
           }
         }
       }
-      const insertText = `\\usepackage{${pkg}}`;
+      // `acronym`'s default behavior prints every `\acro`-defined entry as a
+      // list right where `\begin{acronym}` sits — surprising for a package
+      // added just to make `\ac{}` work, so default to suppressing it.
+      const insertText = pkg === "acronym" ? "\\usepackage[nolist]{acronym}" : `\\usepackage{${pkg}}`;
       if (anchorLine === -1) {
         view.dispatch({ changes: { from: 0, to: 0, insert: `${insertText}\n` }, userEvent: "input" });
       } else {
@@ -485,6 +510,82 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
       if (idx === -1) return false;
       const pos = line.from + idx;
       view.dispatch({ changes: { from: pos, to: pos, insert: "\\" }, userEvent: "input" });
+      return true;
+    },
+    applyNewAcronymEntry: ({ from, to, key, short, long }) => {
+      const view = viewRef.current;
+      if (!view) return false;
+      const doc = view.state.doc;
+      if (from < 0 || to > doc.length || from > to) return false;
+
+      const text = doc.toString();
+      // The `acronym` package's key becomes part of a `\csname...\endcsname`
+      // macro name — a pure-expansion context that escaped-symbol commands
+      // like `\&` don't survive — so it must be plain alphanumerics.
+      // Anything the user typed that doesn't survive that (e.g. "H&E")
+      // becomes the bracketed *display* form instead, which has no such
+      // restriction. Dedupe against existing keys the same sanitized way.
+      let sanitizedKey = sanitizeAcronymKey(key);
+      const existingSanitizedKeys = extractAcronyms(text).map((a) => a.key);
+      if (existingSanitizedKeys.includes(sanitizedKey)) {
+        let n = 2;
+        while (existingSanitizedKeys.includes(`${sanitizedKey}${n}`)) n++;
+        sanitizedKey = `${sanitizedKey}${n}`;
+      }
+      const escLong = escapeLatexText(long);
+      const displayText = escapeLatexText(short || key);
+      const acroLine =
+        displayText !== sanitizedKey
+          ? `\\acro{${sanitizedKey}}[${displayText}]{${escLong}}`
+          : `\\acro{${sanitizedKey}}{${escLong}}`;
+      const changes: { from: number; to: number; insert: string }[] = [];
+
+      const endMatch = /\\end\{acronym\}/.exec(text);
+      if (endMatch) {
+        const line = doc.lineAt(endMatch.index);
+        // Match the indent of the line right above `\end{acronym}` (the
+        // last existing `\acro{...}` entry, if any) rather than `\end`'s own
+        // indent — `\end{acronym}` itself sits at column 0, so copying it
+        // would leave every entry after the first one un-indented.
+        const prevLine = line.number > 1 ? doc.line(line.number - 1) : null;
+        const indentMatch = prevLine ? /^[ \t]*/.exec(prevLine.text) : null;
+        const indent = indentMatch && indentMatch[0] ? indentMatch[0] : "\t";
+        changes.push({ from: line.from, to: line.from, insert: `${indent}${acroLine}\n` });
+      } else {
+        if (!/\\usepackage(\[[^[\]]*\])?\{acronym\}/.test(text)) {
+          const lines = text.split("\n");
+          let anchorLine = -1;
+          for (let i = 0; i < lines.length; i++) if (PACKAGE_LINE_RE.test(lines[i])) anchorLine = i + 1;
+          if (anchorLine === -1) {
+            for (let i = 0; i < lines.length; i++) {
+              if (/\\documentclass(\[[^[\]]*\])?\{[^{}]*\}/.test(lines[i])) {
+                anchorLine = i + 1;
+                break;
+              }
+            }
+          }
+          const pkgLine = "\\usepackage[nolist]{acronym}";
+          if (anchorLine === -1) {
+            changes.push({ from: 0, to: 0, insert: `${pkgLine}\n` });
+          } else {
+            const pos = doc.line(anchorLine).to;
+            changes.push({ from: pos, to: pos, insert: `\n${pkgLine}` });
+          }
+        }
+        const block = `\\begin{acronym}\n\t${acroLine}\n\\end{acronym}\n`;
+        const beginDocMatch = /\\begin\{document\}/.exec(text);
+        if (beginDocMatch) {
+          const line = doc.lineAt(beginDocMatch.index);
+          changes.push({ from: line.to, to: line.to, insert: `\n${block}` });
+        } else {
+          changes.push({ from: doc.length, to: doc.length, insert: `\n${block}` });
+        }
+      }
+
+      const afterChar = doc.sliceString(to, to + 1);
+      changes.push({ from, to, insert: sanitizedKey + (afterChar === "}" ? "" : "}") });
+
+      view.dispatch({ changes, userEvent: "input" });
       return true;
     },
   }));
@@ -553,6 +654,8 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
   onAddCommentRef.current = onAddComment;
   const onDocTextChangeRef = useRef(onDocTextChange);
   onDocTextChangeRef.current = onDocTextChange;
+  const onRequestNewAcronymRef = useRef(onRequestNewAcronym);
+  onRequestNewAcronymRef.current = onRequestNewAcronym;
   const [commentMenu, setCommentMenu] = useState<{ x: number; y: number; from: number; to: number; text: string; line: number } | null>(null);
   const onOpenTableDesignerRef = useRef(onOpenTableDesigner);
   onOpenTableDesignerRef.current = onOpenTableDesigner;
@@ -797,6 +900,19 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
                 packageCompletionSource(),
                 includegraphicsFileCompletionSource(() => imageFilePathsRef.current),
                 includegraphicsOptionsCompletionSource(),
+                acronymCompletionSource(
+                  () => extractAcronyms(ytext.toString()),
+                  (prefillKey, from, to) => {
+                    const text = ytext.toString();
+                    onRequestNewAcronymRef.current?.({
+                      prefillKey,
+                      from,
+                      to,
+                      hasBlock: hasAcronymBlock(text),
+                      existingKeys: extractAcronyms(text).map((a) => a.key),
+                    });
+                  },
+                ),
               ],
             }),
             keymap.of([

@@ -39,7 +39,7 @@ const ESCAPE_MAP: Record<string, string> = {
   "^": "\\textasciicircum{}",
 };
 
-function escapeLatexText(s: string): string {
+export function escapeLatexText(s: string): string {
   return s.replace(ESCAPE_RE, (ch) => ESCAPE_MAP[ch]);
 }
 
