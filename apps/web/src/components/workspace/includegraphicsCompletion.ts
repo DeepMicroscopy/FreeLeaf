@@ -19,7 +19,13 @@ const OPTION_KEYS = ["width", "height", "scale", "angle", "trim", "clip", "keepa
 
 function applyOptionKey(view: EditorView, completion: Completion, from: number, to: number): void {
   const insert = `${completion.label}=`;
-  view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length } });
+  // See completionUtils.ts's applyAndCloseBrace for why userEvent is needed
+  // (Reviewing mode's suggestion-rewrite only picks up "input"/"delete").
+  view.dispatch({
+    changes: { from, to, insert },
+    selection: { anchor: from + insert.length },
+    userEvent: "input.complete",
+  });
 }
 
 export function includegraphicsFileCompletionSource(getImagePaths: () => string[]) {

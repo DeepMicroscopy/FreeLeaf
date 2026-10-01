@@ -6,8 +6,8 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { StreamLanguage } from "@codemirror/language";
 import { stex } from "@codemirror/legacy-modes/mode/stex";
 import { openSearchPanel, search, searchKeymap } from "@codemirror/search";
-import { EditorState } from "@codemirror/state";
-import type { Transaction, TransactionSpec } from "@codemirror/state";
+import { EditorState, Transaction } from "@codemirror/state";
+import type { TransactionSpec } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, tooltips } from "@codemirror/view";
 import { yCollab } from "y-codemirror.next";
 import { WebsocketProvider } from "y-websocket";
@@ -1115,6 +1115,16 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
                 if (plan.changes) {
                   const spec: TransactionSpec = { changes: plan.changes, scrollIntoView: tr.scrollIntoView };
                   if (plan.selectionAnchor != null) spec.selection = { anchor: plan.selectionAnchor };
+                  // Without this, the rewritten transaction silently drops
+                  // whatever userEvent the original carried (e.g.
+                  // "input.complete"/"input.type") — CodeMirror's own
+                  // autocompletion plugin decides whether to (re)trigger the
+                  // completion popup partly by inspecting that annotation on
+                  // the transactions it's updated with, so every
+                  // Reviewing-mode edit silently stopped autocomplete from
+                  // ever (re)opening, not just completions' own inserts.
+                  const origUserEvent = tr.annotation(Transaction.userEvent);
+                  if (origUserEvent) spec.userEvent = origUserEvent;
                   rewritten.push(tr.startState.update(spec));
                   formatOps.push(...plan.formatOps);
                   continue;

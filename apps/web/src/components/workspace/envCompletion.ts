@@ -26,8 +26,14 @@ const COMMON_ENVIRONMENTS = [
 function applyEnvironment(view: EditorView, completion: Completion, from: number, to: number): void {
   const name = completion.label;
   const afterChar = view.state.sliceDoc(to, to + 1);
+  // userEvent lets Reviewing mode's suggestion-rewrite pick this up as a
+  // suggestable edit — see completionUtils.ts's applyAndCloseBrace.
   if (afterChar === "}") {
-    view.dispatch({ changes: { from, to, insert: name }, selection: { anchor: from + name.length } });
+    view.dispatch({
+      changes: { from, to, insert: name },
+      selection: { anchor: from + name.length },
+      userEvent: "input.complete",
+    });
     return;
   }
 
@@ -39,6 +45,7 @@ function applyEnvironment(view: EditorView, completion: Completion, from: number
   view.dispatch({
     changes: { from, to, insert },
     selection: { anchor: from + openPart.length },
+    userEvent: "input.complete",
   });
 }
 
