@@ -8,7 +8,7 @@ import { stex } from "@codemirror/legacy-modes/mode/stex";
 import { openSearchPanel, search, searchKeymap } from "@codemirror/search";
 import { EditorState } from "@codemirror/state";
 import type { Transaction, TransactionSpec } from "@codemirror/state";
-import { EditorView, keymap, lineNumbers } from "@codemirror/view";
+import { EditorView, keymap, lineNumbers, tooltips } from "@codemirror/view";
 import { yCollab } from "y-codemirror.next";
 import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
@@ -880,6 +880,14 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
           doc: ytext.toString(),
           extensions: [
             lineNumbers(),
+            // Without this, CodeMirror appends tooltip DOM (autocomplete
+            // popups, hover tooltips) inside `.cm-editor` itself, which sits
+            // under two nested `overflow: hidden` ancestors (SplitPane's
+            // `.pane` and this component's own `.editorHost`) — the popup
+            // gets clipped to the editor pane's bounds instead of floating
+            // over the neighboring PDF-preview pane. Parenting to
+            // `document.body` escapes both.
+            tooltips({ parent: document.body }),
             history(),
             StreamLanguage.define(stex),
             latexSyntaxHighlighting,

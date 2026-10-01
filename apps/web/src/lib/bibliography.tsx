@@ -2,7 +2,7 @@ import { api, findDuplicateByContent, parseBibtex, serializeEntry } from "@freel
 import type { BibEntry } from "@freeleaf/shared";
 import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 interface AddResult {
@@ -161,30 +161,51 @@ export function useBibDoc(projectId: string, fileId: string | null): BibDoc {
 
 interface BibliographyContextValue extends BibDoc {
   centralFileId: string | null;
+  /** Re-fetches which file is the project's central .bib (Settings'
+   * `central_bib_path`) and reconnects to it — `useBibDoc`'s own effect
+   * already tears down/reopens the Yjs connection whenever `centralFileId`
+   * changes, so this is the only piece missing to pick up a setting change
+   * made elsewhere (SettingsTab) without a full reload: the initial fetch
+   * below only ever ran once, on mount, keyed on `projectId` alone, so a
+   * mid-session change to `central_bib_path` was invisible until the next
+   * remount. */
+  refreshCentralFile: () => Promise<void>;
 }
 
 const BibliographyContext = createContext<BibliographyContextValue | null>(null);
 
 export function BibliographyProvider({ projectId, children }: { projectId: string; children: ReactNode }) {
   const [centralFileId, setCentralFileId] = useState<string | null>(null);
+  // Guards against a stale response winning a race against a newer one (e.g.
+  // projectId changes again before the first fetch resolves) without the
+  // classic "mounted ref" pitfall: a ref toggled false in an effect cleanup
+  // and never reset true doesn't survive React StrictMode's dev-only
+  // double-invoke of effects (mount -> cleanup -> mount again, same ref) —
+  // it ends up permanently false, silently dropping every future fetch.
+  // Comparing against a plain render-time assignment has no such lifecycle
+  // to get out of sync with.
+  const projectIdRef = useRef(projectId);
+  projectIdRef.current = projectId;
+
+  const refreshCentralFile = useCallback(async () => {
+    const forProjectId = projectId;
+    const { data } = await api.GET("/api/projects/{project_id}/bibliography", {
+      params: { path: { project_id: forProjectId } },
+    });
+    if (data && projectIdRef.current === forProjectId) setCentralFileId(data.file_id);
+  }, [projectId]);
 
   useEffect(() => {
-    let cancelled = false;
     setCentralFileId(null);
-    api
-      .GET("/api/projects/{project_id}/bibliography", { params: { path: { project_id: projectId } } })
-      .then(({ data }) => {
-        if (!cancelled && data) setCentralFileId(data.file_id);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId]);
+    void refreshCentralFile();
+  }, [projectId, refreshCentralFile]);
 
   const doc = useBibDoc(projectId, centralFileId);
 
   return (
-    <BibliographyContext.Provider value={{ ...doc, centralFileId, loading: doc.loading || !centralFileId }}>
+    <BibliographyContext.Provider
+      value={{ ...doc, centralFileId, loading: doc.loading || !centralFileId, refreshCentralFile }}
+    >
       {children}
     </BibliographyContext.Provider>
   );

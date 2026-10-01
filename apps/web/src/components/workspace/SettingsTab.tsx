@@ -4,6 +4,7 @@ import { Settings2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { useBibliography } from "../../lib/bibliography";
 import { useWorkspace } from "../../lib/workspace";
 import { Button } from "../ui/Button";
 import { TextField } from "../ui/TextField";
@@ -16,6 +17,7 @@ type ProjectSettingsOut = components["schemas"]["ProjectSettingsOut"];
 
 export function SettingsTab() {
   const { projectId, project, files, canWrite, refreshProject } = useWorkspace();
+  const { refreshCentralFile } = useBibliography();
   const { show } = useToast();
   const navigate = useNavigate();
   const [settings, setSettings] = useState<ProjectSettingsOut | null>(null);
@@ -99,6 +101,7 @@ export function SettingsTab() {
     }
     setSettings(data);
     show("Settings saved.");
+    if ("central_bib_path" in patch) void refreshCentralFile();
   }
 
   if (loading) return <PageSpinner />;
