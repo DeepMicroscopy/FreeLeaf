@@ -6,7 +6,7 @@ import * as syncProtocol from "y-protocols/sync";
 import * as awarenessProtocol from "y-protocols/awareness";
 import { WebSocket, WebSocketServer } from "ws";
 
-import { Room } from "./room.js";
+import { Room, resolveStoredContent } from "./room.js";
 import { InvalidCollabToken, decodeCollabTokenUnsafe, verifyCollabToken } from "./token.js";
 import { persistFileContent } from "./apiClient.js";
 
@@ -193,8 +193,15 @@ async function handleFlushRequest(req: IncomingMessage, res: ServerResponse) {
   const fileId = (req.url ?? "").replace(/^\/flush\//, "");
   const room = rooms.get(fileId);
   if (room) await room.flush();
+  // `resolvedContent` (pending suggestions resolved as-if-accepted — see
+  // room.ts) is what api's compile path should use instead of the raw
+  // flushed text, which still literally contains not-yet-accepted
+  // deletions. Prefer the live room (freshest); for every other file in the
+  // project, which isn't open in any collab room right now, fall back to
+  // resolving from the just-flushed/persisted snapshot.
+  const resolvedContent = room ? room.resolvedContent() : await resolveStoredContent(fileId);
   res.writeHead(200, { "content-type": "application/json" });
-  res.end(JSON.stringify({ ok: true, flushed: Boolean(room) }));
+  res.end(JSON.stringify({ ok: true, flushed: Boolean(room), resolvedContent }));
 }
 
 function readBody(req: IncomingMessage): Promise<string> {

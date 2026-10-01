@@ -45,7 +45,7 @@ def get_or_create_settings(project) -> ProjectSettings:
     return settings_row
 
 
-def flush_collab_rooms(project) -> None:
+def flush_collab_rooms(project) -> dict[uuid.UUID, str]:
     """Force any open Yjs collab room (Phase 5) for this project's files to
     persist its in-memory state to storage *right now*, before we read that
     storage for a compile. Without this, a file being actively co-edited only
@@ -55,30 +55,47 @@ def flush_collab_rooms(project) -> None:
     target had just been edited, but the compiled log showed latexmk
     searching for the *previous* filename, because the compile ran against
     pre-edit storage. No-op per file if no room is currently open for it
-    (collab reports `flushed: false`; storage was already authoritative)."""
+    (collab reports `flushed: false`; storage was already authoritative).
+
+    Returns each file's *resolved* content (pending reviewing-mode
+    suggestions applied as-if-accepted; see apps/collab's room.ts) when
+    collab was able to compute one — `materialize_tar` uses this instead of
+    the raw stored bytes, which still literally contain not-yet-accepted
+    deletions (Plan.md §9 Phase 8 extension): compiling a document with a
+    pending suggestion used to put both the old and new text in the PDF."""
+    resolved: dict[uuid.UUID, str] = {}
     for f in project.files.exclude(type=FileType.FOLDER):
         url = f"{django_settings.COLLAB_INTERNAL_URL}/flush/{f.id}"
         request = urllib.request.Request(
             url, method="POST", headers={"X-Collab-Secret": django_settings.COLLAB_SHARED_SECRET}
         )
         try:
-            urllib.request.urlopen(request, timeout=COLLAB_FLUSH_TIMEOUT_SECONDS)
-        except (urllib.error.URLError, urllib.error.HTTPError) as exc:
-            # Best-effort: if collab is unreachable, compile against whatever
-            # storage already has rather than failing the whole compile.
+            with urllib.request.urlopen(request, timeout=COLLAB_FLUSH_TIMEOUT_SECONDS) as response:
+                body = json.loads(response.read())
+                if body.get("resolvedContent") is not None:
+                    resolved[f.id] = body["resolvedContent"]
+        except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, ValueError) as exc:
+            # Best-effort: if collab is unreachable or returns something
+            # unexpected, compile against whatever storage already has
+            # rather than failing the whole compile.
             logger.warning("collab flush failed for file %s: %s", f.id, exc)
+    return resolved
 
 
-def materialize_tar(project) -> bytes:
+def materialize_tar(project, resolved_content: dict[uuid.UUID, str] | None = None) -> bytes:
     """Bundle the project's current file content into an in-memory tar for
     the compile service. Storage keys are opaque server-generated ids
     (see files_api.py); `path` is what's already been validated against
     path traversal at file-creation time — reused here as the tar member
     name so the compiled document sees the same tree the editor shows."""
+    resolved_content = resolved_content or {}
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w") as tar:
         for f in project.files.exclude(type=FileType.FOLDER):
-            data = storage.get_object(f.storage_key)
+            if f.id in resolved_content:
+                data = resolved_content[f.id].encode("utf-8")
+            else:
+                data = storage.get_object(f.storage_key)
             info = tarfile.TarInfo(name=f.path)
             info.size = len(data)
             tar.addfile(info, io.BytesIO(data))
@@ -310,8 +327,8 @@ def start_compile(request, project_id: uuid.UUID):
     require_role(membership, Role.OWNER, Role.EDITOR)
 
     settings_row = get_or_create_settings(project)
-    flush_collab_rooms(project)
-    tar_bytes = materialize_tar(project)
+    resolved_content = flush_collab_rooms(project)
+    tar_bytes = materialize_tar(project, resolved_content)
     job_id = dispatch_compile_start(tar_bytes, settings_row.compiler, settings_row.main_doc_path)
     return CompileStartOut(job_id=job_id)
 

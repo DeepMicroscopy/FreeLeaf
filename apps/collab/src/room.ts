@@ -5,6 +5,57 @@ import { fetchFileContent, fetchYjsSnapshot, persistFileContent, persistYjsSnaps
 
 const PERSIST_INTERVAL_MS = 4000;
 
+/** Projects a Y.Text down to the plain text a *compiler* (or any other
+ * "give me the real document" consumer) should see. Pending suggestions
+ * (Plan.md §9 Phase 8 extension — see suggestions.ts) are stored as literal
+ * characters still present in the text, tagged via Yjs rich-text formatting
+ * (`sugg: "ins" | "del"`), specifically so reviewers can toggle between
+ * before/after. `ytext.toString()` throws that tagging away and keeps both
+ * sides — a pending deletion (struck-through, not yet accepted/rejected)
+ * rides along into the output right next to its replacement, which is
+ * exactly the "both the old and new text show up in the PDF" bug this
+ * exists to fix. Resolving here means "compile as if every pending
+ * suggestion were accepted": keep `sugg:"ins"` and untagged runs, drop
+ * `sugg:"del"` runs. This never touches what's actually persisted (`flush()`
+ * still writes the raw, fully-tagged text) — only what gets handed to the
+ * compiler, so reviewing-mode's full tracked-changes state is untouched. */
+export function resolveSuggestions(ytext: Y.Text): string {
+  let out = "";
+  for (const op of ytext.toDelta() as Array<{ insert?: unknown; attributes?: { sugg?: string } }>) {
+    if (typeof op.insert !== "string") continue;
+    if (op.attributes?.sugg === "del") continue;
+    out += op.insert;
+  }
+  return out;
+}
+
+/** Same "decode a snapshot, trust it only if its plain text still matches
+ * current storage" discipline as `Room.seed()` — used here for files with no
+ * currently-open collab room (so there's no live `Y.Text` to resolve from),
+ * such as every other file in the project during a compile. A mismatch means
+ * something changed storage outside the collab room since the snapshot was
+ * taken (a non-collab edit, a version restore); per the same tie-break as
+ * `seed()`, the stale snapshot is discarded and `null` is returned, meaning
+ * "nothing to resolve — compile against the plain content as-is", the same
+ * behavior as before this existed. */
+export async function resolveStoredContent(fileId: string): Promise<string | null> {
+  const [content, snapshot] = await Promise.all([
+    fetchFileContent(fileId).catch(() => null),
+    fetchYjsSnapshot(fileId).catch(() => null),
+  ]);
+  if (content == null || !snapshot) return null;
+
+  const scratch = new Y.Doc();
+  try {
+    Y.applyUpdate(scratch, snapshot);
+    const scratchText = scratch.getText("content");
+    if (scratchText.toString() !== content) return null;
+    return resolveSuggestions(scratchText);
+  } finally {
+    scratch.destroy();
+  }
+}
+
 /** One collaborative `.tex`/`.bib` document. The shared text lives under the
  * "content" key so the frontend's y-codemirror.next binding and this server
  * agree on where it is. */
@@ -97,6 +148,13 @@ export class Room {
       console.error(`[collab] failed to persist ${this.fileId}:`, err);
       this.dirty = true; // retry on the next tick
     }
+  }
+
+  /** The live document's text, with pending suggestions resolved as if
+   * accepted — see `resolveSuggestions`. Always reflects the current
+   * in-memory state, not the last flush. */
+  resolvedContent(): string {
+    return resolveSuggestions(this.ytext);
   }
 
   /** Replaces the whole document (used by version-history restore, Plan.md
