@@ -128,15 +128,36 @@ export function suggestionHoverTooltip(
   canModerate: () => boolean,
 ) {
   return hoverTooltip(
-    (_view, pos) => {
+    (view, pos) => {
       const span = getSpans().find((s) => pos >= s.from && pos < s.to);
       if (!span) return null;
       return {
+        // Keep the *dismiss* hit-region spanning the whole suggestion
+        // ([span.from, span.to]) so moving the mouse anywhere within it
+        // keeps the popup open — but render it near the actual hover
+        // point (`getCoords`) rather than always at the span's start.
+        // Without this, hovering near the end of a long/merged suggestion
+        // (see #2 — merging is now unbounded by time, so spans can get
+        // long) still anchored the popup back at the far start, putting
+        // it visibly far from the cursor.
         pos: span.from,
         end: span.to,
         above: true,
         create() {
           const { color } = colorForUserId(span.authorId);
+
+          // CodeMirror's built-in hover-tooltip dismissal closes the popup
+          // the instant the mouse's pixel position leaves both the
+          // suggestion's own text *and* a ~4px margin around the popup's
+          // actual DOM box, with no grace delay — moving the mouse
+          // diagonally from the text up to this `above: true` popup
+          // crosses a gap that's neither "over the text" nor "near the
+          // popup" for part of the trip, closing it before arrival. An
+          // invisible bottom strip, part of the hoverable DOM box but with
+          // no visible content, extends that safe zone most of the way
+          // down to the text without changing how the popup looks.
+          const wrapper = document.createElement("div");
+          wrapper.style.paddingBottom = "14px";
 
           const dom = document.createElement("div");
           dom.className = "cm-suggestionTooltip";
@@ -168,7 +189,7 @@ export function suggestionHoverTooltip(
             acceptBtn.onclick = (e) => {
               e.preventDefault();
               acceptSuggestionAt(getYtext(), span.from, span.to, span.kind);
-              _view.dispatch({ effects: closeHoverTooltips });
+              view.dispatch({ effects: closeHoverTooltips });
             };
 
             const rejectBtn = document.createElement("button");
@@ -177,7 +198,7 @@ export function suggestionHoverTooltip(
             rejectBtn.onclick = (e) => {
               e.preventDefault();
               rejectSuggestionAt(getYtext(), span.from, span.to, span.kind);
-              _view.dispatch({ effects: closeHoverTooltips });
+              view.dispatch({ effects: closeHoverTooltips });
             };
 
             actions.appendChild(acceptBtn);
@@ -185,7 +206,17 @@ export function suggestionHoverTooltip(
             dom.appendChild(actions);
           }
 
-          return { dom };
+          wrapper.appendChild(dom);
+          return {
+            dom: wrapper,
+            // `getCoords` belongs on the TooltipView (what create() returns)
+            // — CodeMirror calls this with the Tooltip spec's own `pos`
+            // (span.from), which we deliberately ignore in favor of the
+            // actual hover position captured in this closure, so the popup
+            // anchors near wherever the mouse is hovering rather than
+            // always at the suggestion's start.
+            getCoords: () => view.coordsAtPos(pos) ?? view.coordsAtPos(span.from) ?? view.dom.getBoundingClientRect(),
+          };
         },
       };
     },

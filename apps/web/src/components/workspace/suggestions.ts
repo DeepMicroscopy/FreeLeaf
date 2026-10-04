@@ -93,28 +93,35 @@ function findSpanAt(ytext: Y.Text, from: number, to: number): SuggestionSpan | n
   return computeSuggestionSpans(ytext).find((s) => s.from === from && s.to === to) ?? null;
 }
 
-const COALESCE_WINDOW_MS = 3000;
-
 /** Marks a just-made local edit's range as a suggestion — call this right
  * after the range already reflects the edit (for an insertion, the plain
  * text has already landed at [from, to); for a suppressed deletion, the
  * kept-in-place text already sits there unformatted).
  *
  * Continuous editing should read as one suggestion, not one per keystroke,
- * in both directions:
+ * in both directions — and so should *resuming* an edit to the same spot
+ * later, however much later: a reviewer who types a sentence, pauses for
+ * minutes, then keeps extending the same edit (or comes back and edits
+ * right at its boundary again) expects one suggestion to accept/reject, not
+ * a new fragment every time they stop and start. Merging is intentionally
+ * unbounded by time — it's scoped by adjacency/containment and matching
+ * author+kind instead, which is already exactly "the same person editing
+ * the same part again":
  *
  * - For insertions, Yjs's Y.Text auto-inherits the *preceding* run's
  *   formatting for a plain insert with no attributes of its own (a
  *   Quill-delta-compatible behavior) — if that inheritance already landed
- *   the same author's recent "ins" tag on this exact range, it's left alone
- *   so its *original* timestamp survives and `computeSuggestionSpans`
- *   merges it with what came before.
+ *   the same author's "ins" tag on this exact range, it's left alone so its
+ *   *original* timestamp survives and `computeSuggestionSpans` merges it
+ *   with what came before.
  * - Deletions never benefit from that inheritance (nothing is being
  *   inserted, just an already-present range getting formatted), and
  *   backward deletion extends *before* the existing span rather than
  *   directly after it — so both cases fall through to explicitly merging
- *   with any adjacent (not just covering) same-author/kind/recent span,
- *   re-tagging the union under the *earlier* span's original timestamp. */
+ *   with any adjacent (not just covering) same-author/kind span, re-tagging
+ *   the union under the *earlier* span's original timestamp (so its
+ *   displayed "X ago" reflects when the suggestion as a whole started, not
+ *   this latest extension of it). */
 export function ensureSuggestionTag(
   ytext: Y.Text,
   from: number,
@@ -126,7 +133,7 @@ export function ensureSuggestionTag(
 ): void {
   if (to <= from) return;
   const spans = computeSuggestionSpans(ytext);
-  const matches = (s: SuggestionSpan) => s.kind === kind && s.authorId === authorId && now - s.ts < COALESCE_WINDOW_MS;
+  const matches = (s: SuggestionSpan) => s.kind === kind && s.authorId === authorId;
 
   const covering = spans.find((s) => s.from <= from && s.to >= to && matches(s));
   if (covering) return;
