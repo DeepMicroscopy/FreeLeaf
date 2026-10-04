@@ -38,6 +38,7 @@ COMPILE_SERVICE_URL = os.environ.get("COMPILE_SERVICE_URL", "http://compile:8100
 DISPATCH_START_TIMEOUT_SECONDS = 10
 DISPATCH_STATUS_TIMEOUT_SECONDS = 10
 COLLAB_FLUSH_TIMEOUT_SECONDS = 5
+SYNCTEX_TIMEOUT_SECONDS = 10
 
 
 def get_or_create_settings(project) -> ProjectSettings:
@@ -147,7 +148,7 @@ def _dispatch_synctex(path: str, body: dict) -> dict | None:
         headers={"Content-Type": "application/json"},
     )
     try:
-        with urllib.request.urlopen(request, timeout=COMPILE_REQUEST_TIMEOUT_SECONDS) as response:
+        with urllib.request.urlopen(request, timeout=SYNCTEX_TIMEOUT_SECONDS) as response:
             return json.loads(response.read())
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
