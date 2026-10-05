@@ -3,6 +3,8 @@
 An open and free, self-hostable, collaborative LaTeX editing platform.
 Self-host it on your own infrastructure for full digital sovereignty over your documents and data — no third-party cloud, no account with someone else's ToS standing between you and your own research.
 
+![FreeLeaf's editor workspace: live LaTeX source on the left, compiled PDF preview on the right](./docs/assets/img/hero-workspace.png)
+
 Full spec: [`Plan.md`](./Plan.md). Working conventions for contributors/agents: [`CLAUDE.md`](./CLAUDE.md).
 
 ## Status
