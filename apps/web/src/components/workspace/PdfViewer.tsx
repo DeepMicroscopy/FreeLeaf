@@ -150,6 +150,26 @@ export const PdfViewer = forwardRef<
     void renderAllPages(baseScaleRef.current * zoom);
   }, [zoom, renderAllPages]);
 
+  // Ctrl/Cmd+scroll zoom — matches the OS/browser-native "hold modifier to
+  // zoom" convention (and what trackpad pinch-zoom gestures already send:
+  // browsers synthesize those as wheel events with ctrlKey set), so a plain
+  // scroll still just scrolls the page. A plain `onWheel` JSX prop can't
+  // preventDefault (React attaches it as a passive listener), which is
+  // required here to stop the browser's own page-zoom from also firing —
+  // so this is wired up manually with `{ passive: false }` instead.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      const factor = Math.exp(-event.deltaY * 0.0015);
+      setZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z * factor)));
+    };
+    container.addEventListener("wheel", onWheel, { passive: false });
+    return () => container.removeEventListener("wheel", onWheel);
+  }, []);
+
   useImperativeHandle(ref, () => ({
     scrollToPosition: ({ page, h, v, width, height }) => {
       const container = containerRef.current;
