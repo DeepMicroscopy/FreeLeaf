@@ -904,13 +904,30 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
       });
 
       const updatePresence = () => {
-        const others: PresenceUser[] = [];
+        // Keyed by color (deterministic per user id via colorForUserId), not
+        // clientId — a real person can transiently show up under more than
+        // one Yjs clientId for the same tab right after a page load: this
+        // effect's own reconnect (its dependency array includes user?.id/
+        // user?.display_name/readOnly, which legitimately change shortly
+        // after mount as auth/membership info finishes loading) tears down
+        // the old WebsocketProvider and opens a new one with a fresh random
+        // clientId, and the old clientId's awareness entry only disappears
+        // once the server processes that socket's close — a few seconds,
+        // not instant. Rather than chase that reconnect out of the effect
+        // entirely, collapsing same-color entries here fixes the visible
+        // symptom directly: the same person's stale and live presence both
+        // hash to the same color, so only one avatar for them ever shows,
+        // the same "one person, one dot" outcome multi-tab usage from a
+        // single real user should have anyway.
+        const seen = new Map<string, PresenceUser>();
         provider!.awareness.getStates().forEach((state, clientId) => {
           if (clientId === ydoc!.clientID) return;
           const info = (state as { user?: { name?: string; color?: string } }).user;
-          if (info) others.push({ clientId, name: info.name ?? "Anonymous", color: info.color ?? "#999" });
+          if (!info) return;
+          const color = info.color ?? "#999";
+          if (!seen.has(color)) seen.set(color, { clientId, name: info.name ?? "Anonymous", color });
         });
-        setPresence(others);
+        setPresence(Array.from(seen.values()));
       };
       provider.awareness.on("change", updatePresence);
 
