@@ -451,6 +451,30 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
   const { show } = useToast();
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  // Drives the pointer-cursor affordance while Ctrl/Cmd is held (see
+  // CodeMirrorEditor.module.css's .modifierHeld) — hints that clicking jumps
+  // to the PDF (SyncTeX forward search), since otherwise there's no visual
+  // indication the shortcut exists. Reset on window blur too, so alt-tabbing
+  // away mid-hold doesn't leave the cursor stuck looking clickable after the
+  // key is physically released elsewhere.
+  const [modifierHeld, setModifierHeld] = useState(false);
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Control" || e.key === "Meta") setModifierHeld(true);
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === "Control" || e.key === "Meta") setModifierHeld(false);
+    };
+    const onBlur = () => setModifierHeld(false);
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, []);
   useImperativeHandle(ref, () => ({
     openSearch: () => {
       if (viewRef.current) openSearchPanel(viewRef.current);
@@ -1264,7 +1288,11 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
         <PresenceRow users={presence} />
         <ConnectionStatusPill status={status} />
       </div>
-      <div className={styles.editorHost} ref={hostRef} />
+      <div
+        className={[styles.editorHost, modifierHeld ? styles.modifierHeld : ""].join(" ")}
+        ref={hostRef}
+        title="Cmd/Ctrl+click text to jump to that spot in the PDF"
+      />
       {loading && (
         <div className={styles.loadingOverlay}>
           <Spinner />

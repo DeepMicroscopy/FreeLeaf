@@ -34,6 +34,29 @@ export const PdfViewer = forwardRef<
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
+  // Drives the pointer-cursor affordance while Ctrl/Cmd is held (see
+  // PdfViewer.module.css's .modifierHeld) — otherwise there's no visual hint
+  // that holding the modifier and clicking jumps to the source. Reset on
+  // window blur too, so alt-tabbing away mid-hold doesn't leave the cursor
+  // stuck looking clickable after the key is physically released elsewhere.
+  const [modifierHeld, setModifierHeld] = useState(false);
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Control" || e.key === "Meta") setModifierHeld(true);
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === "Control" || e.key === "Meta") setModifierHeld(false);
+    };
+    const onBlur = () => setModifierHeld(false);
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, []);
 
   const docRef = useRef<PDFDocumentProxy | null>(null);
   const pagesRef = useRef<PDFPageProxy[]>([]);
@@ -74,9 +97,23 @@ export const PdfViewer = forwardRef<
       canvas.height = Math.floor(viewport.height * outputScale);
       canvas.style.width = `${viewport.width}px`;
       canvas.style.height = `${viewport.height}px`;
-      canvas.addEventListener("click", (event) => {
+      // `mousedown`, not `click` — gating this behind Ctrl/Cmd (see below)
+      // means holding the modifier matters, and on a `click` listener the
+      // browser/OS can reinterpret a held-Ctrl press as a secondary-click
+      // gesture (the same convention as "Ctrl+click = right-click" on
+      // macOS), which fires `contextmenu` instead and never dispatches a
+      // `click` event at all. `mousedown` fires on press regardless of that
+      // reinterpretation — the same reason CodeMirror's own forward-search
+      // handler (CodeMirrorEditor.tsx) uses `mousedown` rather than `click`.
+      canvas.addEventListener("mousedown", (event) => {
         const handler = onSourceClickRef.current;
         if (!handler) return;
+        // Gated behind Ctrl/Cmd, symmetric with forward search's own
+        // Ctrl/Cmd+click in the editor — otherwise every plain click on the
+        // PDF silently jumped the editor, with no indication beforehand
+        // that clicking would do anything at all.
+        if (!event.ctrlKey && !event.metaKey) return;
+        event.preventDefault();
         const rect = canvas.getBoundingClientRect();
         const cssX = event.clientX - rect.left;
         const cssY = event.clientY - rect.top;
@@ -227,7 +264,11 @@ export const PdfViewer = forwardRef<
           <Maximize size={14} aria-hidden="true" />
         </Button>
       </div>
-      <div className={styles.scroller} ref={containerRef} />
+      <div
+        className={[styles.scroller, modifierHeld ? styles.modifierHeld : ""].join(" ")}
+        ref={containerRef}
+        title="Cmd/Ctrl+click a spot in the PDF to jump to that line in the source"
+      />
       {loading && (
         <div className={styles.overlay}>
           <Spinner />

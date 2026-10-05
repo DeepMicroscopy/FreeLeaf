@@ -22,7 +22,14 @@
   box-shadow: var(--shadow-md);
   border-radius: 2px;
   background: #fff;
-  cursor: text;
+}
+
+/* Only shown while Ctrl/Cmd is actually held (see PdfViewer.tsx) — a plain
+ * click no longer jumps to source (gated behind the modifier, matching
+ * forward search's own Ctrl/Cmd+click-in-the-editor gesture), so the cursor
+ * should only hint "clickable" when that modifier is active. */
+.scroller.modifierHeld .page {
+  cursor: pointer;
 }
 
 .toolbar {

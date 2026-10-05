@@ -69,6 +69,13 @@
   height: 100%;
 }
 
+/* Only applied while Ctrl/Cmd is actually held (see CodeMirrorEditor.tsx) —
+ * hints that clicking jumps to the PDF (SyncTeX forward search), since
+ * otherwise there's no visual indication the shortcut exists at all. */
+.editorHost.modifierHeld :global(.cm-content) {
+  cursor: pointer;
+}
+
 .loadingOverlay {
   position: absolute;
   inset: 0;
