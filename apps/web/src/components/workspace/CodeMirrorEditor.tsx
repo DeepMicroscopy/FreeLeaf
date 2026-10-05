@@ -79,6 +79,29 @@ interface PresenceUser {
   color: string;
 }
 
+/** Shared host for `tooltips({ parent: ... })` below — a single, lazily
+ * created, zero-size element pinned to the viewport via `position: fixed`,
+ * reused across every editor instance rather than handing CodeMirror
+ * `document.body` directly. CodeMirror's tooltip container inherits the
+ * view's *entire* theme class list (so tooltip content picks up the right
+ * fonts/colors) — including our own `theme`'s `"&": { height: "100%" }`
+ * rule below, meant only for the real `.cm-editor` root. Attached straight
+ * to `document.body`, that rule resolved to 100% of the *page's* height,
+ * silently doubling the whole document's scroll height on every load (a
+ * real, reproduced bug, not a hypothetical). `width/height: 0` here makes
+ * that inherited `height: 100%` resolve to 0 instead — harmless, since
+ * `overflow: visible` still lets each tooltip's own absolutely-positioned
+ * content render whereever CodeMirror places it, same as before. */
+function getTooltipParent(): HTMLElement {
+  const existing = document.getElementById("cm-tooltip-host");
+  if (existing) return existing;
+  const el = document.createElement("div");
+  el.id = "cm-tooltip-host";
+  el.style.cssText = "position: fixed; inset: 0 auto auto 0; width: 0; height: 0; overflow: visible;";
+  document.body.appendChild(el);
+  return el;
+}
+
 const theme = EditorView.theme({
   "&": {
     height: "100%",
@@ -885,9 +908,10 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
             // under two nested `overflow: hidden` ancestors (SplitPane's
             // `.pane` and this component's own `.editorHost`) — the popup
             // gets clipped to the editor pane's bounds instead of floating
-            // over the neighboring PDF-preview pane. Parenting to
-            // `document.body` escapes both.
-            tooltips({ parent: document.body }),
+            // over the neighboring PDF-preview pane. Parenting escapes both
+            // — see getTooltipParent's doc comment for why that parent is a
+            // dedicated zero-size element and not document.body itself.
+            tooltips({ parent: getTooltipParent() }),
             history(),
             StreamLanguage.define(stex),
             latexSyntaxHighlighting,
