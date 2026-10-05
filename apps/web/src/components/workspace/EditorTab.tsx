@@ -87,6 +87,27 @@ export function EditorTab() {
   const [focusedComment, setFocusedComment] = useState<{ id: string; token: number } | null>(null);
   const focusCommentTokenRef = useRef(0);
 
+  // The unresolved-comment badge on the Comments toggle needs `comments`
+  // populated even when the pane itself is closed (CommentsPane only fetches
+  // once it's mounted) — otherwise the badge stayed empty until the user
+  // opened the pane at least once, defeating its whole point ("see there are
+  // unresolved comments without opening it"). CommentsPane's own fetch (when
+  // open) still runs too and overwrites this with the same canonical data —
+  // a harmless redundant request, not a correctness issue.
+  useEffect(() => {
+    if (!selectedFile) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await api.GET("/api/projects/{project_id}/files/{file_id}/comments", {
+        params: { path: { project_id: projectId, file_id: selectedFile.id } },
+      });
+      if (!cancelled) setComments(data ?? []);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, selectedFile?.id]);
+
   const toggleComments = useCallback(() => {
     setShowComments((prev) => {
       const next = !prev;
