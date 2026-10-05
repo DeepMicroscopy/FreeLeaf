@@ -32,6 +32,30 @@
   flex: none;
 }
 
+.commentsToggleWrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.commentsBadge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1;
+  pointer-events: none;
+}
+
 .modeBanner {
   padding: 6px var(--space-3);
   font-size: 12px;

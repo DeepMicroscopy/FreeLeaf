@@ -165,6 +165,11 @@ export function EditorTab() {
     [comments],
   );
 
+  // Surfaced as a badge on the Comments toggle (Plan.md §9 Phase 8
+  // extension) — otherwise there's no indication unresolved comments exist
+  // at all short of opening the pane and scrolling through it.
+  const unresolvedCommentCount = useMemo(() => comments.filter((c) => !c.resolved).length, [comments]);
+
   // A pending selection anchor belongs to whichever file it was marked on —
   // discard it on file switch so it can't get attached to the wrong file.
   useEffect(() => {
@@ -588,14 +593,25 @@ export function EditorTab() {
               >
                 <Search size={14} aria-hidden="true" />
               </Button>
-              <Button
-                variant={showComments ? "secondary" : "ghost"}
-                size="sm"
-                onClick={toggleComments}
-                title="Toggle comments pane"
-              >
-                <MessageSquare size={14} aria-hidden="true" />
-              </Button>
+              <div className={styles.commentsToggleWrap}>
+                <Button
+                  variant={showComments ? "secondary" : "ghost"}
+                  size="sm"
+                  onClick={toggleComments}
+                  title={
+                    unresolvedCommentCount > 0
+                      ? `Toggle comments pane (${unresolvedCommentCount} unresolved)`
+                      : "Toggle comments pane"
+                  }
+                >
+                  <MessageSquare size={14} aria-hidden="true" />
+                </Button>
+                {unresolvedCommentCount > 0 && (
+                  <span className={styles.commentsBadge} aria-hidden="true">
+                    {unresolvedCommentCount > 99 ? "99+" : unresolvedCommentCount}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
           {mode === "polishing" && (
