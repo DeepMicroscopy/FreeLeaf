@@ -43,6 +43,10 @@ export function WorkspaceProvider({ projectId, children }: { projectId: string; 
   const [loading, setLoading] = useState(true);
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
   const [currentFileText, setCurrentFileText] = useState("");
+  // Only used to pick which file opens by default (below) — not exposed via
+  // context, since nothing else needs it (SettingsTab/CodeMirrorEditor each
+  // fetch settings themselves for their own purposes already).
+  const [mainDocPath, setMainDocPath] = useState<string | null>(null);
   const jumpToLineRef = useRef<((line: number) => void) | null>(null);
 
   const refreshFiles = useCallback(async () => {
@@ -61,12 +65,14 @@ export function WorkspaceProvider({ projectId, children }: { projectId: string; 
     let cancelled = false;
     setLoading(true);
     (async () => {
-      const [projectRes] = await Promise.all([
+      const [projectRes, settingsRes] = await Promise.all([
         api.GET("/api/projects/{project_id}", { params: { path: { project_id: projectId } } }),
+        api.GET("/api/projects/{project_id}/settings", { params: { path: { project_id: projectId } } }),
         refreshFiles(),
       ]);
       if (cancelled) return;
       setProject(projectRes.data ?? null);
+      setMainDocPath(settingsRes.data?.main_doc_path ?? null);
       setLoading(false);
     })();
     return () => {
@@ -75,10 +81,27 @@ export function WorkspaceProvider({ projectId, children }: { projectId: string; 
   }, [projectId, refreshFiles]);
 
   useEffect(() => {
-    if (selectedFileId || files.length === 0) return;
-    const mainTex = files.find((f) => f.path === "main.tex") ?? files.find((f) => f.type !== "folder");
-    if (mainTex) setSelectedFileId(mainTex.id);
-  }, [files, selectedFileId]);
+    // Also gated on `loading`: `files` and `mainDocPath` come from separate
+    // concurrent fetches in the effect above, so `files` can land a render
+    // before `mainDocPath` does — without this, that in-between render would
+    // lock in a fallback file before the real setting ever arrives (this
+    // effect never re-picks once `selectedFileId` is set). `loading` only
+    // flips false after *both* have resolved.
+    if (loading || selectedFileId || files.length === 0) return;
+    const texFiles = files.filter((f) => f.type === "tex");
+    // Prefer the project's actual configured main document — falling
+    // straight to "whatever's first in the list" when that path doesn't
+    // literally match a file (e.g. a template/zip import whose real main
+    // file isn't named "main.tex", while the setting defaults to it) is
+    // what made this pick what looked like an arbitrary file. A project
+    // with only one .tex file is unambiguous regardless of the setting.
+    const mainDoc =
+      files.find((f) => f.path === mainDocPath) ??
+      (texFiles.length === 1 ? texFiles[0] : undefined) ??
+      files.find((f) => f.path === "main.tex") ??
+      files.find((f) => f.type !== "folder");
+    if (mainDoc) setSelectedFileId(mainDoc.id);
+  }, [files, selectedFileId, mainDocPath, loading]);
 
   const canWrite = project?.role === "owner" || project?.role === "editor";
   const canEditText = canWrite || project?.role === "reviewer";
