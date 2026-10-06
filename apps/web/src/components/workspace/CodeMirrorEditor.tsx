@@ -736,7 +736,18 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
   const imageFilePathsRef = useRef<string[]>([]);
-  imageFilePathsRef.current = files.filter((f) => f.type === "image").map((f) => f.path);
+  // `\includegraphics` candidates, not "files the browser can preview as an
+  // <img>" (that's what `type === "image"` is for, e.g. ImagePreviewPane) —
+  // the two overlap but aren't the same set. pdflatex/xelatex's graphicx can
+  // embed a `.pdf` figure directly (the standard way to include a vector
+  // plot exported from matplotlib/R/Inkscape, extremely common in LaTeX
+  // documents), but a `.pdf` is classified `type: "other"` on the backend
+  // since it can't be rendered via a plain `<img>` tag the way the preview
+  // pane needs — so it's added back in here, specifically for completion,
+  // without reclassifying it and breaking that preview routing.
+  imageFilePathsRef.current = files
+    .filter((f) => f.type === "image" || f.path.toLowerCase().endsWith(".pdf"))
+    .map((f) => f.path);
   const addEntriesRef = useRef(addEntries);
   addEntriesRef.current = addEntries;
   const findNearDuplicateRef = useRef(findNearDuplicate);
