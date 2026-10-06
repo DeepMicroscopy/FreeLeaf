@@ -16,7 +16,9 @@ services:
       retries: 10
 
   minio:
-    image: minio/minio:latest
+    # See docs/decisions/minio-image-source.md — minio/minio and
+    # quay.io/minio/minio are no longer pullable by anyone.
+    image: coollabsio/minio:RELEASE.2025-10-15T17-29-55Z
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-freeleaf}
@@ -27,7 +29,11 @@ services:
       - "9000:9000"
       - "9001:9001"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      # Not curl — the coollabsio mirror (see the image comment above)
+      # doesn't bundle it. `mc ready local` (MinIO's own client, which the
+      # image does bundle) is MinIO's own documented in-container
+      # healthcheck convention anyway.
+      test: ["CMD", "mc", "ready", "local"]
       interval: 5s
       timeout: 5s
       retries: 10

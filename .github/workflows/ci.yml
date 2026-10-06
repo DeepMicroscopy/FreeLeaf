@@ -49,11 +49,13 @@ jobs:
       # services schema has no field for — unlike docker-compose.yml's
       # `command:` override. Run it directly instead and wait for its own
       # healthcheck endpoint (same one docker-compose.yml uses).
+      # See docs/decisions/minio-image-source.md — minio/minio and
+      # quay.io/minio/minio are no longer pullable by anyone.
       - name: Start MinIO
         run: |
           docker run -d --name minio -p 9000:9000 \
             -e MINIO_ROOT_USER=freeleaf -e MINIO_ROOT_PASSWORD=freeleafsecret \
-            minio/minio server /data
+            coollabsio/minio:RELEASE.2025-10-15T17-29-55Z server /data
           for i in $(seq 1 30); do
             curl -sf http://localhost:9000/minio/health/live && exit 0
             sleep 1
