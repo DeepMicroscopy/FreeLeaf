@@ -2,7 +2,7 @@ import { api, looksLikeBibtex, parseBibtex } from "@freeleaf/shared";
 import type { BibEntry } from "@freeleaf/shared";
 import { autocompletion, completionKeymap } from "@codemirror/autocomplete";
 import { MessageSquarePlus } from "lucide-react";
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { StreamLanguage } from "@codemirror/language";
 import { stex } from "@codemirror/legacy-modes/mode/stex";
 import { openSearchPanel, search, searchKeymap } from "@codemirror/search";
@@ -1000,6 +1000,15 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
               ...historyKeymap,
               ...completionKeymap,
               ...searchKeymap,
+              // Without this, Tab isn't bound to anything inside the
+              // editor at all (CodeMirror leaves it unbound by default, for
+              // accessibility — a screen-reader/keyboard-only user still
+              // needs Tab to be able to leave the editor), so it falls
+              // through to the browser's own default "move focus to the
+              // next tabbable element" — which, sitting right next to
+              // SplitPane's resize handle, is exactly what looked like
+              // "Tab selects the pane separator instead of indenting."
+              indentWithTab,
             ]),
             search({ top: true }),
             theme,
