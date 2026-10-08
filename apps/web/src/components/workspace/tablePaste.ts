@@ -19,28 +19,11 @@
  * literal `\\`, which inside a plain `tabular` cell is a row separator,
  * not a line break, and would corrupt the table structure. */
 
+import { escapeLatexText } from "./tableDesigner";
 import type { ColumnAlign, TableCell, TableColumn, TableGridModel } from "./tableDesigner";
 
 export function looksLikeHtmlTable(html: string): boolean {
   return /<table[\s>]/i.test(html);
-}
-
-const ESCAPE_RE = /[\\{}$&#%_~^]/g;
-const ESCAPE_MAP: Record<string, string> = {
-  "\\": "\\textbackslash{}",
-  "{": "\\{",
-  "}": "\\}",
-  $: "\\$",
-  "&": "\\&",
-  "#": "\\#",
-  "%": "\\%",
-  _: "\\_",
-  "~": "\\textasciitilde{}",
-  "^": "\\textasciicircum{}",
-};
-
-export function escapeLatexText(s: string): string {
-  return s.replace(ESCAPE_RE, (ch) => ESCAPE_MAP[ch]);
 }
 
 interface FormatState {

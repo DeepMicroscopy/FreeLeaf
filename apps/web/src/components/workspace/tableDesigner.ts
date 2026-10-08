@@ -85,6 +85,70 @@ export function lineHasTabularBegin(lineText: string): boolean {
   return TABULAR_BEGIN_LINE_RE.test(lineText);
 }
 
+const ESCAPE_RE = /[\\{}$&#%_~^]/g;
+const ESCAPE_MAP: Record<string, string> = {
+  "\\": "\\textbackslash{}",
+  "{": "\\{",
+  "}": "\\}",
+  $: "\\$",
+  "&": "\\&",
+  "#": "\\#",
+  "%": "\\%",
+  _: "\\_",
+  "~": "\\textasciitilde{}",
+  "^": "\\textasciicircum{}",
+};
+
+/** Escapes LaTeX-special characters in plain text so it's safe to drop
+ * verbatim into generated LaTeX source — same escaping used for pasted
+ * table content (tablePaste.ts) and new-acronym insertion
+ * (CodeMirrorEditor.tsx), centralized here since this module is the one
+ * both depend on. */
+export function escapeLatexText(s: string): string {
+  return s.replace(ESCAPE_RE, (ch) => ESCAPE_MAP[ch]);
+}
+
+/** Cell text in `TableGridModel` is always assumed to already be
+ * LaTeX-ready (escaped where needed) — `serializeCell` below writes it
+ * into the generated source verbatim, matching how a table parsed from
+ * existing LaTeX or pasted from Excel/Word arrives pre-escaped. The
+ * Table Designer's plain `<input>` for hand-typed cell text is the one
+ * path that doesn't go through either of those, so typed keystrokes need
+ * escaping on the way in — but naively re-escaping the *entire* field on
+ * every keystroke would double-escape whatever was already there (e.g.
+ * parsed `\%` would become `\textbackslash{}\%`). This diffs the
+ * controlled input's old and new value and escapes only the inserted
+ * substring, leaving already-LaTeX-ready content untouched.
+ *
+ * Also returns `insertEnd`, the index right after the (now possibly
+ * longer, escaped) inserted text — the caller must imperatively restore
+ * the input's selection to this position itself (see
+ * TableDesignerDialog.tsx's cell `onChange`), since escaping can make the
+ * committed value longer than what was actually typed, which would
+ * otherwise leave the browser's own post-keystroke caret pointing
+ * mid-escape-sequence (e.g. right between `\` and `%`) instead of after
+ * it, corrupting the next keystroke. */
+export function withInsertedTextEscaped(oldText: string, newText: string): { text: string; insertEnd: number } {
+  let prefixLen = 0;
+  const maxPrefix = Math.min(oldText.length, newText.length);
+  while (prefixLen < maxPrefix && oldText[prefixLen] === newText[prefixLen]) prefixLen++;
+
+  let suffixLen = 0;
+  const maxSuffix = Math.min(oldText.length, newText.length) - prefixLen;
+  while (
+    suffixLen < maxSuffix &&
+    oldText[oldText.length - 1 - suffixLen] === newText[newText.length - 1 - suffixLen]
+  ) {
+    suffixLen++;
+  }
+
+  const prefix = newText.slice(0, prefixLen);
+  const inserted = newText.slice(prefixLen, newText.length - suffixLen);
+  const suffix = newText.slice(newText.length - suffixLen);
+  const escapedInserted = escapeLatexText(inserted);
+  return { text: prefix + escapedInserted + suffix, insertEnd: prefix.length + escapedInserted.length };
+}
+
 function findMatchingBrace(text: string, openIndex: number): number | null {
   if (text[openIndex] !== "{") return null;
   let depth = 0;

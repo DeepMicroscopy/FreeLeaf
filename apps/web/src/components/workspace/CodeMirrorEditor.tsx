@@ -34,9 +34,9 @@ import type { DuplicateChoice } from "./DuplicateDialog";
 import { DuplicateDialog } from "./DuplicateDialog";
 import { lintLatex } from "./polishingLint";
 import type { LintFinding } from "./polishingLint";
-import { findTabularEnvironments, serializeTabular } from "./tableDesigner";
+import { escapeLatexText, findTabularEnvironments, serializeTabular } from "./tableDesigner";
 import type { TabularMatch } from "./tableDesigner";
-import { escapeLatexText, looksLikeHtmlTable, parseHtmlTableToGridModel } from "./tablePaste";
+import { looksLikeHtmlTable, parseHtmlTableToGridModel } from "./tablePaste";
 import { tableDesignerGutter } from "./tableDesignerGutter";
 import { packageDocsGutter } from "./packageDocsGutter";
 import {

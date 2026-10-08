@@ -9,6 +9,7 @@ import {
   mergeDown,
   mergeRight,
   splitCell,
+  withInsertedTextEscaped,
 } from "./tableDesigner";
 import type { ColumnAlign, TableGridModel } from "./tableDesigner";
 import styles from "./TableDesignerDialog.module.css";
@@ -29,13 +30,31 @@ export function TableDesignerDialog({
   const ncols = grid.columns.length;
   const nrows = grid.rows.length;
 
-  function updateCellText(r: number, c: number, value: string) {
+  function updateCellText(r: number, c: number, text: string) {
     setGrid((g) => {
       const next = cloneGridModel(g);
       const cell = next.rows[r][c];
-      if (cell.kind !== "covered") cell.text = value;
+      if (cell.kind !== "covered") cell.text = text;
       return next;
     });
+  }
+
+  /** Escapes LaTeX-special characters in what was just typed (see
+   * withInsertedTextEscaped's docstring), then restores the input's own
+   * caret position imperatively — escaping can lengthen the committed
+   * value beyond what was actually typed, and without this the browser
+   * leaves the caret wherever native typing put it, which after a React
+   * re-render can land mid-escape-sequence and corrupt the next
+   * keystroke. Setting `input.value` here before calling `updateCellText`
+   * matters: React's controlled-input re-render only touches the DOM
+   * value (and resets the caret) when it differs from what's already
+   * there, so pre-setting both to the final value keeps our caret fix. */
+  function handleCellInput(r: number, c: number, oldText: string, e: React.ChangeEvent<HTMLInputElement>) {
+    const input = e.currentTarget;
+    const { text, insertEnd } = withInsertedTextEscaped(oldText, input.value);
+    input.value = text;
+    input.setSelectionRange(insertEnd, insertEnd);
+    updateCellText(r, c, text);
   }
 
   function updateMulticolumnAlign(r: number, c: number, align: ColumnAlign) {
@@ -253,7 +272,7 @@ export function TableDesignerDialog({
                           <input
                             className={styles.cellInput}
                             value={cell.text}
-                            onChange={(e) => updateCellText(r, c, e.target.value)}
+                            onChange={(e) => handleCellInput(r, c, cell.text, e)}
                           />
                           {cell.kind === "multicolumn" && (
                             <div className={styles.spanControls}>
