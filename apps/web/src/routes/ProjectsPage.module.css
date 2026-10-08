@@ -171,6 +171,7 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   overflow: hidden;
+  cursor: pointer;
   transition: border-color 120ms var(--ease), box-shadow 120ms var(--ease), transform 80ms var(--ease);
 }
 
@@ -183,11 +184,17 @@
   transform: translateY(1px);
 }
 
+.card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* A big preview banner sitting on top of the card — page-1 PDF thumbnail
    when there is one, a generic placeholder icon otherwise. Fixed
    aspect-ratio (roughly A4/Letter proportions) keeps every card in the grid
    the same height regardless of whether it has a real thumbnail yet. */
 .cardPreview {
+  position: relative;
   width: 100%;
   aspect-ratio: 3 / 4;
   flex-shrink: 0;
@@ -197,6 +204,67 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
+}
+
+.cardCollectionPicker {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  background: var(--bg-surface-raised);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Section headings that group cards/rows by the viewer's own collections —
+   only rendered when there's more than one group, so a user with no
+   collections yet keeps today's exact flat layout. */
+.collectionSection + .collectionSection {
+  margin-top: var(--space-5);
+}
+
+.collectionHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.collectionTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.collectionDelete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.collectionDelete:hover {
+  background: var(--bg-hover);
+  color: var(--danger-600);
+}
+
+.collectionRowTitle {
+  text-align: left;
+  padding: 10px var(--space-3) 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.collectionRowAction {
+  padding: 10px var(--space-3) 6px;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .cardPreviewImage {

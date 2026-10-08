@@ -17,10 +17,12 @@ import {
   LogOut,
   Plus,
   ShieldCheck,
+  Trash2,
   Upload,
   Users,
 } from "lucide-react";
 
+import { CollectionPicker } from "../components/projects/CollectionPicker";
 import { ContributeTemplateForm } from "../components/templates/ContributeTemplateForm";
 import { TemplateGallery } from "../components/templates/TemplateGallery";
 import { Button } from "../components/ui/Button";
@@ -35,6 +37,7 @@ import { useProjectsView } from "../lib/projectsView";
 import styles from "./ProjectsPage.module.css";
 
 type ProjectOut = components["schemas"]["ProjectOut"];
+type ProjectCollectionOut = components["schemas"]["ProjectCollectionOut"];
 type ChooserMode = "closed" | "choose" | "blank" | "template" | "github";
 
 const SORT_COLUMNS: { key: ProjectsSortKey; label: string }[] = [
@@ -56,6 +59,7 @@ export function ProjectsPage() {
   const navigate = useNavigate();
 
   const [projects, setProjects] = useState<ProjectOut[] | null>(null);
+  const [collections, setCollections] = useState<ProjectCollectionOut[] | null>(null);
   const view = useProjectsView();
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
   const [mode, setMode] = useState<ChooserMode>("closed");
@@ -79,6 +83,7 @@ export function ProjectsPage() {
 
   useEffect(() => {
     api.GET("/api/projects").then(({ data }) => setProjects(data ?? []));
+    api.GET("/api/collections").then(({ data }) => setCollections(data ?? []));
   }, []);
 
   useEffect(() => {
@@ -222,6 +227,71 @@ export function ProjectsPage() {
     }
     setProjects((prev) => (prev ? [data, ...prev] : [data]));
     show(`Duplicated as "${data.name}".`);
+  }
+
+  // Each project files under at most one of the viewer's own collections
+  // (folder-like, not tag-like) — purely personal dashboard organization,
+  // never shared with co-authors. A collection-less user sees today's exact
+  // flat list: no groups, no "Uncategorized" heading.
+  const groupedProjects = useMemo(() => {
+    if (!sortedProjects) return null;
+    if (!collections || collections.length === 0) {
+      return [{ collection: null as ProjectCollectionOut | null, projects: sortedProjects }];
+    }
+    const byCollection = new Map<string, ProjectOut[]>();
+    const uncategorized: ProjectOut[] = [];
+    for (const p of sortedProjects) {
+      if (p.collection_id) {
+        const list = byCollection.get(p.collection_id);
+        if (list) list.push(p);
+        else byCollection.set(p.collection_id, [p]);
+      } else {
+        uncategorized.push(p);
+      }
+    }
+    const groups = collections.map((c) => ({ collection: c as ProjectCollectionOut | null, projects: byCollection.get(c.id) ?? [] }));
+    if (uncategorized.length > 0) groups.push({ collection: null, projects: uncategorized });
+    return groups;
+  }, [sortedProjects, collections]);
+
+  async function handleCreateCollection(name: string): Promise<ProjectCollectionOut | null> {
+    const { data, error } = await api.POST("/api/collections", { body: { name } });
+    if (error || !data) {
+      show((error as { detail?: string })?.detail ?? "Could not create that collection.", "error");
+      return null;
+    }
+    setCollections((prev) => (prev ? [...prev, data] : [data]));
+    return data;
+  }
+
+  async function handleAssignCollection(project: ProjectOut, collectionId: string | null) {
+    const { data, error } = await api.PATCH("/api/projects/{project_id}/collection", {
+      params: { path: { project_id: project.id } },
+      body: { collection_id: collectionId },
+    });
+    if (error || !data) {
+      show("Could not update that project's collection.", "error");
+      return;
+    }
+    setProjects((prev) => prev?.map((p) => (p.id === data.id ? data : p)) ?? null);
+  }
+
+  async function handleDeleteCollection(collection: ProjectCollectionOut) {
+    if (!window.confirm(`Delete the "${collection.name}" collection? Its projects will become uncategorized.`)) return;
+    const { error } = await api.DELETE("/api/collections/{collection_id}", {
+      params: { path: { collection_id: collection.id } },
+    });
+    if (error) {
+      show("Could not delete that collection.", "error");
+      return;
+    }
+    setCollections((prev) => prev?.filter((c) => c.id !== collection.id) ?? null);
+    setProjects(
+      (prev) =>
+        prev?.map((p) =>
+          p.collection_id === collection.id ? { ...p, collection_id: null, collection_name: null } : p,
+        ) ?? null,
+    );
   }
 
   return (
@@ -404,38 +474,80 @@ export function ProjectsPage() {
             action={<Button onClick={() => setMode("choose")}>Create a project</Button>}
           />
         ) : view.mode === "grid" ? (
-          <ul className={styles.grid}>
-            {sortedProjects.map((p) => (
-              <li key={p.id}>
-                <button className={styles.card} onClick={() => navigate(`/projects/${p.id}`)}>
-                  <div className={styles.cardPreview}>
-                    {p.has_thumbnail ? (
-                      <img
-                        src={`${apiOrigin()}/api/projects/${p.id}/thumbnail`}
-                        alt=""
-                        aria-hidden="true"
-                        className={styles.cardPreviewImage}
-                      />
-                    ) : (
-                      <FileText size={32} aria-hidden="true" />
+          <>
+            {groupedProjects?.map((group) => (
+              <section key={group.collection?.id ?? "uncategorized"} className={styles.collectionSection}>
+                {groupedProjects.length > 1 && (
+                  <div className={styles.collectionHeader}>
+                    <h2 className={styles.collectionTitle}>{group.collection?.name ?? "Uncategorized"}</h2>
+                    {group.collection && (
+                      <button
+                        type="button"
+                        className={styles.collectionDelete}
+                        aria-label={`Delete ${group.collection.name} collection`}
+                        title="Delete collection"
+                        onClick={() => handleDeleteCollection(group.collection!)}
+                      >
+                        <Trash2 size={13} aria-hidden="true" />
+                      </button>
                     )}
                   </div>
-                  <div className={styles.cardBody}>
-                    <p className={styles.cardName}>{p.name}</p>
-                    <p className={styles.cardMeta}>
-                      <Users size={12} aria-hidden="true" />
-                      {p.role}
-                    </p>
-                    <p className={styles.cardActivity} title={new Date(p.updated_at).toLocaleString()}>
-                      {p.last_edited_by_name ? `Changed by ${p.last_edited_by_name}` : "Changed"}
-                      {" · "}
-                      {new Date(p.updated_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                </button>
-              </li>
+                )}
+                <ul className={styles.grid}>
+                  {group.projects.map((p) => (
+                    <li key={p.id}>
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        className={styles.card}
+                        onClick={() => navigate(`/projects/${p.id}`)}
+                        onKeyDown={(e) => {
+                          if (e.target !== e.currentTarget) return;
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            navigate(`/projects/${p.id}`);
+                          }
+                        }}
+                      >
+                        <div className={styles.cardPreview}>
+                          {p.has_thumbnail ? (
+                            <img
+                              src={`${apiOrigin()}/api/projects/${p.id}/thumbnail`}
+                              alt=""
+                              aria-hidden="true"
+                              className={styles.cardPreviewImage}
+                            />
+                          ) : (
+                            <FileText size={32} aria-hidden="true" />
+                          )}
+                          <div className={styles.cardCollectionPicker}>
+                            <CollectionPicker
+                              currentCollectionId={p.collection_id}
+                              collections={collections ?? []}
+                              onAssign={(collectionId) => handleAssignCollection(p, collectionId)}
+                              onCreateNew={handleCreateCollection}
+                            />
+                          </div>
+                        </div>
+                        <div className={styles.cardBody}>
+                          <p className={styles.cardName}>{p.name}</p>
+                          <p className={styles.cardMeta}>
+                            <Users size={12} aria-hidden="true" />
+                            {p.role}
+                          </p>
+                          <p className={styles.cardActivity} title={new Date(p.updated_at).toLocaleString()}>
+                            {p.last_edited_by_name ? `Changed by ${p.last_edited_by_name}` : "Changed"}
+                            {" · "}
+                            {new Date(p.updated_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
             ))}
-          </ul>
+          </>
         ) : (
           <table className={styles.table}>
             <thead>
@@ -456,49 +568,77 @@ export function ProjectsPage() {
                 <th aria-label="Actions" />
               </tr>
             </thead>
-            <tbody>
-              {sortedProjects.map((p) => (
-                <tr key={p.id}>
-                  <td>
-                    <button className={styles.rowNameButton} onClick={() => navigate(`/projects/${p.id}`)}>
-                      {p.name}
-                    </button>
-                  </td>
-                  <td>{p.owner_name ?? "—"}</td>
-                  <td title={new Date(p.updated_at).toLocaleString()}>{new Date(p.updated_at).toLocaleDateString()}</td>
-                  <td className={styles.rowActions}>
-                    <a
-                      className={styles.iconButton}
-                      href={`${apiOrigin()}/api/projects/${p.id}/export`}
-                      aria-label={`Download ${p.name} as zip`}
-                      title="Download zip"
-                    >
-                      <FileDown size={14} aria-hidden="true" />
-                    </a>
-                    {p.has_thumbnail && (
+            {groupedProjects?.map((group) => (
+              <tbody key={group.collection?.id ?? "uncategorized"}>
+                {groupedProjects.length > 1 && (
+                  <tr className={styles.collectionRow}>
+                    <th colSpan={SORT_COLUMNS.length} className={styles.collectionRowTitle}>
+                      {group.collection?.name ?? "Uncategorized"}
+                    </th>
+                    <th className={styles.collectionRowAction}>
+                      {group.collection && (
+                        <button
+                          type="button"
+                          className={styles.collectionDelete}
+                          aria-label={`Delete ${group.collection.name} collection`}
+                          title="Delete collection"
+                          onClick={() => handleDeleteCollection(group.collection!)}
+                        >
+                          <Trash2 size={13} aria-hidden="true" />
+                        </button>
+                      )}
+                    </th>
+                  </tr>
+                )}
+                {group.projects.map((p) => (
+                  <tr key={p.id}>
+                    <td>
+                      <button className={styles.rowNameButton} onClick={() => navigate(`/projects/${p.id}`)}>
+                        {p.name}
+                      </button>
+                    </td>
+                    <td>{p.owner_name ?? "—"}</td>
+                    <td title={new Date(p.updated_at).toLocaleString()}>{new Date(p.updated_at).toLocaleDateString()}</td>
+                    <td className={styles.rowActions}>
                       <a
                         className={styles.iconButton}
-                        href={`${apiOrigin()}/api/projects/${p.id}/pdf`}
-                        aria-label={`Download ${p.name}'s PDF`}
-                        title="Download PDF"
+                        href={`${apiOrigin()}/api/projects/${p.id}/export`}
+                        aria-label={`Download ${p.name} as zip`}
+                        title="Download zip"
                       >
-                        <Download size={14} aria-hidden="true" />
+                        <FileDown size={14} aria-hidden="true" />
                       </a>
-                    )}
-                    <button
-                      type="button"
-                      className={styles.iconButton}
-                      aria-label={`Duplicate ${p.name}`}
-                      title="Duplicate"
-                      disabled={duplicatingId === p.id}
-                      onClick={() => handleDuplicate(p)}
-                    >
-                      <Copy size={14} aria-hidden="true" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
+                      {p.has_thumbnail && (
+                        <a
+                          className={styles.iconButton}
+                          href={`${apiOrigin()}/api/projects/${p.id}/pdf`}
+                          aria-label={`Download ${p.name}'s PDF`}
+                          title="Download PDF"
+                        >
+                          <Download size={14} aria-hidden="true" />
+                        </a>
+                      )}
+                      <CollectionPicker
+                        currentCollectionId={p.collection_id}
+                        collections={collections ?? []}
+                        onAssign={(collectionId) => handleAssignCollection(p, collectionId)}
+                        onCreateNew={handleCreateCollection}
+                      />
+                      <button
+                        type="button"
+                        className={styles.iconButton}
+                        aria-label={`Duplicate ${p.name}`}
+                        title="Duplicate"
+                        disabled={duplicatingId === p.id}
+                        onClick={() => handleDuplicate(p)}
+                      >
+                        <Copy size={14} aria-hidden="true" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            ))}
           </table>
         )}
       </main>

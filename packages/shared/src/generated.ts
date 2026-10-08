@@ -284,6 +284,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/collection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Assign Project Collection */
+        patch: operations["projects_api_assign_project_collection"];
+        trace?: never;
+    };
     "/api/projects/import": {
         parameters: {
             query?: never;
@@ -865,6 +882,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/collections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Collections */
+        get: operations["projects_collections_api_list_collections"];
+        put?: never;
+        /** Create Collection */
+        post: operations["projects_collections_api_create_collection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/collections/{collection_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Collection */
+        delete: operations["projects_collections_api_delete_collection"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/users": {
         parameters: {
             query?: never;
@@ -1293,6 +1345,10 @@ export interface components {
              * @default false
              */
             has_thumbnail: boolean;
+            /** Collection Id */
+            collection_id?: string | null;
+            /** Collection Name */
+            collection_name?: string | null;
         };
         /** FromTemplateIn */
         FromTemplateIn: {
@@ -1345,6 +1401,11 @@ export interface components {
         ProjectCreateIn: {
             /** Name */
             name: string;
+        };
+        /** ProjectCollectionAssignIn */
+        ProjectCollectionAssignIn: {
+            /** Collection Id */
+            collection_id?: string | null;
         };
         /** ProjectDuplicateIn */
         ProjectDuplicateIn: {
@@ -1579,6 +1640,25 @@ export interface components {
             file_id: string;
             /** Path */
             path: string;
+        };
+        /** ProjectCollectionOut */
+        ProjectCollectionOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Created At */
+            created_at: string;
+            /** Project Count */
+            project_count: number;
+        };
+        /** ProjectCollectionCreateIn */
+        ProjectCollectionCreateIn: {
+            /** Name */
+            name: string;
         };
         /** AdminUserOut */
         AdminUserOut: {
@@ -2376,6 +2456,32 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ProjectCreateIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectOut"];
+                };
+            };
+        };
+    };
+    projects_api_assign_project_collection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectCollectionAssignIn"];
             };
         };
         responses: {
@@ -3337,6 +3443,70 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["BibliographyFileOut"];
                 };
+            };
+        };
+    };
+    projects_collections_api_list_collections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectCollectionOut"][];
+                };
+            };
+        };
+    };
+    projects_collections_api_create_collection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectCollectionCreateIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectCollectionOut"];
+                };
+            };
+        };
+    };
+    projects_collections_api_delete_collection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                collection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

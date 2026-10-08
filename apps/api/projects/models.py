@@ -50,12 +50,39 @@ def touch_project(project: "Project", user: User | None = None) -> None:
         project.save(update_fields=["updated_at"])
 
 
+class ProjectCollection(models.Model):
+    """A personal, per-user grouping of projects for dashboard organization
+    (e.g. "Conference X papers"). Purely cosmetic filing, not shared with
+    other collaborators — see Membership.collection below."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name="project_collections")
+    name = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["owner", "name"], name="unique_collection_name_per_owner"),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.owner_id})"
+
+
 class Membership(models.Model):
     id = models.BigAutoField(primary_key=True)
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="memberships")
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="memberships")
     role = models.CharField(max_length=16, choices=Role.choices)
     created_at = models.DateTimeField(auto_now_add=True)
+    # Which of the user's own ProjectCollections this project is filed under
+    # on their dashboard, if any. Scoped to this membership (not the project),
+    # since filing is per-user, not shared with co-authors. SET_NULL on
+    # collection deletion so deleting a collection un-files its projects
+    # instead of touching unrelated Membership columns.
+    collection = models.ForeignKey(
+        ProjectCollection, null=True, blank=True, on_delete=models.SET_NULL, related_name="memberships"
+    )
 
     class Meta:
         constraints = [

@@ -23,7 +23,17 @@ from core.tokens import hash_token
 from .authz import get_authorized_project, require_role
 from .compile_api import get_or_create_settings
 from .files_api import create_main_tex, storage_key_for
-from .models import FileType, Membership, Project, ProjectFile, ProjectSettings, Role, ShareLink, touch_project
+from .models import (
+    FileType,
+    Membership,
+    Project,
+    ProjectCollection,
+    ProjectFile,
+    ProjectSettings,
+    Role,
+    ShareLink,
+    touch_project,
+)
 from .paths import InvalidPathError, guess_file_type, normalize_path, sanitize_path
 
 router = Router(auth=SessionAuth())
@@ -43,9 +53,11 @@ class ProjectOut(Schema):
     last_edited_by_name: str | None = None
     owner_name: str | None = None
     has_thumbnail: bool = False
+    collection_id: uuid.UUID | None = None
+    collection_name: str | None = None
 
 
-def _project_out(project: Project, role: str) -> ProjectOut:
+def _project_out(project: Project, role: str, collection: ProjectCollection | None = None) -> ProjectOut:
     return ProjectOut(
         id=project.id,
         name=project.name,
@@ -63,14 +75,35 @@ def _project_out(project: Project, role: str) -> ProjectOut:
             else None
         ),
         has_thumbnail=bool(project.thumbnail_storage_key),
+        collection_id=collection.id if collection else None,
+        collection_name=collection.name if collection else None,
     )
 
 
 @router.get("/projects", response=list[ProjectOut])
 def list_projects(request):
     user = get_current_user(request)
-    memberships = Membership.objects.filter(user=user).select_related("project")
-    return [_project_out(m.project, m.role) for m in memberships]
+    memberships = Membership.objects.filter(user=user).select_related("project", "collection")
+    return [_project_out(m.project, m.role, m.collection) for m in memberships]
+
+
+class ProjectCollectionAssignIn(Schema):
+    collection_id: uuid.UUID | None = None
+
+
+@router.patch("/projects/{project_id}/collection", response=ProjectOut)
+def assign_project_collection(request, project_id: uuid.UUID, payload: ProjectCollectionAssignIn):
+    user = get_current_user(request)
+    project, membership = get_authorized_project(user, project_id)
+    if payload.collection_id is None:
+        membership.collection = None
+    else:
+        try:
+            membership.collection = ProjectCollection.objects.get(id=payload.collection_id, owner=user)
+        except ProjectCollection.DoesNotExist:
+            raise HttpError(404, "Collection not found.")
+    membership.save(update_fields=["collection"])
+    return _project_out(project, membership.role, membership.collection)
 
 
 class ProjectCreateIn(Schema):

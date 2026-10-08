@@ -227,7 +227,14 @@ Additionally, some polishing in phase 8:
 
 ### Phase 12 - Implement Package wizard
 
+- Implement a package wizard that automatically manages and adds packages if necessary. For example, if \ac or \acp are detected, automatically suggest to add the acronyms package. 
 
+### Phase 13 — Personal project collections
+- **Goal:** let a user group their own projects on the dashboard for tidiness (e.g. all papers for one conference), without affecting how co-authors see the same projects.
+- **Folder-like, personal-only grouping:** each project sits in at most one of the viewer's own collections, never shared with or visible to other collaborators — modeled as a nullable `collection` FK directly on `Membership` (not a separate shared join table), since "which collection is this filed under, for me" is inherently scoped to the (user, project) pair `Membership` already represents. Deleting a collection un-files its projects (`SET_NULL`) rather than deleting them.
+- **API:** `GET/POST /api/collections`, `DELETE /api/collections/{id}` (all scoped to the caller), `PATCH /api/projects/{project_id}/collection` to file/un-file a project the caller has any membership on.
+- **Dashboard UI:** both grid and list views group cards/rows under a collection heading (an ungrouped/zero-collection user sees today's exact flat layout); a small per-project picker (reusing the existing share-popover pattern) assigns/clears a collection or creates a new one inline; a collection heading's hover-reveal trash icon deletes it with a confirm. Newly created, duplicated, or imported projects always start uncategorized. Rename is deferred — delete-and-recreate covers it for v1.
+- **Acceptance:** creating, assigning, and deleting a collection all work from both dashboard views and persist across reload; duplicating/importing a project never inherits its source's collection; a duplicate collection name fails with a clean error, not a 500.
 ---
 
 ## 10. Repository layout (target)
