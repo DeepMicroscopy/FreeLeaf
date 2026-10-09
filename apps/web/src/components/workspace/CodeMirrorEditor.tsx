@@ -44,6 +44,7 @@ import {
   polishingLintField,
   setPolishingLintDecorations,
 } from "./polishingLintExtension";
+import { spellcheckExclusion } from "./spellcheckExclusion";
 import {
   acceptAllSuggestions,
   acceptSuggestionAt,
@@ -1025,6 +1026,14 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
             theme,
             EditorView.lineWrapping,
             EditorState.readOnly.of(readOnly),
+            // Native browser spell-checking (English, per the user's own
+            // browser/OS dictionary — no bundled word list). Left on in
+            // every editing mode, not just Polishing, since it's a passive
+            // background aid like any other text editor's. spellcheckExclusion
+            // marks LaTeX markup (commands, math, comments, file
+            // paths/keys) spellcheck="false" so only prose gets checked.
+            EditorView.contentAttributes.of({ spellcheck: "true" }),
+            spellcheckExclusion,
             EditorView.domEventHandlers({
               paste: (event, view) => {
                 const text = event.clipboardData?.getData("text/plain") ?? "";
