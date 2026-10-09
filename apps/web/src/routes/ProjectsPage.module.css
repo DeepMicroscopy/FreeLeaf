@@ -229,10 +229,34 @@
   margin-bottom: var(--space-3);
 }
 
+.collectionHeaderToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border-radius: var(--radius-sm);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.collectionHeaderToggle:hover {
+  background: var(--bg-hover);
+}
+
 .collectionTitle {
   font-size: 14px;
   font-weight: 600;
   color: var(--text-secondary);
+}
+
+.collectionCount {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-tertiary);
 }
 
 .collectionDelete {

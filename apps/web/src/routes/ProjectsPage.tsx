@@ -6,6 +6,8 @@ import { useNavigate } from "react-router-dom";
 import {
   ArrowDown,
   ArrowUp,
+  ChevronDown,
+  ChevronRight,
   Copy,
   Download,
   FileDown,
@@ -475,78 +477,97 @@ export function ProjectsPage() {
           />
         ) : view.mode === "grid" ? (
           <>
-            {groupedProjects?.map((group) => (
-              <section key={group.collection?.id ?? "uncategorized"} className={styles.collectionSection}>
-                {groupedProjects.length > 1 && (
-                  <div className={styles.collectionHeader}>
-                    <h2 className={styles.collectionTitle}>{group.collection?.name ?? "Uncategorized"}</h2>
-                    {group.collection && (
+            {groupedProjects?.map((group) => {
+              const groupId = group.collection?.id ?? "uncategorized";
+              const collapsed = groupedProjects.length > 1 && Boolean(view.collapsedCollections[groupId]);
+              return (
+                <section key={groupId} className={styles.collectionSection}>
+                  {groupedProjects.length > 1 && (
+                    <div className={styles.collectionHeader}>
                       <button
                         type="button"
-                        className={styles.collectionDelete}
-                        aria-label={`Delete ${group.collection.name} collection`}
-                        title="Delete collection"
-                        onClick={() => handleDeleteCollection(group.collection!)}
+                        className={styles.collectionHeaderToggle}
+                        onClick={() => view.toggleCollectionCollapsed(groupId)}
+                        aria-expanded={!collapsed}
                       >
-                        <Trash2 size={13} aria-hidden="true" />
+                        {collapsed ? (
+                          <ChevronRight size={14} aria-hidden="true" />
+                        ) : (
+                          <ChevronDown size={14} aria-hidden="true" />
+                        )}
+                        <h2 className={styles.collectionTitle}>{group.collection?.name ?? "Uncategorized"}</h2>
+                        <span className={styles.collectionCount}>{group.projects.length}</span>
                       </button>
-                    )}
-                  </div>
-                )}
-                <ul className={styles.grid}>
-                  {group.projects.map((p) => (
-                    <li key={p.id}>
-                      <div
-                        role="button"
-                        tabIndex={0}
-                        className={styles.card}
-                        onClick={() => navigate(`/projects/${p.id}`)}
-                        onKeyDown={(e) => {
-                          if (e.target !== e.currentTarget) return;
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            navigate(`/projects/${p.id}`);
-                          }
-                        }}
-                      >
-                        <div className={styles.cardPreview}>
-                          {p.has_thumbnail ? (
-                            <img
-                              src={`${apiOrigin()}/api/projects/${p.id}/thumbnail`}
-                              alt=""
-                              aria-hidden="true"
-                              className={styles.cardPreviewImage}
-                            />
-                          ) : (
-                            <FileText size={32} aria-hidden="true" />
-                          )}
-                          <div className={styles.cardCollectionPicker}>
-                            <CollectionPicker
-                              currentCollectionId={p.collection_id}
-                              collections={collections ?? []}
-                              onAssign={(collectionId) => handleAssignCollection(p, collectionId)}
-                              onCreateNew={handleCreateCollection}
-                            />
+                      {group.collection && (
+                        <button
+                          type="button"
+                          className={styles.collectionDelete}
+                          aria-label={`Delete ${group.collection.name} collection`}
+                          title="Delete collection"
+                          onClick={() => handleDeleteCollection(group.collection!)}
+                        >
+                          <Trash2 size={13} aria-hidden="true" />
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {!collapsed && (
+                    <ul className={styles.grid}>
+                      {group.projects.map((p) => (
+                        <li key={p.id}>
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            className={styles.card}
+                            onClick={() => navigate(`/projects/${p.id}`)}
+                            onKeyDown={(e) => {
+                              if (e.target !== e.currentTarget) return;
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                navigate(`/projects/${p.id}`);
+                              }
+                            }}
+                          >
+                            <div className={styles.cardPreview}>
+                              {p.has_thumbnail ? (
+                                <img
+                                  src={`${apiOrigin()}/api/projects/${p.id}/thumbnail`}
+                                  alt=""
+                                  aria-hidden="true"
+                                  className={styles.cardPreviewImage}
+                                />
+                              ) : (
+                                <FileText size={32} aria-hidden="true" />
+                              )}
+                              <div className={styles.cardCollectionPicker}>
+                                <CollectionPicker
+                                  currentCollectionId={p.collection_id}
+                                  collections={collections ?? []}
+                                  onAssign={(collectionId) => handleAssignCollection(p, collectionId)}
+                                  onCreateNew={handleCreateCollection}
+                                />
+                              </div>
+                            </div>
+                            <div className={styles.cardBody}>
+                              <p className={styles.cardName}>{p.name}</p>
+                              <p className={styles.cardMeta}>
+                                <Users size={12} aria-hidden="true" />
+                                {p.role}
+                              </p>
+                              <p className={styles.cardActivity} title={new Date(p.updated_at).toLocaleString()}>
+                                {p.last_edited_by_name ? `Changed by ${p.last_edited_by_name}` : "Changed"}
+                                {" · "}
+                                {new Date(p.updated_at).toLocaleDateString()}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                        <div className={styles.cardBody}>
-                          <p className={styles.cardName}>{p.name}</p>
-                          <p className={styles.cardMeta}>
-                            <Users size={12} aria-hidden="true" />
-                            {p.role}
-                          </p>
-                          <p className={styles.cardActivity} title={new Date(p.updated_at).toLocaleString()}>
-                            {p.last_edited_by_name ? `Changed by ${p.last_edited_by_name}` : "Changed"}
-                            {" · "}
-                            {new Date(p.updated_at).toLocaleDateString()}
-                          </p>
-                        </div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            ))}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              );
+            })}
           </>
         ) : (
           <table className={styles.table}>
@@ -568,12 +589,28 @@ export function ProjectsPage() {
                 <th aria-label="Actions" />
               </tr>
             </thead>
-            {groupedProjects?.map((group) => (
-              <tbody key={group.collection?.id ?? "uncategorized"}>
+            {groupedProjects?.map((group) => {
+              const groupId = group.collection?.id ?? "uncategorized";
+              const collapsed = groupedProjects.length > 1 && Boolean(view.collapsedCollections[groupId]);
+              return (
+              <tbody key={groupId}>
                 {groupedProjects.length > 1 && (
                   <tr className={styles.collectionRow}>
                     <th colSpan={SORT_COLUMNS.length} className={styles.collectionRowTitle}>
-                      {group.collection?.name ?? "Uncategorized"}
+                      <button
+                        type="button"
+                        className={styles.collectionHeaderToggle}
+                        onClick={() => view.toggleCollectionCollapsed(groupId)}
+                        aria-expanded={!collapsed}
+                      >
+                        {collapsed ? (
+                          <ChevronRight size={14} aria-hidden="true" />
+                        ) : (
+                          <ChevronDown size={14} aria-hidden="true" />
+                        )}
+                        {group.collection?.name ?? "Uncategorized"}
+                        <span className={styles.collectionCount}>{group.projects.length}</span>
+                      </button>
                     </th>
                     <th className={styles.collectionRowAction}>
                       {group.collection && (
@@ -590,7 +627,7 @@ export function ProjectsPage() {
                     </th>
                   </tr>
                 )}
-                {group.projects.map((p) => (
+                {!collapsed && group.projects.map((p) => (
                   <tr key={p.id}>
                     <td>
                       <button className={styles.rowNameButton} onClick={() => navigate(`/projects/${p.id}`)}>
@@ -638,7 +675,8 @@ export function ProjectsPage() {
                   </tr>
                 ))}
               </tbody>
-            ))}
+              );
+            })}
           </table>
         )}
       </main>

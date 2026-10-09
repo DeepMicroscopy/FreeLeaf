@@ -8,21 +8,32 @@ interface ProjectsView {
   mode: ProjectsViewMode;
   sortKey: ProjectsSortKey;
   sortDir: ProjectsSortDir;
+  /** Collection ids (plus the "uncategorized" sentinel) the user has
+   * collapsed on the dashboard — absent/false means expanded, so a
+   * brand-new collection shows up open by default. */
+  collapsedCollections: Record<string, boolean>;
 }
 
 const STORAGE_KEY = "freeleaf.projectsView";
 
-const DEFAULTS: ProjectsView = { mode: "grid", sortKey: "updated_at", sortDir: "desc" };
+const DEFAULTS: ProjectsView = { mode: "grid", sortKey: "updated_at", sortDir: "desc", collapsedCollections: {} };
 
 function readStored(): ProjectsView {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULTS;
     const parsed = JSON.parse(raw);
+    const collapsedCollections: Record<string, boolean> = {};
+    if (parsed.collapsedCollections && typeof parsed.collapsedCollections === "object") {
+      for (const [id, collapsed] of Object.entries(parsed.collapsedCollections)) {
+        if (collapsed === true) collapsedCollections[id] = true;
+      }
+    }
     return {
       mode: parsed.mode === "list" ? "list" : "grid",
       sortKey: ["name", "owner", "updated_at"].includes(parsed.sortKey) ? parsed.sortKey : DEFAULTS.sortKey,
       sortDir: parsed.sortDir === "asc" ? "asc" : "desc",
+      collapsedCollections,
     };
   } catch {
     return DEFAULTS;
@@ -53,5 +64,15 @@ export function useProjectsView() {
     [view, persist],
   );
 
-  return { ...view, setMode, toggleSort };
+  const toggleCollectionCollapsed = useCallback(
+    (id: string) => {
+      const next = { ...view.collapsedCollections };
+      if (next[id]) delete next[id];
+      else next[id] = true;
+      persist({ ...view, collapsedCollections: next });
+    },
+    [view, persist],
+  );
+
+  return { ...view, setMode, toggleSort, toggleCollectionCollapsed };
 }
