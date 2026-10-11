@@ -3,7 +3,7 @@ import type { BibEntry } from "@freeleaf/shared";
 import { autocompletion, completionKeymap } from "@codemirror/autocomplete";
 import { MessageSquarePlus } from "lucide-react";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
-import { StreamLanguage } from "@codemirror/language";
+import { bracketMatching, StreamLanguage } from "@codemirror/language";
 import { stex } from "@codemirror/legacy-modes/mode/stex";
 import { openSearchPanel, search, searchKeymap } from "@codemirror/search";
 import { EditorState, Transaction } from "@codemirror/state";
@@ -32,6 +32,7 @@ import { extractLabels, findLabelOccurrences, refCompletionSource } from "./refC
 import { PACKAGE_LINE_RE } from "./packageCompletion";
 import type { DuplicateChoice } from "./DuplicateDialog";
 import { DuplicateDialog } from "./DuplicateDialog";
+import { isBraceBalanced } from "./braceBalance";
 import { lintLatex } from "./polishingLint";
 import type { LintFinding } from "./polishingLint";
 import { escapeLatexText, findTabularEnvironments, serializeTabular } from "./tableDesigner";
@@ -208,6 +209,18 @@ const theme = EditorView.theme({
     textDecoration: "underline wavy",
     textDecorationColor: "#f59e0b",
     textUnderlineOffset: "3px",
+  },
+  ".cm-matchingBracket": {
+    backgroundColor: "var(--accent-soft)",
+    color: "var(--accent)",
+    fontWeight: "700",
+  },
+  // A brace with no match at all — same visual language TextField.module.css
+  // uses for an invalid field, so an unbalanced brace reads as an error.
+  ".cm-nonmatchingBracket": {
+    backgroundColor: "var(--danger-50)",
+    color: "var(--danger-600)",
+    fontWeight: "700",
   },
   ".cm-commentAnchor": {
     backgroundColor: "color-mix(in srgb, #eab308 25%, transparent)",
@@ -968,6 +981,11 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
             history(),
             StreamLanguage.define(stex),
             latexSyntaxHighlighting,
+            // Only braces, not ()/[] — LaTeX's actual nesting/grouping
+            // construct is {}; parens are just prose text and [] (optional
+            // args) isn't meaningfully nested the same way, so matching
+            // them too would just be noise.
+            bracketMatching({ brackets: "{}" }),
             autocompletion({
               override: [
                 ...(citeAutocompleteEnabled
@@ -1247,7 +1265,15 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
         ydoc!.on("update", () => {
           onActivityRef.current?.();
           if (changeTimerRef.current) clearTimeout(changeTimerRef.current);
-          changeTimerRef.current = setTimeout(() => onContentChangedRef.current?.(), 1500);
+          changeTimerRef.current = setTimeout(() => {
+            // An unclosed brace is guaranteed to fail compilation — skip
+            // this round rather than surface a confusing error for a
+            // document the user is still actively typing into. The next
+            // edit (e.g. the closing brace itself) re-schedules this same
+            // timer, so compiling resumes automatically once it balances.
+            if (!isBraceBalanced(ytext.toString())) return;
+            onContentChangedRef.current?.();
+          }, 1500);
           if (docTextChangeTimerRef.current) clearTimeout(docTextChangeTimerRef.current);
           docTextChangeTimerRef.current = setTimeout(() => onDocTextChangeRef.current?.(ytext.toString()), 400);
           // Deferred: this fires *during* yCollab's own transaction application
