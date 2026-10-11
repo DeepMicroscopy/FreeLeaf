@@ -21,6 +21,15 @@ interface BibDoc {
    * can lag a tick behind the Yjs observer. */
   findNearDuplicate: (candidate: { fields: Record<string, string> }) => BibEntry | null;
   findByKey: (key: string) => BibEntry | null;
+  /** Resolves once this doc's pending local changes have actually left the
+   * browser over the WebSocket (or immediately, if there's nothing
+   * pending) — see its implementation below for why this matters: compile
+   * eagerly asks the collab server to flush every file's *current* state,
+   * which can race ahead of a just-made edit that hasn't reached the
+   * server yet. Callers that are about to let the user trigger a compile
+   * right after a local edit (e.g. the paste-to-cite flow) should await
+   * this first. */
+  waitForSync: () => Promise<void>;
 }
 
 const NOOP_DOC: BibDoc = {
@@ -31,6 +40,7 @@ const NOOP_DOC: BibDoc = {
   deleteEntry: () => false,
   findNearDuplicate: () => null,
   findByKey: () => null,
+  waitForSync: async () => {},
 };
 
 /** Opens a live Yjs connection to one `.bib` file and exposes parse/CRUD
@@ -43,6 +53,7 @@ export function useBibDoc(projectId: string, fileId: string | null): BibDoc {
   const [entries, setEntries] = useState<BibEntry[]>([]);
   const [loading, setLoading] = useState(Boolean(fileId));
   const ytextRef = useRef<Y.Text | null>(null);
+  const providerRef = useRef<WebsocketProvider | null>(null);
 
   useEffect(() => {
     if (!fileId) return;
@@ -50,6 +61,7 @@ export function useBibDoc(projectId: string, fileId: string | null): BibDoc {
     setLoading(true);
     setEntries([]);
     ytextRef.current = null;
+    providerRef.current = null;
 
     let provider: WebsocketProvider | null = null;
     let ydoc: Y.Doc | null = null;
@@ -66,6 +78,7 @@ export function useBibDoc(projectId: string, fileId: string | null): BibDoc {
       provider = new WebsocketProvider(token.ws_url, fileId, ydoc, {
         params: { token: token.token },
       });
+      providerRef.current = provider;
 
       const refresh = () => setEntries(parseBibtex(ytext.toString()));
       ytext.observe(refresh);
@@ -156,7 +169,27 @@ export function useBibDoc(projectId: string, fileId: string | null): BibDoc {
     return parseBibtex(ytext.toString()).find((e) => e.key === key) ?? null;
   }
 
-  return { entries, loading, addEntries, updateEntry, deleteEntry, findNearDuplicate, findByKey };
+  // y-websocket has no per-update ack from the server, so this can't
+  // confirm the edit was actually *received* — only that it's left the
+  // browser (the WebSocket's own send buffer has drained). That's still
+  // the real fix for the race this exists for: compiling asks the collab
+  // server to flush each file's *current* state, synchronously and from
+  // the API container directly (not round-tripping through the browser),
+  // so it can otherwise win the race against a just-sent local edit that's
+  // still in flight over the WebSocket and get flushed *before* the edit
+  // arrives — e.g. a reference added via paste-to-cite not yet being in
+  // the .bib file's compiled content. The 1s cap is a last-resort escape
+  // hatch (a dropped connection, say), not the expected case.
+  async function waitForSync(): Promise<void> {
+    const ws = providerRef.current?.ws;
+    if (!ws) return;
+    const deadline = Date.now() + 1000;
+    while (ws.bufferedAmount > 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  }
+
+  return { entries, loading, addEntries, updateEntry, deleteEntry, findNearDuplicate, findByKey, waitForSync };
 }
 
 interface BibliographyContextValue extends BibDoc {

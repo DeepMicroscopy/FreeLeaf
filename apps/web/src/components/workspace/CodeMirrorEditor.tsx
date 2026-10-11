@@ -460,7 +460,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
   ref,
 ) {
   const { user } = useAuth();
-  const { entries, addEntries, findNearDuplicate, findByKey } = useBibliography();
+  const { entries, addEntries, findNearDuplicate, findByKey, waitForSync } = useBibliography();
   const { files } = useWorkspace();
   const { show } = useToast();
   const hostRef = useRef<HTMLDivElement>(null);
@@ -768,6 +768,8 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
   findNearDuplicateRef.current = findNearDuplicate;
   const findByKeyRef = useRef(findByKey);
   findByKeyRef.current = findByKey;
+  const waitForSyncRef = useRef(waitForSync);
+  waitForSyncRef.current = waitForSync;
 
   const [dupModal, setDupModal] = useState<{
     existing: BibEntry;
@@ -830,6 +832,14 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
     }
 
     if (resolvedKeys.length === 0) return;
+
+    // A compile triggered right after this (an immediate Cmd+S being the
+    // realistic case — auto-compile's own debounce is generous enough on
+    // its own) asks the collab server to flush this .bib file's *current*
+    // state directly from the API container, which can otherwise win the
+    // race against the entry we just added above still being in flight
+    // over this tab's own WebSocket — see waitForSync's doc comment.
+    await waitForSyncRef.current();
 
     const citeText = `\\cite{${resolvedKeys.join(", ")}}`;
     view.dispatch({
