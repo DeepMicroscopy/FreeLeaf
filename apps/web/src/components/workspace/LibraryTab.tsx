@@ -5,6 +5,7 @@ import { useState } from "react";
 import type { ClipboardEvent, DragEvent } from "react";
 
 import { useBibDoc, useBibliography } from "../../lib/bibliography";
+import { findCiteKeyUsageAcrossProject, renameCiteKeyAcrossFiles } from "../../lib/citeKeyRename";
 import { useWorkspace } from "../../lib/workspace";
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
@@ -34,6 +35,40 @@ export function LibraryTab() {
     incoming: { key: string; fields: Record<string, string> };
     resolve: (choice: DuplicateChoice) => void;
   } | null>(null);
+
+  // Keeps \cite{oldKey} usages across the project's .tex files in sync with
+  // a Library rename — detect first, only touch anything once the user's
+  // confirmed, since silently rewriting the user's documents without
+  // asking would be a surprising, hard-to-notice side effect of what looks
+  // like a simple metadata edit.
+  async function handleCiteKeyRename(oldKey: string, newKey: string) {
+    const texFiles = files.filter((f) => f.type === "tex").map((f) => ({ id: f.id, path: f.path }));
+    const usage = await findCiteKeyUsageAcrossProject(projectId, texFiles, oldKey);
+    if (usage.length === 0) return;
+
+    const totalOccurrences = usage.reduce((sum, u) => sum + u.count, 0);
+    const fileList = usage.map((u) => u.path).join(", ");
+    const confirmed = window.confirm(
+      `"${oldKey}" is cited ${totalOccurrences} time${totalOccurrences === 1 ? "" : "s"} in ${fileList}. ` +
+        `Update ${totalOccurrences === 1 ? "it" : "them"} to "${newKey}"?`,
+    );
+    if (!confirmed) return;
+
+    const { filesChanged, occurrencesChanged } = await renameCiteKeyAcrossFiles(
+      projectId,
+      usage.map((u) => u.fileId),
+      oldKey,
+      newKey,
+    );
+    if (occurrencesChanged > 0) {
+      show(
+        `Updated ${occurrencesChanged} citation${occurrencesChanged === 1 ? "" : "s"} across ` +
+          `${filesChanged} file${filesChanged === 1 ? "" : "s"}.`,
+      );
+    } else {
+      show("Couldn't update those citations — try again from the editor.", "error");
+    }
+  }
 
   function showDuplicateModal(
     existing: BibEntry,
@@ -172,7 +207,9 @@ export function LibraryTab() {
                 return;
               }
             } else {
-              updateEntry(formEntry.key, next);
+              const oldKey = formEntry.key;
+              const updated = updateEntry(oldKey, next);
+              if (updated && next.key !== oldKey) void handleCiteKeyRename(oldKey, next.key);
             }
             setFormEntry(null);
           }}
