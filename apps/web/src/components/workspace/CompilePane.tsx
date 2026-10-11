@@ -179,21 +179,35 @@ export const CompilePane = forwardRef<
         // follows the try/finally below — that logic must run regardless
         // of how polling ended.
         const pollUntilDone = async () => {
-          const { data: started } = await api.POST("/api/projects/{project_id}/compile", {
+          const { data: started, error, response } = await api.POST("/api/projects/{project_id}/compile", {
             params: { path: { project_id: projectId } },
           });
           if (!started) {
-            show("Compile request failed — please try again.", "error");
+            // Surface the real reason instead of a one-size-fits-all
+            // message — this request fails in exactly two ways server-side
+            // (compile_api.py's dispatch_compile_start): the compile
+            // sandbox service was unreachable/timed out (502), or it
+            // rejected the request outright (400, e.g. an oversized
+            // project). Logged too, since the detail can be long (a
+            // compile-service HTTP error body) and get truncated in a toast.
+            const detail = (error as { detail?: string } | undefined)?.detail;
+            console.error("Compile request failed", { status: response?.status, detail, error });
+            show(detail ? `Compile request failed: ${detail}` : "Compile request failed — please try again.", "error");
             return;
           }
 
           const deadline = Date.now() + MAX_COMPILE_POLL_MS;
           for (;;) {
             if (pollTokenRef.current !== myToken) return; // superseded by a newer compile, or unmounted
-            const { data: progress } = await api.GET("/api/projects/{project_id}/compile/{job_id}/progress", {
-              params: { path: { project_id: projectId, job_id: started.job_id } },
-            });
+            const { data: progress, error: progressError, response: progressResponse } = await api.GET(
+              "/api/projects/{project_id}/compile/{job_id}/progress",
+              { params: { path: { project_id: projectId, job_id: started.job_id } } },
+            );
             if (!progress) {
+              console.error("Lost the connection while compiling", {
+                status: progressResponse?.status,
+                error: progressError,
+              });
               show("Lost the connection while compiling — please try again.", "error");
               return;
             }
@@ -227,7 +241,8 @@ export const CompilePane = forwardRef<
           // and left the UI stuck showing "Compiling…" forever, with no way
           // to recover short of a full page reload.
           await pollUntilDone();
-        } catch {
+        } catch (err) {
+          console.error("Lost the connection while compiling", err);
           show("Lost the connection while compiling — please try again.", "error");
         } finally {
           inFlightRef.current = false;
