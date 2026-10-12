@@ -4,6 +4,8 @@ import json
 import logging
 import os
 import tarfile
+import threading
+import time
 import urllib.error
 import urllib.request
 import uuid
@@ -39,6 +41,18 @@ DISPATCH_START_TIMEOUT_SECONDS = 10
 DISPATCH_STATUS_TIMEOUT_SECONDS = 10
 COLLAB_FLUSH_TIMEOUT_SECONDS = 5
 SYNCTEX_TIMEOUT_SECONDS = 10
+
+# Per-*process* in-flight compile-request count, logged alongside timing in
+# start_compile below — a debugging aid, not an authoritative global total:
+# under gunicorn with multiple worker processes, each worker has its own
+# copy of this counter, so it only reflects load on whichever worker handled
+# a given request. Still useful for spotting "many requests overlapping,"
+# which is the thing actually in question (every connected collaborator
+# independently schedules their own auto-compile off of every edit, local or
+# remote, so several people editing the same doc can mean several
+# near-simultaneous compiles).
+_inflight_count = 0
+_inflight_lock = threading.Lock()
 
 
 def get_or_create_settings(project) -> ProjectSettings:
@@ -333,15 +347,48 @@ class CompileStartOut(Schema):
 
 @router.post("/projects/{project_id}/compile", response=CompileStartOut)
 def start_compile(request, project_id: uuid.UUID):
-    user = get_current_user(request)
-    project, membership = get_authorized_project(user, project_id)
-    require_role(membership, Role.OWNER, Role.EDITOR)
+    # Timing + a running in-flight count (debugging aid) — the working
+    # theory for recent slow/stuck compiles is simply too many
+    # overlapping compile requests landing on one small server (every
+    # connected collaborator independently schedules their own auto-compile
+    # off of every edit, local or remote — see CodeMirrorEditor.tsx — so N
+    # people editing the same doc can mean N near-simultaneous compiles).
+    # This makes that visible directly in `docker compose logs api` without
+    # needing to correlate separate request log lines by eye.
+    global _inflight_count
+    t_start = time.monotonic()
+    with _inflight_lock:
+        _inflight_count += 1
+        inflight_at_start = _inflight_count
+    try:
+        user = get_current_user(request)
+        project, membership = get_authorized_project(user, project_id)
+        require_role(membership, Role.OWNER, Role.EDITOR)
 
-    settings_row = get_or_create_settings(project)
-    resolved_content = flush_collab_rooms(project)
-    tar_bytes = materialize_tar(project, resolved_content)
-    job_id = dispatch_compile_start(tar_bytes, settings_row.compiler, settings_row.main_doc_path)
-    return CompileStartOut(job_id=job_id)
+        settings_row = get_or_create_settings(project)
+        t_flush_start = time.monotonic()
+        resolved_content = flush_collab_rooms(project)
+        t_tar_start = time.monotonic()
+        tar_bytes = materialize_tar(project, resolved_content)
+        t_dispatch_start = time.monotonic()
+        job_id = dispatch_compile_start(tar_bytes, settings_row.compiler, settings_row.main_doc_path)
+        t_end = time.monotonic()
+        logger.info(
+            "compile dispatched: project=%s user=%s job=%s inflight=%d "
+            "flush=%.2fs tar=%.2fs dispatch=%.2fs total=%.2fs",
+            project_id,
+            user.id if user else None,
+            job_id,
+            inflight_at_start,
+            t_tar_start - t_flush_start,
+            t_dispatch_start - t_tar_start,
+            t_end - t_dispatch_start,
+            t_end - t_start,
+        )
+        return CompileStartOut(job_id=job_id)
+    finally:
+        with _inflight_lock:
+            _inflight_count -= 1
 
 
 class CompileProgressOut(Schema):

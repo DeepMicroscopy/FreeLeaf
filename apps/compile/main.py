@@ -66,6 +66,17 @@ def _run_and_track(job_id: str, tar_bytes: bytes, compiler: str, main_file: str)
             job["done"] = True
             job["result"] = result
             job["error"] = error
+            # Timing + how many OTHER jobs are still running (debugging aid
+            # for "too many overlapping compiles" — this process is single,
+            # so unlike the api's own per-worker count, this one really is
+            # the whole service's true concurrency at this instant).
+            duration = time.monotonic() - job["created"]
+            active = sum(1 for j in _jobs.values() if not j["done"])
+            print(
+                f"[compile] job {job_id} finished in {duration:.2f}s "
+                f"(status={'error' if error else 'ok'}), active_jobs={active}",
+                flush=True,
+            )
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -110,6 +121,8 @@ class Handler(BaseHTTPRequestHandler):
         with _jobs_lock:
             _sweep_old_jobs()
             _jobs[job_id] = {"steps": [], "done": False, "result": None, "error": None, "created": time.monotonic()}
+            active = sum(1 for j in _jobs.values() if not j["done"])
+        print(f"[compile] job {job_id} received (compiler={compiler}, active_jobs={active})", flush=True)
         threading.Thread(target=_run_and_track, args=(job_id, tar_bytes, compiler, main_file), daemon=True).start()
         self._json(200, {"job_id": job_id})
 
