@@ -85,6 +85,12 @@ def exchange_code(code: str) -> OrcidIdentity:
         raise OrcidError(f"ORCID token exchange failed: {exc.code} {exc.read().decode()}") from exc
     except urllib.error.URLError as exc:
         raise OrcidError(f"ORCID token exchange failed: {exc.reason}") from exc
+    except TimeoutError as exc:
+        # Separately from URLError: urllib only wraps a timeout in URLError
+        # when it happens *connecting* — one while *reading* the response
+        # comes through as a bare TimeoutError/socket.timeout instead
+        # (confirmed live in compile_api.py's identical call shape).
+        raise OrcidError("ORCID token exchange failed: timed out") from exc
 
     orcid_id = data.get("orcid")
     if not orcid_id:

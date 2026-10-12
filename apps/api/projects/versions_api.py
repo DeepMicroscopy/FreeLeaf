@@ -81,7 +81,11 @@ def _replace_collab_content(file_id: uuid.UUID, content: str) -> bool:
     try:
         urllib.request.urlopen(request, timeout=COLLAB_REPLACE_TIMEOUT_SECONDS)
         return True
-    except (urllib.error.URLError, urllib.error.HTTPError) as exc:
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
+        # TimeoutError separately from URLError: urllib only wraps a timeout
+        # in URLError when it happens *connecting* — one while *reading* the
+        # response comes through as a bare TimeoutError/socket.timeout
+        # instead (confirmed live in compile_api.py's identical call shape).
         logger.warning("collab replace failed for file %s: %s", file_id, exc)
         return False
 

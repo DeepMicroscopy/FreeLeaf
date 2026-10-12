@@ -73,7 +73,11 @@ def _fetch_github_zip(owner: str, repo: str) -> bytes:
         if exc.code == 403:
             raise HttpError(502, "GitHub rate-limited this request — try again in a bit.") from exc
         raise HttpError(502, f"GitHub returned an error ({exc.code}).") from exc
-    except urllib.error.URLError as exc:
+    except (urllib.error.URLError, TimeoutError) as exc:
+        # TimeoutError separately from URLError: urllib only wraps a timeout
+        # in URLError when it happens *connecting* — one while *reading* the
+        # response comes through as a bare TimeoutError/socket.timeout
+        # instead (confirmed live in compile_api.py's identical call shape).
         raise HttpError(502, "Could not reach GitHub.") from exc
 
     if len(data) > MAX_ZIP_BYTES:

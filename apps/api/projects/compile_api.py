@@ -75,10 +75,16 @@ def flush_collab_rooms(project) -> dict[uuid.UUID, str]:
                 body = json.loads(response.read())
                 if body.get("resolvedContent") is not None:
                     resolved[f.id] = body["resolvedContent"]
-        except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, ValueError) as exc:
-            # Best-effort: if collab is unreachable or returns something
-            # unexpected, compile against whatever storage already has
-            # rather than failing the whole compile.
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError, ValueError) as exc:
+            # Best-effort: if collab is unreachable, too slow, or returns
+            # something unexpected, compile against whatever storage already
+            # has rather than failing the whole compile. TimeoutError is
+            # listed separately from URLError even though both can mean "the
+            # request timed out": urllib only wraps a timeout in URLError
+            # when it happens *connecting*; one that happens while *reading*
+            # the response (confirmed live — a real production 500, every
+            # compile, stack trace through http.client's _read_status) comes
+            # through as a bare TimeoutError/socket.timeout instead.
             logger.warning("collab flush failed for file %s: %s", f.id, exc)
     return resolved
 
@@ -118,7 +124,11 @@ def dispatch_compile_start(tar_bytes: bytes, compiler: str, main_file: str) -> s
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode(errors="replace")
         raise HttpError(400, f"Compile request rejected: {detail}") from exc
-    except urllib.error.URLError as exc:
+    except (urllib.error.URLError, TimeoutError) as exc:
+        # TimeoutError separately from URLError: urllib only wraps a timeout
+        # in URLError when it happens *connecting* — one while *reading* the
+        # response (confirmed live — see flush_collab_rooms's identical fix)
+        # comes through as a bare TimeoutError/socket.timeout instead.
         raise HttpError(502, "Compile service is unavailable.") from exc
 
 
@@ -136,7 +146,7 @@ def dispatch_compile_status(job_id: str) -> dict:
             raise HttpError(404, "Unknown or expired compile job.") from exc
         detail = exc.read().decode(errors="replace")
         raise HttpError(400, f"Compile status request rejected: {detail}") from exc
-    except urllib.error.URLError as exc:
+    except (urllib.error.URLError, TimeoutError) as exc:
         raise HttpError(502, "Compile service is unavailable.") from exc
 
 
@@ -155,7 +165,7 @@ def _dispatch_synctex(path: str, body: dict) -> dict | None:
             return None
         detail = exc.read().decode(errors="replace")
         raise HttpError(400, f"SyncTeX request rejected: {detail}") from exc
-    except urllib.error.URLError as exc:
+    except (urllib.error.URLError, TimeoutError) as exc:
         raise HttpError(502, "Compile service is unavailable.") from exc
 
 
