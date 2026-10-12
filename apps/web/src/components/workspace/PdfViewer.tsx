@@ -14,6 +14,44 @@ const ZOOM_STEP = 1.2;
 const MIN_ZOOM = 0.3;
 const MAX_ZOOM = 4;
 
+// Remembers which page the viewer was last scrolled to, per project, so a
+// recompile (which replaces the whole PDF, including after an unrelated
+// edit elsewhere in the document) or a plain browser reload reopens where
+// the user left off instead of snapping back to page 1 every time.
+function pdfPageStorageKey(projectId: string): string {
+  return `freeleaf.pdfPage.${projectId}`;
+}
+
+function readStoredPage(projectId: string): number {
+  try {
+    const n = parseInt(localStorage.getItem(pdfPageStorageKey(projectId)) ?? "1", 10);
+    return Number.isFinite(n) && n > 0 ? n : 1;
+  } catch {
+    return 1;
+  }
+}
+
+function writeStoredPage(projectId: string, page: number): void {
+  try {
+    localStorage.setItem(pdfPageStorageKey(projectId), String(page));
+  } catch {
+    // Private browsing / quota — losing the "remember my page" convenience
+    // isn't worth surfacing an error for.
+  }
+}
+
+/** The page currently at (or just above) the top of the scroll container —
+ * the last page wrap whose top edge has been scrolled past. */
+function currentPageFromScroll(container: HTMLDivElement, pageWraps: HTMLDivElement[]): number {
+  const scrollTop = container.scrollTop;
+  let page = 1;
+  for (let i = 0; i < pageWraps.length; i++) {
+    if (pageWraps[i].offsetTop <= scrollTop + 1) page = i + 1;
+    else break;
+  }
+  return page;
+}
+
 export interface SyncTexBox {
   page: number;
   h: number;
@@ -28,8 +66,8 @@ export interface PdfViewerHandle {
 
 export const PdfViewer = forwardRef<
   PdfViewerHandle,
-  { src: string; onSourceClick?: (page: number, x: number, y: number) => void }
->(function PdfViewer({ src, onSourceClick }, ref) {
+  { src: string; projectId: string; onSourceClick?: (page: number, x: number, y: number) => void }
+>(function PdfViewer({ src, projectId, onSourceClick }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -164,6 +202,16 @@ export const PdfViewer = forwardRef<
         baseScaleRef.current = (container.clientWidth - 24) / unscaledViewport.width;
 
         await renderAllPages(baseScaleRef.current);
+        if (cancelled) return;
+
+        // Restore whatever page the viewer was last scrolled to (across a
+        // recompile or a plain browser reload) instead of leaving it at the
+        // top — clamped down if this version of the document is shorter.
+        const restoredPage = Math.min(readStoredPage(projectId), doc.numPages);
+        if (restoredPage > 1) {
+          const pageWrap = pageWrapsRef.current[restoredPage - 1];
+          if (pageWrap) container.scrollTop = pageWrap.offsetTop;
+        }
       } catch {
         if (!cancelled) setError("Couldn't render this PDF.");
       } finally {
@@ -177,7 +225,7 @@ export const PdfViewer = forwardRef<
       pagesRef.current = [];
       loadingTask.destroy();
     };
-  }, [src, renderAllPages]);
+  }, [src, projectId, renderAllPages]);
 
   const zoomChangeCount = useRef(0);
   useEffect(() => {
@@ -186,6 +234,26 @@ export const PdfViewer = forwardRef<
     if (!docRef.current) return;
     void renderAllPages(baseScaleRef.current * zoom);
   }, [zoom, renderAllPages]);
+
+  // Tracks which page the viewer is scrolled to so the next load (a
+  // recompile or a browser reload) can restore it — see readStoredPage
+  // above. Debounced so a continuous scroll doesn't hammer localStorage.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onScroll = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        writeStoredPage(projectId, currentPageFromScroll(container, pageWrapsRef.current));
+      }, 200);
+    };
+    container.addEventListener("scroll", onScroll);
+    return () => {
+      container.removeEventListener("scroll", onScroll);
+      if (timer) clearTimeout(timer);
+    };
+  }, [projectId]);
 
   // Ctrl/Cmd+scroll zoom — matches the OS/browser-native "hold modifier to
   // zoom" convention (and what trackpad pinch-zoom gestures already send:

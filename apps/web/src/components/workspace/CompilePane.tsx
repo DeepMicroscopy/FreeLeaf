@@ -404,6 +404,7 @@ export const CompilePane = forwardRef<
                 <PdfViewer
                   ref={pdfViewerRef}
                   src={`${apiOrigin()}/api/projects/${projectId}/compile-runs/${run.id}/pdf`}
+                  projectId={projectId}
                   onSourceClick={handleSourceClick}
                 />
               )}
