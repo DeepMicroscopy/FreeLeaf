@@ -79,7 +79,15 @@ export function parseBibtex(source: string): BibEntry[] {
       } else if (source[j] === '"') {
         j++;
         const valStart = j;
-        while (j < len && source[j] !== '"') j++;
+        // `\"` is the classic LaTeX umlaut escape (\"o, \"u, \"a for
+        // ö/ü/ä, extremely common in German/European references) — not an
+        // escaped closing quote in the string-escaping sense, but it must
+        // still be skipped here, or this quote-delimited value ends right
+        // in the middle of a word the moment it hits one, silently
+        // truncating the field (and corrupting everything parsed after it
+        // in the entry, since parsing resumes mid-value instead of at the
+        // next field/closing brace).
+        while (j < len && !(source[j] === '"' && source[j - 1] !== "\\")) j++;
         value = source.slice(valStart, j);
         j++;
       } else {
