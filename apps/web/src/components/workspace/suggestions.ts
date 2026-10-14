@@ -121,7 +121,19 @@ function findSpanAt(ytext: Y.Text, from: number, to: number): SuggestionSpan | n
  *   with any adjacent (not just covering) same-author/kind span, re-tagging
  *   the union under the *earlier* span's original timestamp (so its
  *   displayed "X ago" reflects when the suggestion as a whole started, not
- *   this latest extension of it). */
+ *   this latest extension of it).
+ *
+ * `origin`, when given, must be the exact same object y-codemirror.next's
+ * ySync plugin uses as the origin of its own local-edit-mirroring
+ * transactions (`view.state.facet(ySyncFacet)`) — see the call site in
+ * CodeMirrorEditor.tsx for why: calling `ytext.format()` bare runs it in a
+ * Yjs transaction with a *different* origin (null), and the ySync plugin's
+ * remote-change observer only recognizes "this is my own already-applied
+ * edit, don't mirror it back into CodeMirror" by comparing origins exactly —
+ * a mismatch makes it treat our own formatting call as an incoming remote
+ * change and reentrantly re-dispatch it into the very CodeMirror view whose
+ * transaction we're still in the middle of handling, corrupting the
+ * document. Passing the matching origin avoids that echo entirely. */
 export function ensureSuggestionTag(
   ytext: Y.Text,
   from: number,
@@ -130,6 +142,7 @@ export function ensureSuggestionTag(
   authorId: string,
   authorName: string,
   now: number,
+  origin?: unknown,
 ): void {
   if (to <= from) return;
   const spans = computeSuggestionSpans(ytext);
@@ -142,11 +155,15 @@ export function ensureSuggestionTag(
   if (adjacent) {
     const unionFrom = Math.min(adjacent.from, from);
     const unionTo = Math.max(adjacent.to, to);
-    ytext.format(unionFrom, unionTo - unionFrom, { sugg: kind, authorId, authorName, ts: adjacent.ts });
+    ytext.doc!.transact(() => {
+      ytext.format(unionFrom, unionTo - unionFrom, { sugg: kind, authorId, authorName, ts: adjacent.ts });
+    }, origin);
     return;
   }
 
-  ytext.format(from, to - from, { sugg: kind, authorId, authorName, ts: now });
+  ytext.doc!.transact(() => {
+    ytext.format(from, to - from, { sugg: kind, authorId, authorName, ts: now });
+  }, origin);
 }
 
 /** Accept: an insertion becomes permanent plain text (strip the tag); a

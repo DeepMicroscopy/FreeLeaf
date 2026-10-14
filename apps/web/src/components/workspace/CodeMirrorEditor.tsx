@@ -9,7 +9,7 @@ import { openSearchPanel, search, searchKeymap } from "@codemirror/search";
 import { EditorState, Transaction } from "@codemirror/state";
 import type { TransactionSpec } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, tooltips } from "@codemirror/view";
-import { yCollab } from "y-codemirror.next";
+import { yCollab, ySyncFacet } from "y-codemirror.next";
 import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
@@ -1070,7 +1070,27 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
             // background aid like any other text editor's. spellcheckExclusion
             // marks LaTeX markup (commands, math, comments, file
             // paths/keys) spellcheck="false" so only prose gets checked.
-            EditorView.contentAttributes.of({ spellcheck: "true" }),
+            //
+            // autocorrect/autocapitalize explicitly off — unlike spellcheck
+            // (which only underlines), these actually *rewrite* what's
+            // typed, and Safari enables both by default on a contenteditable
+            // region with no opt-out needed (Chrome/Firefox don't do this on
+            // desktop, which is why this was never noticed before). A real
+            // production report traced to this: typing ordinary punctuation
+            // in Reviewing mode fragmented into several separate suggestion
+            // spans with an untagged gap between some of them, which then
+            // survived "Reject all" as leftover garbled text — consistent
+            // with Safari silently issuing its own replacement edit (a
+            // second, separate transaction) right after the original
+            // keystroke, which this editor's suggestion-tagging code never
+            // accounts for (it tags exactly what each transaction reports,
+            // and two transactions for what's really one user action can
+            // land adjacent-but-not-exactly-tiled, or leave a character
+            // untouched by either). Turning the browser's rewriting off
+            // removes the extra transaction at the source; even outside
+            // Reviewing mode, autocorrect silently changing LaTeX source
+            // (e.g. smart-quoting a literal `"`) would be its own bug.
+            EditorView.contentAttributes.of({ spellcheck: "true", autocorrect: "off", autocapitalize: "off" }),
             spellcheckExclusion,
             EditorView.domEventHandlers({
               paste: (event, view) => {
@@ -1208,8 +1228,35 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
           // removal, and CodeMirrorEditor.module.css / suggestionsExtension.ts
           // for how that's then rendered and resolved.
           dispatchTransactions: (trs, view) => {
+            // The exact same origin object y-codemirror.next's ySync plugin
+            // uses for its own local-edit-mirroring transactions. Any Y.Text
+            // mutation made directly below (not through CodeMirror's own
+            // dispatch, e.g. ensureSuggestionTag's ytext.format() calls)
+            // must be wrapped in ytext.doc.transact(fn, syncConf) with this
+            // same reference — see ensureSuggestionTag's doc comment for why
+            // a mismatched origin causes the ySync plugin's remote-change
+            // observer to reentrantly re-dispatch our own already-applied
+            // edit back into this very view, corrupting the document.
+            const syncConf = view.state.facet(ySyncFacet);
+            // Every transaction here gets its own view.update([tr]) call
+            // rather than one batched view.update(trs)/view.update(rewritten)
+            // over the whole array. y-codemirror.next's YSyncPluginValue only
+            // inspects update.transactions[0] to decide whether an update
+            // originated from its own remote-mirroring dispatch (tagged with
+            // ySyncAnnotation) and should therefore NOT be mirrored back into
+            // Y.Text. A single dispatchTransactions call can receive both a
+            // remote-mirrored transaction and a genuine local one together
+            // (two tabs/collaborators editing concurrently) — batching them
+            // into one view.update() means that check, seeing the remote one
+            // at index 0, skips mirroring the *entire* batch, silently
+            // dropping the local transaction's own insert/delete from Y.Text
+            // while CodeMirror's own view still shows it. The next keystroke
+            // then mirrors against a CodeMirror document that's already
+            // ahead of Y.Text by the dropped characters, inserting at a
+            // shifted position and corrupting the text. Splitting into one
+            // view.update() per transaction keeps each one's mirroring
+            // decision correct no matter how they're batched or ordered.
             if (!suggestModeRef.current) {
-              view.update(trs);
               // Real bug: Yjs's Y.Text auto-inherits the *preceding* run's
               // rich-text attributes for a plain insert with none of its
               // own (the same Quill-delta-compatible behavior
@@ -1230,26 +1277,37 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
               // planSuggestionRewrite below — that function computes a
               // *different* resulting document (deletions suppressed, so
               // its own position bookkeeping is necessary); this branch
-              // applies `trs` completely unchanged via `view.update(trs)`
-              // above, so CodeMirror's own `toB` is already exactly right,
-              // including correctly chaining across more than one
-              // transaction in a single dispatch (each transaction's `toB`
-              // is relative to *its own* start state, i.e. the previous
-              // transaction's result) — no manual cross-transaction
-              // position tracking needed, and none to get wrong.
+              // applies each `tr` unchanged, so CodeMirror's own `toB` is
+              // already exactly right.
+              //
+              // Gated to `tr.isUserEvent("input")` — i.e. only this client's
+              // own local typing — because dispatchTransactions also sees
+              // transactions that mirror a *remote* collaborator's edit into
+              // this view (no userEvent annotation at all; see
+              // isSuggestableEdit). A remote insert can legitimately carry a
+              // `sugg` tag (that collaborator is Reviewing while this client
+              // is merely in Writing mode) and clearing it here would strip
+              // their real suggestion the instant it arrives, then broadcast
+              // that stripped state back out to everyone else — this was a
+              // real, confirmed bug: with a second tab/collaborator simply
+              // *connected* (not even editing), every suggestion made
+              // elsewhere got silently un-tagged the moment it synced here.
               const yt = ytextRef.current;
-              if (yt) {
-                for (const tr of trs) {
-                  if (!tr.docChanged) continue;
-                  tr.changes.iterChanges((_fromA, _toA, fromB, _toB, inserted) => {
-                    if (inserted.length > 0) yt.format(fromB, inserted.length, CLEAR_SUGGESTION_ATTRS);
-                  });
-                }
+              for (const tr of trs) {
+                view.update([tr]);
+                if (!yt || !tr.docChanged || !tr.isUserEvent("input")) continue;
+                tr.changes.iterChanges((_fromA, _toA, fromB, _toB, inserted) => {
+                  if (inserted.length > 0) {
+                    yt.doc!.transact(() => {
+                      yt.format(fromB, inserted.length, CLEAR_SUGGESTION_ATTRS);
+                    }, syncConf);
+                  }
+                });
               }
               return;
             }
-            const rewritten: Transaction[] = [];
-            const formatOps: { kind: "ins" | "del"; from: number; to: number }[] = [];
+            const authorId = user?.id ?? "anonymous";
+            const authorName = user?.display_name || "Anonymous";
             // Snapshot once per dispatch (not per transaction): still-pending
             // insertions get actually deleted rather than double-tagged when
             // removed before anyone accepts them — see splitDeletionRange's
@@ -1260,6 +1318,8 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
                   .map((s) => ({ from: s.from, to: s.to }))
               : [];
             for (const tr of trs) {
+              let outTr: Transaction = tr;
+              let formatOps: { kind: "ins" | "del"; from: number; to: number }[] = [];
               if (isSuggestableEdit(tr)) {
                 const plan = planSuggestionRewrite(tr, pendingInsertions);
                 if (plan.changes) {
@@ -1275,20 +1335,16 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
                   // ever (re)opening, not just completions' own inserts.
                   const origUserEvent = tr.annotation(Transaction.userEvent);
                   if (origUserEvent) spec.userEvent = origUserEvent;
-                  rewritten.push(tr.startState.update(spec));
-                  formatOps.push(...plan.formatOps);
-                  continue;
+                  outTr = tr.startState.update(spec);
+                  formatOps = plan.formatOps;
                 }
               }
-              rewritten.push(tr);
-            }
-            view.update(rewritten);
-            const yt = ytextRef.current;
-            if (formatOps.length > 0 && yt) {
-              const authorId = user?.id ?? "anonymous";
-              const authorName = user?.display_name || "Anonymous";
-              const now = Date.now();
-              for (const op of formatOps) ensureSuggestionTag(yt, op.from, op.to, op.kind, authorId, authorName, now);
+              view.update([outTr]);
+              const yt = ytextRef.current;
+              if (formatOps.length > 0 && yt) {
+                const now = Date.now();
+                for (const op of formatOps) ensureSuggestionTag(yt, op.from, op.to, op.kind, authorId, authorName, now, syncConf);
+              }
             }
           },
         });
