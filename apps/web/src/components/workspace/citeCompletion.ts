@@ -49,6 +49,29 @@ export function findCiteKeyOccurrences(text: string, key: string): CiteKeyOccurr
   return occurrences;
 }
 
+export interface EnclosingCiteKeysArg {
+  from: number;
+  to: number;
+  keysArg: string;
+}
+
+/** If `pos` sits inside the key-list braces of a `\cite{...}`-family command
+ * in `text` (between the opening and closing brace, inclusive of both
+ * edges), returns that command's key-list range and current contents — used
+ * by the BibTeX paste handler (CodeMirrorEditor.tsx) to append a newly
+ * pasted reference to an *existing* `\cite{}` instead of inserting a second
+ * one right next to it. */
+export function findEnclosingCiteKeysArg(text: string, pos: number): EnclosingCiteKeysArg | null {
+  for (const match of text.matchAll(CITE_USAGE_RE)) {
+    const keysArg = match[1];
+    // Same offset math as findCiteKeyOccurrences above.
+    const from = match.index! + match[0].length - 1 - keysArg.length;
+    const to = from + keysArg.length;
+    if (pos >= from && pos <= to) return { from, to, keysArg };
+  }
+  return null;
+}
+
 export function citeCompletionSource(getEntries: () => BibEntry[]) {
   return (context: CompletionContext): CompletionResult | null => {
     const match = context.matchBefore(CITE_COMMAND_RE);

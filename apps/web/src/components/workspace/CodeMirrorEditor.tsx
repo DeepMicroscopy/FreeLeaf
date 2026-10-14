@@ -20,7 +20,7 @@ import { useWorkspace } from "../../lib/workspace";
 import { Spinner } from "../ui/Spinner";
 import { useToast } from "../ui/Toast";
 import { acronymCompletionSource, extractAcronyms, hasAcronymBlock, sanitizeAcronymKey } from "./acronymCompletion";
-import { citeCompletionSource } from "./citeCompletion";
+import { citeCompletionSource, findEnclosingCiteKeysArg } from "./citeCompletion";
 import { envCompletionSource } from "./envCompletion";
 import {
   includegraphicsFileCompletionSource,
@@ -850,6 +850,25 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
     // race against the entry we just added above still being in flight
     // over this tab's own WebSocket — see waitForSync's doc comment.
     await waitForSyncRef.current();
+
+    // Pasting while the cursor already sits inside an existing \cite{}'s
+    // key list (anywhere in it, not just at the very end — \cite{ba|r})
+    // should extend *that* command rather than insert a second \cite{}
+    // right next to it. The new key(s) always land at the end of the
+    // existing list, not at the literal cursor offset within it: pasting
+    // while the cursor happens to be in the middle of an existing key name
+    // means "also cite this", not "split this key in half".
+    const enclosing = findEnclosingCiteKeysArg(view.state.doc.toString(), atPos);
+    if (enclosing) {
+      const insertText = (enclosing.keysArg.trim() ? "," : "") + resolvedKeys.join(",");
+      view.dispatch({
+        changes: { from: enclosing.to, to: enclosing.to, insert: insertText },
+        selection: { anchor: enclosing.to + insertText.length },
+        userEvent: "input.paste",
+      });
+      show(`Added reference${resolvedKeys.length === 1 ? "" : "s"}: ${resolvedKeys.join(", ")}`);
+      return;
+    }
 
     const citeText = `\\cite{${resolvedKeys.join(", ")}}`;
     view.dispatch({
