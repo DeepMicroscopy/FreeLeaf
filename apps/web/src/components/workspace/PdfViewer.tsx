@@ -18,13 +18,22 @@ const MAX_ZOOM = 4;
 // recompile (which replaces the whole PDF, including after an unrelated
 // edit elsewhere in the document) or a plain browser reload reopens where
 // the user left off instead of snapping back to page 1 every time.
+//
+// sessionStorage, not localStorage: the project id alone isn't a unique key
+// if the same project is open in more than one tab/window, and localStorage
+// is shared across all of them — each tab's own scroll position would
+// silently clobber the others' in that one shared slot, so reloading could
+// land wherever some *other* tab's viewer happened to leave it last (often
+// page 1, if a stray tab was sitting at the top). sessionStorage is scoped
+// per tab — still survives a reload of that same tab (the actual ask),
+// just without the cross-tab interference.
 function pdfPageStorageKey(projectId: string): string {
   return `freeleaf.pdfPage.${projectId}`;
 }
 
 function readStoredPage(projectId: string): number {
   try {
-    const n = parseInt(localStorage.getItem(pdfPageStorageKey(projectId)) ?? "1", 10);
+    const n = parseInt(sessionStorage.getItem(pdfPageStorageKey(projectId)) ?? "1", 10);
     return Number.isFinite(n) && n > 0 ? n : 1;
   } catch {
     return 1;
@@ -33,7 +42,7 @@ function readStoredPage(projectId: string): number {
 
 function writeStoredPage(projectId: string, page: number): void {
   try {
-    localStorage.setItem(pdfPageStorageKey(projectId), String(page));
+    sessionStorage.setItem(pdfPageStorageKey(projectId), String(page));
   } catch {
     // Private browsing / quota — losing the "remember my page" convenience
     // isn't worth surfacing an error for.
