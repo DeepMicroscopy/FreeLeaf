@@ -1,6 +1,6 @@
 import { api } from "@freeleaf/shared";
 import type { components } from "@freeleaf/shared";
-import { Check, MessageSquare, Trash2, Undo2, X } from "lucide-react";
+import { Check, Eye, EyeOff, MessageSquare, Trash2, Undo2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "../ui/Button";
@@ -54,6 +54,15 @@ export function CommentsPane({
   const [replyBody, setReplyBody] = useState("");
   const [flashedId, setFlashedId] = useState<string | null>(null);
   const itemRefs = useRef(new Map<string, HTMLLIElement>());
+  const hideResolvedKey = `freeleaf.hideResolvedComments.${projectId}`;
+  const [hideResolved, setHideResolvedState] = useState(() => localStorage.getItem(hideResolvedKey) === "1");
+  const setHideResolved = useCallback(
+    (value: boolean) => {
+      setHideResolvedState(value);
+      localStorage.setItem(hideResolvedKey, value ? "1" : "0");
+    },
+    [hideResolvedKey],
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -144,10 +153,31 @@ export function CommentsPane({
     [projectId, load],
   );
 
+  const resolvedCount = comments.filter((c) => c.resolved).length;
+  const visibleComments = hideResolved ? comments.filter((c) => !c.resolved) : comments;
+
   return (
     <div className={styles.pane}>
       <div className={styles.header}>
         <h2 className={styles.title}>Comments</h2>
+        {resolvedCount > 0 && (
+          <button
+            type="button"
+            className={styles.actionLink}
+            onClick={() => setHideResolved(!hideResolved)}
+            title={hideResolved ? "Show resolved comments" : "Hide resolved comments"}
+          >
+            {hideResolved ? (
+              <>
+                <Eye size={12} aria-hidden="true" /> Show resolved ({resolvedCount})
+              </>
+            ) : (
+              <>
+                <EyeOff size={12} aria-hidden="true" /> Hide resolved
+              </>
+            )}
+          </button>
+        )}
       </div>
 
       <div className={styles.newComment}>
@@ -189,9 +219,15 @@ export function CommentsPane({
           title="No comments yet"
           description="Comments on this file will show up here."
         />
+      ) : visibleComments.length === 0 ? (
+        <EmptyState
+          icon={<Check size={28} aria-hidden="true" />}
+          title="All comments resolved"
+          description="Click “Show resolved” to see them again."
+        />
       ) : (
         <ul className={styles.list}>
-          {comments.map((c) => (
+          {visibleComments.map((c) => (
             <li
               key={c.id}
               ref={(el) => {
