@@ -151,3 +151,59 @@
 .commentMenuItem:hover {
   background: var(--bg-hover);
 }
+
+/* Same colors as the single-suggestion hover tooltip's accept/reject
+   buttons (.cm-suggestionTooltipAccept/Reject in CodeMirrorEditor.tsx's
+   theme) — kept as separate rules rather than shared ones since this is a
+   plain React-rendered overlay, not a CodeMirror-native tooltip, so those
+   theme-scoped classes (generated under the editor's own root element)
+   wouldn't apply to it anyway. */
+.suggestionRangeMenu {
+  position: fixed;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  box-shadow: var(--shadow-md);
+  padding: 6px 8px;
+}
+
+.suggestionRangeMenuCount {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  padding: 0 4px;
+  white-space: nowrap;
+}
+
+.suggestionRangeMenuAccept,
+.suggestionRangeMenuReject {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 650;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.suggestionRangeMenuAccept:hover,
+.suggestionRangeMenuReject:hover {
+  filter: brightness(1.08);
+}
+
+.suggestionRangeMenuAccept {
+  color: #fff;
+  background: #16a34a;
+}
+
+.suggestionRangeMenuReject {
+  color: var(--text-primary);
+  background: transparent;
+  border-color: color-mix(in srgb, #dc2626 55%, var(--border-default));
+}

@@ -1,7 +1,7 @@
 import { api, looksLikeBibtex, parseBibtex } from "@freeleaf/shared";
 import type { BibEntry } from "@freeleaf/shared";
 import { autocompletion, completionKeymap } from "@codemirror/autocomplete";
-import { MessageSquarePlus } from "lucide-react";
+import { Check, MessageSquarePlus, X } from "lucide-react";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { bracketMatching, StreamLanguage } from "@codemirror/language";
 import { stex } from "@codemirror/legacy-modes/mode/stex";
@@ -718,6 +718,16 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
   const onRequestNewAcronymRef = useRef(onRequestNewAcronym);
   onRequestNewAcronymRef.current = onRequestNewAcronym;
   const [commentMenu, setCommentMenu] = useState<{ x: number; y: number; from: number; to: number; text: string; line: number } | null>(null);
+  // A floating "Accept all / Reject all" for every suggestion within the
+  // current selection — lets a moderator resolve a whole paragraph's
+  // suggestions at once instead of one at a time via the single-suggestion
+  // hover tooltip. Tracks the live selection (see the updateListener below),
+  // so it appears/repositions/disappears as the selection itself changes —
+  // no separate dismiss-on-outside-click handler needed the way commentMenu
+  // has one, since changing or collapsing the selection already clears it.
+  const [suggestionRangeMenu, setSuggestionRangeMenu] = useState<{ x: number; y: number; spans: SuggestionSpan[] } | null>(
+    null,
+  );
   const onOpenTableDesignerRef = useRef(onOpenTableDesigner);
   onOpenTableDesignerRef.current = onOpenTableDesigner;
   const onOpenPackageDocRef = useRef(onOpenPackageDoc);
@@ -1155,6 +1165,24 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
             EditorView.updateListener.of((update) => {
               if (!update.selectionSet) return;
               onCursorLineChangeRef.current?.(update.state.doc.lineAt(update.state.selection.main.head).number);
+
+              if (!canModerateSuggestionsRef.current) {
+                setSuggestionRangeMenu(null);
+                return;
+              }
+              const sel = update.state.selection.main;
+              if (sel.from === sel.to) {
+                setSuggestionRangeMenu(null);
+                return;
+              }
+              const spans = suggestionSpansRef.current.filter((s) => s.from < sel.to && s.to > sel.from);
+              if (spans.length === 0) {
+                setSuggestionRangeMenu(null);
+                return;
+              }
+              const coords = update.view.coordsAtPos(sel.head);
+              if (!coords) return;
+              setSuggestionRangeMenu({ x: coords.left, y: coords.top - 44, spans });
             }),
             suggestionDecorationsField,
             suggestionHoverTooltip(
@@ -1364,6 +1392,25 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
     };
   }, [commentMenu]);
 
+  // Dismisses the suggestion-range menu on Escape or scroll — no
+  // outside-click handler needed (unlike commentMenu's), since clicking
+  // anywhere in the editor changes or collapses the selection, which the
+  // updateListener above already reacts to by clearing this.
+  useEffect(() => {
+    if (!suggestionRangeMenu) return;
+    const dismiss = () => setSuggestionRangeMenu(null);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") dismiss();
+    };
+    const scroller = hostRef.current?.querySelector(".cm-scroller");
+    document.addEventListener("keydown", onKeyDown);
+    scroller?.addEventListener("scroll", dismiss);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      scroller?.removeEventListener("scroll", dismiss);
+    };
+  }, [suggestionRangeMenu]);
+
   return (
     <div className={styles.wrapper}>
       <div className={styles.statusBar}>
@@ -1403,6 +1450,37 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
           >
             <MessageSquarePlus size={14} aria-hidden="true" />
             Add comment
+          </button>
+        </div>
+      )}
+      {suggestionRangeMenu && (
+        <div
+          className={styles.suggestionRangeMenu}
+          style={{ left: suggestionRangeMenu.x, top: suggestionRangeMenu.y }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <span className={styles.suggestionRangeMenuCount}>
+            {suggestionRangeMenu.spans.length} suggestion{suggestionRangeMenu.spans.length === 1 ? "" : "s"}
+          </span>
+          <button
+            className={styles.suggestionRangeMenuAccept}
+            onClick={() => {
+              if (ytextRef.current) acceptAllSuggestions(ytextRef.current, suggestionRangeMenu.spans);
+              setSuggestionRangeMenu(null);
+            }}
+          >
+            <Check size={13} aria-hidden="true" />
+            Accept all
+          </button>
+          <button
+            className={styles.suggestionRangeMenuReject}
+            onClick={() => {
+              if (ytextRef.current) rejectAllSuggestions(ytextRef.current, suggestionRangeMenu.spans);
+              setSuggestionRangeMenu(null);
+            }}
+          >
+            <X size={13} aria-hidden="true" />
+            Reject all
           </button>
         </div>
       )}
