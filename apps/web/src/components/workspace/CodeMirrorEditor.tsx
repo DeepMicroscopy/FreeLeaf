@@ -1337,10 +1337,27 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
                   .map((s) => ({ from: s.from, to: s.to }))
               : [];
             for (const tr of trs) {
+              // TEMP DEBUG — tracking down a suggestion-fragmentation report
+              // that only reproduces with real keyboard input, not scripted
+              // typing. Remove once root-caused.
+              const rawChanges: unknown[] = [];
+              tr.changes.iterChanges((fromA, toA, fromB, toB, inserted) => {
+                rawChanges.push({ fromA, toA, fromB, toB, insert: inserted.toString() });
+              });
+              console.log(
+                "[FL-SUGG-DEBUG] tr " +
+                  JSON.stringify({
+                    userEvent: tr.annotation(Transaction.userEvent) ?? null,
+                    docChanged: tr.docChanged,
+                    suggestable: isSuggestableEdit(tr),
+                    rawChanges,
+                  }),
+              );
               let outTr: Transaction = tr;
               let formatOps: { kind: "ins" | "del"; from: number; to: number }[] = [];
               if (isSuggestableEdit(tr)) {
                 const plan = planSuggestionRewrite(tr, pendingInsertions);
+                console.log("[FL-SUGG-DEBUG] plan " + JSON.stringify(plan));
                 if (plan.changes) {
                   const spec: TransactionSpec = { changes: plan.changes, scrollIntoView: tr.scrollIntoView };
                   if (plan.selectionAnchor != null) spec.selection = { anchor: plan.selectionAnchor };
@@ -1362,7 +1379,12 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
               const yt = ytextRef.current;
               if (formatOps.length > 0 && yt) {
                 const now = Date.now();
-                for (const op of formatOps) ensureSuggestionTag(yt, op.from, op.to, op.kind, authorId, authorName, now, syncConf);
+                for (const op of formatOps) {
+                  ensureSuggestionTag(yt, op.from, op.to, op.kind, authorId, authorName, now, syncConf);
+                  console.log(
+                    "[FL-SUGG-DEBUG] post-tag " + JSON.stringify({ op, spans: computeSuggestionSpans(yt) }),
+                  );
+                }
               }
             }
           },
