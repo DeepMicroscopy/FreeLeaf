@@ -111,6 +111,9 @@ export const PdfViewer = forwardRef<
   const baseScaleRef = useRef(1);
   const currentScaleRef = useRef(1);
   const renderTokenRef = useRef(0);
+  // Suppresses the scroll-tracking write (below) while a render is clearing
+  // and rebuilding the container — see its own doc comment for why.
+  const restoringScrollRef = useRef(false);
   const onSourceClickRef = useRef(onSourceClick);
   onSourceClickRef.current = onSourceClick;
 
@@ -210,16 +213,21 @@ export const PdfViewer = forwardRef<
         const unscaledViewport = pages[0].getViewport({ scale: 1 });
         baseScaleRef.current = (container.clientWidth - 24) / unscaledViewport.width;
 
-        await renderAllPages(baseScaleRef.current);
-        if (cancelled) return;
+        restoringScrollRef.current = true;
+        try {
+          await renderAllPages(baseScaleRef.current);
+          if (cancelled) return;
 
-        // Restore whatever page the viewer was last scrolled to (across a
-        // recompile or a plain browser reload) instead of leaving it at the
-        // top — clamped down if this version of the document is shorter.
-        const restoredPage = Math.min(readStoredPage(projectId), doc.numPages);
-        if (restoredPage > 1) {
-          const pageWrap = pageWrapsRef.current[restoredPage - 1];
-          if (pageWrap) container.scrollTop = pageWrap.offsetTop;
+          // Restore whatever page the viewer was last scrolled to (across a
+          // recompile or a plain browser reload) instead of leaving it at the
+          // top — clamped down if this version of the document is shorter.
+          const restoredPage = Math.min(readStoredPage(projectId), doc.numPages);
+          if (restoredPage > 1) {
+            const pageWrap = pageWrapsRef.current[restoredPage - 1];
+            if (pageWrap) container.scrollTop = pageWrap.offsetTop;
+          }
+        } finally {
+          restoringScrollRef.current = false;
         }
       } catch {
         if (!cancelled) setError("Couldn't render this PDF.");
@@ -241,12 +249,29 @@ export const PdfViewer = forwardRef<
     zoomChangeCount.current += 1;
     if (zoomChangeCount.current === 1) return; // skip the initial mount; the load effect already rendered at zoom=1
     if (!docRef.current) return;
-    void renderAllPages(baseScaleRef.current * zoom);
+    restoringScrollRef.current = true;
+    void renderAllPages(baseScaleRef.current * zoom).finally(() => {
+      restoringScrollRef.current = false;
+    });
   }, [zoom, renderAllPages]);
 
   // Tracks which page the viewer is scrolled to so the next load (a
   // recompile or a browser reload) can restore it — see readStoredPage
   // above. Debounced so a continuous scroll doesn't hammer localStorage.
+  //
+  // renderAllPages clears the container (`container.innerHTML = ""`) before
+  // rebuilding it at the new source/zoom, which drops scrollTop to 0 and
+  // fires a real scroll event — indistinguishable from the user actually
+  // scrolling to the top. For a document with enough pages that rendering
+  // takes longer than this debounce, that stray event's write lands *during*
+  // rendering, clobbering the correct remembered page in sessionStorage
+  // before the load effect's own restore step ever gets to read it (a real,
+  // reproduced bug: recompiling a long PDF would often snap back to page 1,
+  // "often" rather than "always" depending on render time vs. this delay).
+  // Checked inside the timeout (not when the event fires) since the write it
+  // guards happens later — restoringScrollRef flips back to false as soon as
+  // the real restore position is set, so that *good* scroll's own write
+  // still lands normally.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -254,6 +279,7 @@ export const PdfViewer = forwardRef<
     const onScroll = () => {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
+        if (restoringScrollRef.current) return;
         writeStoredPage(projectId, currentPageFromScroll(container, pageWrapsRef.current));
       }, 200);
     };
