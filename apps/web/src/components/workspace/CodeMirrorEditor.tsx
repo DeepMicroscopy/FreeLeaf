@@ -225,9 +225,10 @@ const theme = EditorView.theme({
   ".cm-commentAnchor": {
     backgroundColor: "color-mix(in srgb, #eab308 25%, transparent)",
   },
-  ".cm-commentAnchorResolved": {
-    backgroundColor: "color-mix(in srgb, #eab308 10%, transparent)",
-  },
+  // Deliberately no background: a resolved comment's marked text keeps its
+  // decoration (for live position tracking — see computeCommentAnchorDecorations's
+  // doc comment) but shouldn't stay visually highlighted.
+  ".cm-commentAnchorResolved": {},
   ".cm-searchMatch": {
     backgroundColor: "color-mix(in srgb, #eab308 30%, transparent)",
   },

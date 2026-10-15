@@ -154,7 +154,13 @@ export function CommentsPane({
   );
 
   const resolvedCount = comments.filter((c) => c.resolved).length;
-  const visibleComments = hideResolved ? comments.filter((c) => !c.resolved) : comments;
+  // By anchor line (then anchor_from, for several comments on the same
+  // line) rather than creation order — reading top-to-bottom through the
+  // document should match reading top-to-bottom through the comments.
+  const sortedComments = [...comments].sort(
+    (a, b) => a.anchor_line - b.anchor_line || (a.anchor_from ?? 0) - (b.anchor_from ?? 0),
+  );
+  const visibleComments = hideResolved ? sortedComments.filter((c) => !c.resolved) : sortedComments;
 
   return (
     <div className={styles.pane}>

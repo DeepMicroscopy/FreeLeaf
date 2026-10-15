@@ -72,6 +72,11 @@ export function computeCommentAnchorDecorations(
     .filter((a) => a.to > a.from)
     .sort((a, b) => a.from - b.from || a.to - b.to)
     .map((a) =>
+      // A resolved comment's marked text keeps its decoration (so its
+      // position keeps drifting correctly via deco.map() above, in case the
+      // thread gets reopened later) but renders with no visible highlight —
+      // the highlight means "needs attention," which a resolved thread no
+      // longer does. See cm-commentAnchorResolved's own (empty) CSS rule.
       Decoration.mark({ class: a.resolved ? "cm-commentAnchorResolved" : "cm-commentAnchor", commentId: a.id }).range(a.from, a.to),
     );
   return Decoration.set(marks, true);
