@@ -1,6 +1,6 @@
 import { api, apiOrigin } from "@freeleaf/shared";
 import type { components } from "@freeleaf/shared";
-import { Download, FileText, FileX2, RotateCw } from "lucide-react";
+import { Download, FileText, FileX2, RotateCw, Zap, ZapOff } from "lucide-react";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 
 import { Button } from "../ui/Button";
@@ -82,6 +82,26 @@ export const CompilePane = forwardRef<
         localStorage.setItem(autoOpenFixesKey, String(value));
       },
       [autoOpenFixesKey],
+    );
+    // Same reasoning as autoOpenFixes above — some collaborators want a
+    // compile firing after every pause, others (slow compiles, or just
+    // mid-draft and not wanting the distraction/PDF churn) want to compile
+    // only on demand. An opt-out kept client-side per project, not a shared
+    // ProjectSettings field. Explicit Recompile/Cmd+S always still works
+    // regardless of this — it only gates the *automatic* debounce.
+    const autoCompileEnabledKey = `freeleaf.autoCompileEnabled.${projectId}`;
+    const [autoCompileEnabled, setAutoCompileEnabledState] = useState(() => {
+      const raw = localStorage.getItem(autoCompileEnabledKey);
+      return raw === null ? true : raw === "true";
+    });
+    const autoCompileEnabledRef = useRef(autoCompileEnabled);
+    autoCompileEnabledRef.current = autoCompileEnabled;
+    const setAutoCompileEnabled = useCallback(
+      (value: boolean) => {
+        setAutoCompileEnabledState(value);
+        localStorage.setItem(autoCompileEnabledKey, String(value));
+      },
+      [autoCompileEnabledKey],
     );
     const [compiling, setCompiling] = useState(false);
     const [progressSteps, setProgressSteps] = useState<string[]>([]);
@@ -262,6 +282,7 @@ export const CompilePane = forwardRef<
       ref,
       () => ({
         scheduleAutoCompile: () => {
+          if (!autoCompileEnabledRef.current) return;
           if (timerRef.current) clearTimeout(timerRef.current);
           timerRef.current = setTimeout(() => compile(false), AUTO_COMPILE_DEBOUNCE_MS);
         },
@@ -307,6 +328,16 @@ export const CompilePane = forwardRef<
         cancelled = true;
       };
     }, [projectId]);
+
+    // Cancels an already-pending debounced compile the instant auto-compile
+    // is turned off — otherwise the edit that was mid-debounce when the user
+    // flipped the switch would still fire once more.
+    useEffect(() => {
+      if (!autoCompileEnabled && timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    }, [autoCompileEnabled]);
 
     useEffect(() => {
       return () => {
@@ -370,6 +401,19 @@ export const CompilePane = forwardRef<
               </button>
             )}
             <Button
+              variant={autoCompileEnabled ? "ghost" : "secondary"}
+              size="sm"
+              onClick={() => setAutoCompileEnabled(!autoCompileEnabled)}
+              title={
+                autoCompileEnabled
+                  ? "Auto-compile is on — turn off to compile only on Recompile/Cmd+S"
+                  : "Auto-compile is off — turn on to compile automatically after each edit"
+              }
+            >
+              {autoCompileEnabled ? <Zap size={14} aria-hidden="true" /> : <ZapOff size={14} aria-hidden="true" />}
+              Auto-compile
+            </Button>
+            <Button
               variant="secondary"
               size="sm"
               onClick={() => compile(true)}
@@ -387,7 +431,11 @@ export const CompilePane = forwardRef<
             <EmptyState
               icon={<FileX2 size={32} aria-hidden="true" />}
               title="Nothing compiled yet"
-              description="Click Recompile, or save an edit — compiling happens automatically after every save."
+              description={
+                autoCompileEnabled
+                  ? "Click Recompile, or save an edit — compiling happens automatically after every save."
+                  : "Click Recompile to compile — auto-compile is currently off."
+              }
             />
           )}
           {run && viewMode === "log" ? (
