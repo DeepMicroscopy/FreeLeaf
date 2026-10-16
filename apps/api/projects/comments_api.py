@@ -1,7 +1,10 @@
 """Comments (Plan.md §9 Phase 8): a comment anchored to a line in a file,
-with one level of flat replies. Any project member can comment or reply;
-only owners/editors can resolve a thread; a comment can be deleted by its
-own author or by an owner.
+with one level of flat replies. Any project member can comment, reply, or
+refresh a comment's anchor position; only owners/editors can resolve a
+thread; a comment can be manually deleted by its own author or by an owner,
+or auto-deleted by anyone who can edit content once its anchored text no
+longer exists anywhere in the file (see Comment's own docstring and
+delete_orphaned_comment below).
 """
 
 import uuid
@@ -11,6 +14,7 @@ from ninja import Router, Schema
 from ninja.errors import HttpError
 
 from accounts.auth import SessionAuth
+from core import storage
 from core.session import get_current_user
 
 from .authz import get_authorized_project, require_role
@@ -182,5 +186,68 @@ def delete_comment(request, project_id: uuid.UUID, comment_id: uuid.UUID):
     comment = _get_comment_or_404(project, comment_id)
     if membership.role != Role.OWNER and comment.created_by_id != user.id:
         raise HttpError(403, "You can only delete your own comments.")
+    comment.delete()
+    return {"ok": True}
+
+
+class UpdateAnchorIn(Schema):
+    anchor_line: int
+    anchor_from: int
+    anchor_to: int
+
+
+@router.patch("/projects/{project_id}/comments/{comment_id}/anchor", response=CommentOut)
+def update_anchor(request, project_id: uuid.UUID, comment_id: uuid.UUID, payload: UpdateAnchorIn):
+    """Refreshes a top-level comment's cached line/offset after the client
+    re-located its (unchanged) `anchor_text` in the live document — see
+    Comment's docstring. Same "any project member" permission as commenting
+    itself: this only corrects where an existing comment's own text now
+    sits, never its content, so it carries no more trust than posting a
+    comment in the first place.
+    """
+    user = get_current_user(request)
+    project, _membership = get_authorized_project(user, project_id)
+    comment = _get_comment_or_404(project, comment_id)
+    if comment.parent_id is not None:
+        raise HttpError(400, "Only top-level comments carry their own anchor.")
+    if payload.anchor_to <= payload.anchor_from:
+        raise HttpError(400, "anchor_to must be greater than anchor_from.")
+
+    comment.anchor_line = max(1, payload.anchor_line)
+    comment.anchor_from = payload.anchor_from
+    comment.anchor_to = payload.anchor_to
+    comment.save(update_fields=["anchor_line", "anchor_from", "anchor_to"])
+    is_owner = _membership.role == Role.OWNER
+    return _comment_out(comment, user, is_owner)
+
+
+@router.delete("/projects/{project_id}/comments/{comment_id}/orphaned")
+def delete_orphaned_comment(request, project_id: uuid.UUID, comment_id: uuid.UUID):
+    """Deletes a comment whose anchored text no longer exists anywhere in
+    its file — called by any client the moment it notices this while
+    re-anchoring, not just the comment's own author or the project owner
+    (unlike the regular delete endpoint above), since the edit that made a
+    comment's text disappear is very often made by someone other than that
+    comment's author. Open to any role that can actually change file
+    content (owner/editor/reviewer, not a read-only viewer), and re-verifies
+    the claim against the file's current *stored* content server-side
+    rather than trusting the caller outright — a comment can briefly outlive
+    an edit that orphaned it until the next periodic flush catches up (see
+    apps/collab Room.flush), which just means this returns 409 and the
+    caller's next re-anchor pass tries again, not that anything is wrong.
+    """
+    user = get_current_user(request)
+    project, membership = get_authorized_project(user, project_id)
+    require_role(membership, Role.OWNER, Role.EDITOR, Role.REVIEWER)
+    comment = _get_comment_or_404(project, comment_id)
+    if comment.parent_id is not None:
+        raise HttpError(400, "Only top-level comments can be pruned this way.")
+    if not comment.anchor_text:
+        raise HttpError(400, "This comment has no anchored text to verify.")
+
+    content = storage.get_object(comment.file.storage_key).decode(errors="replace")
+    if comment.anchor_text in content:
+        raise HttpError(409, "The anchored text is still present in the file — not deleting.")
+
     comment.delete()
     return {"ok": True}

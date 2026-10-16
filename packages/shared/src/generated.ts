@@ -1081,6 +1081,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/comments/{comment_id}/anchor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Anchor
+         * @description Refreshes a top-level comment's cached line/offset after the client
+         *     re-located its (unchanged) `anchor_text` in the live document — see
+         *     Comment's docstring. Same "any project member" permission as commenting
+         *     itself: this only corrects where an existing comment's own text now
+         *     sits, never its content, so it carries no more trust than posting a
+         *     comment in the first place.
+         */
+        patch: operations["projects_comments_api_update_anchor"];
+        trace?: never;
+    };
+    "/api/projects/{project_id}/comments/{comment_id}/orphaned": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Orphaned Comment
+         * @description Deletes a comment whose anchored text no longer exists anywhere in
+         *     its file — called by any client the moment it notices this while
+         *     re-anchoring, not just the comment's own author or the project owner
+         *     (unlike the regular delete endpoint above), since the edit that made a
+         *     comment's text disappear is very often made by someone other than that
+         *     comment's author. Open to any role that can actually change file
+         *     content (owner/editor/reviewer, not a read-only viewer), and re-verifies
+         *     the claim against the file's current *stored* content server-side
+         *     rather than trusting the caller outright — a comment can briefly outlive
+         *     an edit that orphaned it until the next periodic flush catches up (see
+         *     apps/collab Room.flush), which just means this returns 409 and the
+         *     caller's next re-anchor pass tries again, not that anything is wrong.
+         */
+        delete: operations["projects_comments_api_delete_orphaned_comment"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/sso/providers": {
         parameters: {
             query?: never;
@@ -1839,6 +1895,15 @@ export interface components {
              * @default true
              */
             resolved: boolean;
+        };
+        /** UpdateAnchorIn */
+        UpdateAnchorIn: {
+            /** Anchor Line */
+            anchor_line: number;
+            /** Anchor From */
+            anchor_from: number;
+            /** Anchor To */
+            anchor_to: number;
         };
         /** SsoProviderPublicOut */
         SsoProviderPublicOut: {
@@ -3794,6 +3859,54 @@ export interface operations {
         };
     };
     projects_comments_api_delete_comment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    projects_comments_api_update_anchor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAnchorIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentOut"];
+                };
+            };
+        };
+    };
+    projects_comments_api_delete_orphaned_comment: {
         parameters: {
             query?: never;
             header?: never;

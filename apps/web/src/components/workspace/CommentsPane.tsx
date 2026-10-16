@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
 import { Spinner } from "../ui/Spinner";
+import { lineBounds, locateCommentAnchors } from "./commentAnchorsExtension";
 import styles from "./CommentsPane.module.css";
 
 type CommentOut = components["schemas"]["CommentOut"];
@@ -17,21 +18,47 @@ export interface PendingCommentAnchor {
   text: string;
 }
 
+interface ResolvedAnchor {
+  from: number;
+  to: number;
+  line: number;
+}
+
+// Debounced re-anchor pass: prompt enough to feel immediate after a pause in
+// typing, without re-running a text search over every comment on every
+// keystroke. The periodic fallback below exists only for the retry case
+// described at its own call site.
+const REANCHOR_DEBOUNCE_MS = 1500;
+const REANCHOR_RETRY_MS = 5000;
+
 export function CommentsPane({
   projectId,
   fileId,
   canResolve,
+  canEditText,
   currentLine,
+  docText,
   onJumpToLine,
   pendingAnchor,
   onClearPendingAnchor,
   onCommentsChange,
+  onResolvedAnchorsChange,
   focusedComment,
 }: {
   projectId: string;
   fileId: string;
   canResolve: boolean;
+  /** Owner/editor/reviewer — anyone who can actually change file content,
+   * matching the backend's permission for update_anchor/delete_orphaned
+   * (comments_api.py). Gates whether this client writes back refreshed
+   * positions or prunes orphaned comments at all; a viewer still sees the
+   * live-resolved positions (read-only), just never the one acting on them. */
+  canEditText: boolean;
   currentLine: number;
+  /** The file's current live text (EditorTab's onDocTextChange) — used to
+   * re-locate each comment's anchor_text instead of trusting its possibly
+   * stale stored offsets. See docs/decisions/comment-anchoring.md. */
+  docText: string;
   onJumpToLine: (line: number) => void;
   /** A marked-text selection picked via the editor's right-click "Add
    * comment" menu, waiting to be attached to the next top-level comment
@@ -39,6 +66,11 @@ export function CommentsPane({
   pendingAnchor?: PendingCommentAnchor | null;
   onClearPendingAnchor?: () => void;
   onCommentsChange?: (comments: CommentOut[]) => void;
+  /** The live-resolved position of every top-level comment whose anchor
+   * text could still be found — lets EditorTab feed the editor's own
+   * highlight decorations the same up-to-date positions this pane displays,
+   * instead of the comments' raw (possibly stale) stored offsets. */
+  onResolvedAnchorsChange?: (anchors: Map<string, ResolvedAnchor>) => void;
   /** Set when the user clicked a comment's highlighted marked text in the
    * editor — scrolls that thread into view and briefly flashes it so it's
    * obvious which comment the click was about. `token` increments on every
@@ -81,6 +113,74 @@ export function CommentsPane({
     onCommentsChange?.(comments);
   }, [comments, onCommentsChange]);
 
+  // Re-anchors every top-level comment against the live document on each
+  // settle, rather than trusting stored anchor_from/anchor_to/anchor_line —
+  // see docs/decisions/comment-anchoring.md. Read-only (resolvedAnchors,
+  // reported up for the editor's own highlighting) happens regardless of
+  // role; writing the refreshed position back and pruning an orphaned
+  // comment only happen for a role that could itself have caused the edit.
+  const [resolvedAnchors, setResolvedAnchors] = useState<Map<string, ResolvedAnchor>>(new Map());
+  const reconcileAnchors = useCallback(async () => {
+    const anchors = comments
+      .filter((c) => c.anchor_text != null && c.anchor_from != null)
+      .map((c) => ({ id: c.id, text: c.anchor_text!, hintFrom: c.anchor_from! }));
+    const located = locateCommentAnchors(docText, anchors);
+
+    const nextResolved = new Map<string, ResolvedAnchor>();
+    const orphanedIds: string[] = [];
+    for (const c of comments) {
+      if (c.anchor_text == null) continue;
+      const loc = located.get(c.id);
+      if (!loc) {
+        orphanedIds.push(c.id);
+        continue;
+      }
+      nextResolved.set(c.id, { from: loc.from, to: loc.to, line: docText.slice(0, loc.from).split("\n").length });
+    }
+    setResolvedAnchors(nextResolved);
+    onResolvedAnchorsChange?.(nextResolved);
+
+    if (!canEditText) return;
+
+    for (const c of comments) {
+      const resolved = nextResolved.get(c.id);
+      if (!resolved) continue;
+      if (resolved.from === c.anchor_from && resolved.to === c.anchor_to && resolved.line === c.anchor_line) continue;
+      void api.PATCH("/api/projects/{project_id}/comments/{comment_id}/anchor", {
+        params: { path: { project_id: projectId, comment_id: c.id } },
+        body: { anchor_line: resolved.line, anchor_from: resolved.from, anchor_to: resolved.to },
+      });
+    }
+
+    if (orphanedIds.length === 0) return;
+    let anyDeleted = false;
+    for (const id of orphanedIds) {
+      // 409 means the file's *stored* content (periodically flushed, see
+      // apps/collab Room.flush) hasn't caught up with this edit yet, not
+      // that anything's wrong — the retry timer below tries again shortly.
+      const { error } = await api.DELETE("/api/projects/{project_id}/comments/{comment_id}/orphaned", {
+        params: { path: { project_id: projectId, comment_id: id } },
+      });
+      if (!error) anyDeleted = true;
+    }
+    if (anyDeleted) void load();
+  }, [comments, docText, canEditText, projectId, onResolvedAnchorsChange, load]);
+
+  useEffect(() => {
+    if (!docText) return;
+    const timer = setTimeout(() => void reconcileAnchors(), REANCHOR_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [docText, reconcileAnchors]);
+
+  // Catches the rare case above where an orphan-delete was rejected because
+  // storage hadn't flushed yet and the user then stopped typing — without
+  // this, nothing would ever trigger another reconcile pass to retry it.
+  useEffect(() => {
+    if (!docText || !canEditText) return;
+    const timer = setInterval(() => void reconcileAnchors(), REANCHOR_RETRY_MS);
+    return () => clearInterval(timer);
+  }, [docText, canEditText, reconcileAnchors]);
+
   useEffect(() => {
     if (!focusedComment) return;
     const el = itemRefs.current.get(focusedComment.id);
@@ -95,15 +195,19 @@ export function CommentsPane({
     const body = newBody.trim();
     if (!body) return;
     setPosting(true);
+    // No marked selection -> anchor to the whole current line's text, same
+    // "anchor to real text" treatment as a selection (see lineBounds) rather
+    // than just a bare line number with nothing to re-locate later.
+    const anchor = pendingAnchor ?? lineBounds(docText, currentLine);
     const { data } = await api.POST("/api/projects/{project_id}/files/{file_id}/comments", {
       params: { path: { project_id: projectId, file_id: fileId } },
-      body: pendingAnchor
+      body: anchor
         ? {
             body,
-            anchor_line: pendingAnchor.line,
-            anchor_from: pendingAnchor.from,
-            anchor_to: pendingAnchor.to,
-            anchor_text: pendingAnchor.text,
+            anchor_line: pendingAnchor?.line ?? currentLine,
+            anchor_from: anchor.from,
+            anchor_to: anchor.to,
+            anchor_text: anchor.text,
           }
         : { body, anchor_line: currentLine },
     });
@@ -113,7 +217,7 @@ export function CommentsPane({
       onClearPendingAnchor?.();
       void load();
     }
-  }, [projectId, fileId, currentLine, pendingAnchor, newBody, onClearPendingAnchor, load]);
+  }, [projectId, fileId, currentLine, docText, pendingAnchor, newBody, onClearPendingAnchor, load]);
 
   const handleReply = useCallback(
     async (parentId: string) => {
@@ -154,12 +258,16 @@ export function CommentsPane({
   );
 
   const resolvedCount = comments.filter((c) => c.resolved).length;
-  // By anchor line (then anchor_from, for several comments on the same
-  // line) rather than creation order — reading top-to-bottom through the
-  // document should match reading top-to-bottom through the comments.
-  const sortedComments = [...comments].sort(
-    (a, b) => a.anchor_line - b.anchor_line || (a.anchor_from ?? 0) - (b.anchor_from ?? 0),
-  );
+  // By current (live-resolved, falling back to stored) line/position rather
+  // than creation order — reading top-to-bottom through the document should
+  // match reading top-to-bottom through the comments.
+  const sortedComments = [...comments].sort((a, b) => {
+    const ra = resolvedAnchors.get(a.id);
+    const rb = resolvedAnchors.get(b.id);
+    const lineA = ra?.line ?? a.anchor_line;
+    const lineB = rb?.line ?? b.anchor_line;
+    return lineA - lineB || (ra?.from ?? a.anchor_from ?? 0) - (rb?.from ?? b.anchor_from ?? 0);
+  });
   const visibleComments = hideResolved ? sortedComments.filter((c) => !c.resolved) : sortedComments;
 
   return (
@@ -248,6 +356,7 @@ export function CommentsPane({
             >
               <CommentCard
                 comment={c}
+                line={resolvedAnchors.get(c.id)?.line ?? c.anchor_line}
                 canResolve={canResolve}
                 onJumpToLine={onJumpToLine}
                 onResolve={handleResolve}
@@ -303,12 +412,16 @@ export function CommentsPane({
 
 function CommentCard({
   comment,
+  line,
   canResolve,
   onJumpToLine,
   onResolve,
   onDelete,
 }: {
   comment: CommentOut;
+  /** The comment's current line — live-resolved by the parent whenever
+   * possible, falling back to the comment's stored anchor_line. */
+  line: number;
   canResolve: boolean;
   onJumpToLine: (line: number) => void;
   onResolve: (id: string, resolved: boolean) => void;
@@ -318,8 +431,8 @@ function CommentCard({
     <div>
       <div className={styles.commentMeta}>
         <span className={styles.author}>{comment.created_by_name ?? "Anonymous"}</span>
-        <button className={styles.lineLink} onClick={() => onJumpToLine(comment.anchor_line)}>
-          Line {comment.anchor_line}
+        <button className={styles.lineLink} onClick={() => onJumpToLine(line)}>
+          Line {line}
         </button>
         <span className={styles.time}>{new Date(comment.created_at).toLocaleString()}</span>
       </div>

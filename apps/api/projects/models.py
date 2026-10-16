@@ -239,25 +239,35 @@ class ProjectSnapshot(models.Model):
 
 
 class Comment(models.Model):
-    """A comment anchored to a line in a file (Plan.md §9 Phase 8). Anchoring
-    is deliberately just a line number captured at creation time, not a Yjs
-    relative position — simple, and honest that it can drift if lines are
-    inserted above it later, rather than pretending to track edits
-    precisely. Only one level of replies is supported (a reply's `parent`
-    must itself be a top-level comment, enforced in comments_api.py) —
-    matches common review-tool UX (a thread + flat replies, not nested
-    reply-to-reply chains).
+    """A comment anchored to a line in a file (Plan.md §9 Phase 8). Only one
+    level of replies is supported (a reply's `parent` must itself be a
+    top-level comment, enforced in comments_api.py) — matches common
+    review-tool UX (a thread + flat replies, not nested reply-to-reply
+    chains).
 
-    A comment may optionally also anchor to a specific marked text range
-    (`anchor_from`/`anchor_to`, character offsets into the file's content at
-    creation time, `anchor_to` exclusive) rather than just the line —
-    same "captured at creation time, can drift" honesty as `anchor_line`,
-    just at character instead of line granularity. `anchor_text` is the
-    exact substring at creation time, kept only for display (quoting what
-    was commented on) — never re-verified against live content. Null on all
-    three when a comment is a plain whole-line comment (the original,
-    still-supported case) or a reply (replies inherit their parent's
-    anchor_line but don't carry their own range)."""
+    `anchor_from`/`anchor_to`/`anchor_text` (character offsets into the
+    file's content and the exact substring at creation time, `anchor_to`
+    exclusive) are always populated for a top-level comment — even a plain
+    "whole line" comment with no marked selection anchors to that line's
+    full text, specifically so it can be re-anchored later (see below).
+    Null only for a reply (replies inherit their parent's anchor_line but
+    don't carry their own range).
+
+    `anchor_line`/`anchor_from`/`anchor_to` are a *cache*, not the source of
+    truth — an earlier version of this model stored them as a one-time
+    snapshot that was deliberately never updated (see git history), which
+    meant any edit above a comment silently left it pointing at the wrong
+    line forever, and a comment whose marked text was later deleted just
+    stayed anchored to whatever text happened to occupy that stale range.
+    The frontend now re-locates `anchor_text` in the live document (nearest
+    occurrence to the last known position, to stay correct even across
+    concurrent edits elsewhere) whenever the file is open, and PATCHes the
+    refreshed line/offsets back via comments_api.update_anchor — so these
+    fields stay reasonably fresh for anyone *not* currently viewing the file
+    live, while the open editor's own view is always exact. If `anchor_text`
+    can no longer be found anywhere in the document, the frontend deletes
+    the comment outright via comments_api.delete_orphaned_comment rather
+    than leaving it pointing at content that no longer exists."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="comments")

@@ -83,6 +83,14 @@ export function EditorTab() {
     () => localStorage.getItem(`freeleaf.showComments.${projectId}`) === "1",
   );
   const [comments, setComments] = useState<CommentOut[]>([]);
+  // Live-resolved position of each top-level comment (CommentsPane re-locates
+  // anchor_text in the current document, since a comment's raw stored
+  // anchor_from/to can be stale — see docs/decisions/comment-anchoring.md),
+  // fed into commentAnchors below so the editor's own highlight uses the
+  // same up-to-date positions the pane displays.
+  const [resolvedCommentAnchors, setResolvedCommentAnchors] = useState<Map<string, { from: number; to: number }>>(
+    new Map(),
+  );
   const [pendingCommentAnchor, setPendingCommentAnchor] = useState<PendingCommentAnchor | null>(null);
   const [focusedComment, setFocusedComment] = useState<{ id: string; token: number } | null>(null);
   const focusCommentTokenRef = useRef(0);
@@ -182,8 +190,11 @@ export function EditorTab() {
     () =>
       comments
         .filter((c) => c.anchor_from != null && c.anchor_to != null)
-        .map((c) => ({ id: c.id, from: c.anchor_from!, to: c.anchor_to!, resolved: c.resolved })),
-    [comments],
+        .map((c) => {
+          const live = resolvedCommentAnchors.get(c.id);
+          return { id: c.id, from: live?.from ?? c.anchor_from!, to: live?.to ?? c.anchor_to!, resolved: c.resolved };
+        }),
+    [comments, resolvedCommentAnchors],
   );
 
   // Surfaced as a badge on the Comments toggle (Plan.md §9 Phase 8
@@ -788,11 +799,14 @@ export function EditorTab() {
                 projectId={projectId}
                 fileId={selectedFile.id}
                 canResolve={canWrite}
+                canEditText={canEditText}
                 currentLine={cursorLine}
+                docText={currentFileText}
                 onJumpToLine={handleJumpToLine}
                 pendingAnchor={pendingCommentAnchor}
                 onClearPendingAnchor={() => setPendingCommentAnchor(null)}
                 onCommentsChange={setComments}
+                onResolvedAnchorsChange={setResolvedCommentAnchors}
                 focusedComment={focusedComment}
               />
             }

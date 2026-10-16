@@ -82,6 +82,68 @@ export function computeCommentAnchorDecorations(
   return Decoration.set(marks, true);
 }
 
+export interface StoredCommentAnchor {
+  id: string;
+  /** The exact substring captured when the comment was made (or last
+   * refreshed) — may be the whole line's text for a plain, unselected
+   * comment (see CommentsPane's lineBounds). */
+  text: string;
+  /** Last known position — used only to pick the closest occurrence when
+   * `text` appears more than once in the document, not trusted as "the"
+   * position (see locateCommentAnchors's own doc comment). */
+  hintFrom: number;
+}
+
+export interface ResolvedCommentAnchor {
+  from: number;
+  to: number;
+}
+
+/** Re-anchors comments by re-locating their captured text in the *current*
+ * document, instead of trusting `from`/`to` offsets captured at some
+ * earlier point in its history (see docs/decisions/comment-anchoring.md for
+ * why, over the obvious alternative of a Yjs relative position). Handles a
+ * line moving (insertion/deletion elsewhere) and a cut-and-pasted move
+ * identically, since the text is found wherever it now is. A comment
+ * missing from the returned map has no anchor left anywhere in the
+ * document — see CommentsPane's handling of that case. */
+export function locateCommentAnchors(docText: string, anchors: StoredCommentAnchor[]): Map<string, ResolvedCommentAnchor> {
+  const resolved = new Map<string, ResolvedCommentAnchor>();
+  for (const anchor of anchors) {
+    if (!anchor.text) continue;
+    let bestFrom = -1;
+    let bestDistance = Infinity;
+    let searchFrom = 0;
+    for (;;) {
+      const idx = docText.indexOf(anchor.text, searchFrom);
+      if (idx === -1) break;
+      const distance = Math.abs(idx - anchor.hintFrom);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestFrom = idx;
+      }
+      searchFrom = idx + 1;
+    }
+    if (bestFrom >= 0) resolved.set(anchor.id, { from: bestFrom, to: bestFrom + anchor.text.length });
+  }
+  return resolved;
+}
+
+/** The whole-line text anchor for a plain comment made with no selection
+ * (the cursor's current line) — same "anchor to real text" treatment as a
+ * marked-selection comment, just defaulting to the full line. `line` is
+ * 1-indexed, matching CodeMirror's own convention. Trailing newline
+ * excluded from `to`/`text` (a comment anchored to "the line" shouldn't
+ * silently swallow the next line if re-located after the newline moves). */
+export function lineBounds(docText: string, line: number): { from: number; to: number; text: string } | null {
+  const lines = docText.split("\n");
+  if (line < 1 || line > lines.length) return null;
+  let from = 0;
+  for (let i = 0; i < line - 1; i++) from += lines[i].length + 1;
+  const text = lines[line - 1];
+  return { from, to: from + text.length, text };
+}
+
 /** Looks up the comment id (if any) whose marked-text decoration covers
  * document position `pos` in the given editor state. */
 export function findCommentAnchorAt(state: EditorState, pos: number): string | null {
