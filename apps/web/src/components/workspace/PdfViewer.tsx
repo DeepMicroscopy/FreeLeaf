@@ -249,10 +249,26 @@ export const PdfViewer = forwardRef<
     zoomChangeCount.current += 1;
     if (zoomChangeCount.current === 1) return; // skip the initial mount; the load effect already rendered at zoom=1
     if (!docRef.current) return;
+    const container = containerRef.current;
+    // Capture scroll position as a *fraction* of total scrollable height,
+    // not "which page" — zooming never changes the page count or content,
+    // just the uniform render scale, so the same fraction lands back at the
+    // same point in the document once the new (taller/shorter) content is
+    // in place. Restoring by page (like the reload/recompile path below,
+    // where the page count genuinely can change) would still work but loses
+    // position *within* the page the user was actually looking at.
+    const maxScrollBefore = container ? container.scrollHeight - container.clientHeight : 0;
+    const scrollFraction = container && maxScrollBefore > 0 ? container.scrollTop / maxScrollBefore : 0;
     restoringScrollRef.current = true;
-    void renderAllPages(baseScaleRef.current * zoom).finally(() => {
-      restoringScrollRef.current = false;
-    });
+    void renderAllPages(baseScaleRef.current * zoom)
+      .then(() => {
+        if (!container) return;
+        const maxScrollAfter = container.scrollHeight - container.clientHeight;
+        if (maxScrollAfter > 0) container.scrollTop = scrollFraction * maxScrollAfter;
+      })
+      .finally(() => {
+        restoringScrollRef.current = false;
+      });
   }, [zoom, renderAllPages]);
 
   // Tracks which page the viewer is scrolled to so the next load (a

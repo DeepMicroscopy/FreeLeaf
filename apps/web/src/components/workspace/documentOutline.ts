@@ -45,6 +45,40 @@ function lineAt(text: string, index: number): number {
   return text.slice(0, index).split("\n").length;
 }
 
+/** Blanks out LaTeX line comments (an unescaped `%` through end of line)
+ * with spaces — same length and newline positions as the input, so every
+ * other index-based helper here (lineAt, findMatchingBrace, slicing out a
+ * title/caption/snippet) keeps working against the exact same offsets,
+ * it just never matches/extracts anything that was commented out. A `%`
+ * preceded by an odd number of backslashes is an escaped literal (`\%`),
+ * not a comment start — doesn't attempt the rarer case of a comment
+ * appearing *inside* a brace argument (which in real LaTeX swallows the
+ * rest of that line, continuing the argument onto the next one), matching
+ * this file's existing "best-effort scan" scope. */
+function stripLineComments(text: string): string {
+  const chars = text.split("");
+  let inComment = false;
+  for (let i = 0; i < chars.length; i++) {
+    if (chars[i] === "\n") {
+      inComment = false;
+      continue;
+    }
+    if (inComment) {
+      chars[i] = " ";
+      continue;
+    }
+    if (chars[i] === "%") {
+      let backslashes = 0;
+      for (let j = i - 1; j >= 0 && chars[j] === "\\"; j--) backslashes++;
+      if (backslashes % 2 === 0) {
+        inComment = true;
+        chars[i] = " ";
+      }
+    }
+  }
+  return chars.join("");
+}
+
 const HEADING_LEVELS: Record<string, number> = {
   part: 0,
   chapter: 1,
@@ -55,15 +89,16 @@ const HEADING_LEVELS: Record<string, number> = {
 const HEADING_RE = /\\(part|chapter|section|subsection|subsubsection)\*?(?:\[[^\]]*\])?\{/g;
 
 export function parseOutline(text: string): OutlineEntry[] {
+  const scanText = stripLineComments(text);
   const entries: OutlineEntry[] = [];
   HEADING_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
-  while ((m = HEADING_RE.exec(text))) {
+  while ((m = HEADING_RE.exec(scanText))) {
     const openBrace = m.index + m[0].length - 1;
-    const close = findMatchingBrace(text, openBrace);
+    const close = findMatchingBrace(scanText, openBrace);
     if (close === null) continue;
-    const title = text.slice(openBrace + 1, close).trim();
-    if (title) entries.push({ level: HEADING_LEVELS[m[1]], title, line: lineAt(text, m.index) });
+    const title = scanText.slice(openBrace + 1, close).trim();
+    if (title) entries.push({ level: HEADING_LEVELS[m[1]], title, line: lineAt(scanText, m.index) });
   }
   return entries;
 }
@@ -72,6 +107,7 @@ const FIGURE_TABLE_RE = /\\begin\{(figure\*?|table\*?)\}/g;
 const CAPTION_RE = /\\caption\*?\s*(?:\[[^\]]*\])?\{/;
 
 export function parseFiguresAndTables(text: string): FigureTableEntry[] {
+  const scanText = stripLineComments(text);
   const entries: FigureTableEntry[] = [];
   // `figure*`/`table*` (the two-column-spanning float variants) still
   // increment the same shared `figure`/`table` counter as their ordinary
@@ -80,15 +116,15 @@ export function parseFiguresAndTables(text: string): FigureTableEntry[] {
   let tableCount = 0;
   FIGURE_TABLE_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
-  while ((m = FIGURE_TABLE_RE.exec(text))) {
+  while ((m = FIGURE_TABLE_RE.exec(scanText))) {
     const envName = m[1];
     const kind: "figure" | "table" = envName.startsWith("figure") ? "figure" : "table";
     const number = kind === "figure" ? ++figureCount : ++tableCount;
     const afterBegin = m.index + m[0].length;
     const endRe = new RegExp(`\\\\end\\{${envName.replace("*", "\\*")}\\}`);
-    const endMatch = endRe.exec(text.slice(afterBegin));
-    const envEnd = endMatch ? afterBegin + endMatch.index : text.length;
-    const body = text.slice(afterBegin, envEnd);
+    const endMatch = endRe.exec(scanText.slice(afterBegin));
+    const envEnd = endMatch ? afterBegin + endMatch.index : scanText.length;
+    const body = scanText.slice(afterBegin, envEnd);
 
     let caption: string | null = null;
     const capMatch = CAPTION_RE.exec(body);
@@ -99,7 +135,7 @@ export function parseFiguresAndTables(text: string): FigureTableEntry[] {
     }
 
     const snippet = body.replace(/\s+/g, " ").trim().slice(0, 80);
-    entries.push({ kind, number, caption, snippet, line: lineAt(text, m.index) });
+    entries.push({ kind, number, caption, snippet, line: lineAt(scanText, m.index) });
 
     // Resume scanning right after this environment — nested figure/table
     // environments aren't valid LaTeX anyway, and this avoids matching
