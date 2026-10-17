@@ -240,7 +240,18 @@ def _create_project_from_zip_bytes(user: User, name: str, zip_bytes: bytes) -> P
     elif len(tex_paths_with_documentclass) == 1:
         main_doc = tex_paths_with_documentclass[0]
     elif tex_paths_with_documentclass:
-        main_doc = sorted(tex_paths_with_documentclass)[0]
+        # Several conference LaTeX templates (BVM among them) ship their own
+        # unmodified template as a placeholder-named file like "0000.tex",
+        # instructing the author to keep it alongside their own renamed
+        # copy — which otherwise loses the alphabetical tiebreak below to
+        # "0000" every time. Confirmed against a real BVM submission zip:
+        # it silently compiled the blank author-guidelines template instead
+        # of the actual paper, producing "File not found" and "undefined
+        # references" errors that looked like a compile bug rather than a
+        # wrong-file-selected one. Prefer a candidate whose filename isn't
+        # purely numeric, if that leaves exactly one.
+        non_numeric = [p for p in tex_paths_with_documentclass if not p.rsplit("/", 1)[-1][: -len(".tex")].isdigit()]
+        main_doc = non_numeric[0] if len(non_numeric) == 1 else sorted(tex_paths_with_documentclass)[0]
     elif tex_paths:
         main_doc = sorted(tex_paths)[0]
     if main_doc is not None:
