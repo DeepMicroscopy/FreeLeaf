@@ -19,6 +19,7 @@ import { CompilePane } from "./CompilePane";
 import type { SuggestionSpan } from "./suggestions";
 import type { CompilePaneHandle } from "./CompilePane";
 import { ImagePreviewPane } from "./ImagePreviewPane";
+import { PdfFilePreviewPane } from "./PdfFilePreviewPane";
 import { ModeSwitcher } from "./ModeSwitcher";
 import type { LintFinding } from "./polishingLint";
 import { SplitPane } from "./SplitPane";
@@ -665,6 +666,14 @@ export function EditorTab() {
 
   if (selectedFile.type === "image") {
     return <ImagePreviewPane file={selectedFile} />;
+  }
+
+  // A .pdf figure is classified type: "other" on the backend (it can't be
+  // rendered via a plain <img>, which is what `type: "image"` is for — see
+  // the matching note in CodeMirrorEditor.tsx), so it's matched by
+  // extension here instead of reclassifying it and breaking that routing.
+  if (selectedFile.path.toLowerCase().endsWith(".pdf")) {
+    return <PdfFilePreviewPane file={selectedFile} />;
   }
 
   // Built once and reused across both the desktop (side-by-side SplitPane)

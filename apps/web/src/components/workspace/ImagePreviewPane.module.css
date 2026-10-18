@@ -58,3 +58,9 @@
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-md);
 }
+
+.pdfBody {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
