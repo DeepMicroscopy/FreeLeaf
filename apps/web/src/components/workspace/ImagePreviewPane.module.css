@@ -63,4 +63,10 @@
   flex: 1;
   min-height: 0;
   display: flex;
+  /* column, not the flex default (row): PdfViewer's own .wrapper only sets
+     height: 100%, relying on the parent to stretch it to full *width* too
+     (the default cross-axis behavior in a column flex container) — a row
+     container instead shrink-to-fits an unsized child along the main axis,
+     collapsing it to near-zero width and rendering a 0×0 canvas. */
+  flex-direction: column;
 }
