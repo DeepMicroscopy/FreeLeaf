@@ -12,6 +12,7 @@ from core import storage
 from core.session import get_current_user
 
 from .authz import get_authorized_project, require_role
+from .content_validation import InvalidFileContentError, validate_file_content
 from .models import FileType, ProjectFile, Role, touch_project
 from .paths import InvalidPathError, guess_file_type, normalize_path
 
@@ -148,6 +149,10 @@ def upload_file(request, project_id: uuid.UUID, path: str, file: UploadedFile = 
     data = file.read()
     if len(data) > MAX_UPLOAD_BYTES:
         raise HttpError(413, "File is too large.")
+    try:
+        validate_file_content(clean_path, data)
+    except InvalidFileContentError as exc:
+        raise HttpError(400, str(exc)) from exc
 
     file_type = guess_file_type(clean_path)
     content_type = file.content_type or mimetypes.guess_type(clean_path)[0] or "application/octet-stream"
@@ -235,6 +240,10 @@ def replace_file_binary_content(request, project_id: uuid.UUID, file_id: uuid.UU
     data = file.read()
     if len(data) > MAX_UPLOAD_BYTES:
         raise HttpError(413, "File is too large.")
+    try:
+        validate_file_content(f.path, data)
+    except InvalidFileContentError as exc:
+        raise HttpError(400, str(exc)) from exc
 
     content_type = file.content_type or mimetypes.guess_type(f.path)[0] or "application/octet-stream"
     storage.put_object(f.storage_key, data, content_type)
