@@ -1,6 +1,6 @@
 import { api, apiOrigin, findUnusedBibEntries } from "@freeleaf/shared";
 import type { BibEntry, components } from "@freeleaf/shared";
-import { ChevronDown, ChevronUp, FileQuestion, MessageSquare, Search } from "lucide-react";
+import { ChevronDown, ChevronUp, FileCode, FileQuestion, FileText, MessageSquare, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "../ui/Button";
@@ -8,6 +8,7 @@ import { EmptyState } from "../ui/EmptyState";
 import { useToast } from "../ui/Toast";
 import { useBibliography } from "../../lib/bibliography";
 import { useEditingMode } from "../../lib/editingMode";
+import { useIsMobile } from "../../lib/useMediaQuery";
 import { useWorkspace } from "../../lib/workspace";
 import { CodeMirrorEditor } from "./CodeMirrorEditor";
 import type { CodeMirrorEditorHandle, JumpTarget } from "./CodeMirrorEditor";
@@ -79,6 +80,15 @@ export function EditorTab() {
   const jumpTokenRef = useRef(0);
   const [jump, setJump] = useState<{ fileId: string } & JumpTarget | null>(null);
   const [cursorLine, setCursorLine] = useState(1);
+  const isMobile = useIsMobile();
+  // Below the breakpoint, the editor/comments/PDF panes are shown one at a
+  // time with a tab bar instead of side by side (there's no useful way to
+  // split a phone screen three ways) — defaults to "pdf" since viewing the
+  // compiled output, not editing source, is the far more common thing to
+  // want to look at first on a phone. Not persisted across visits: landing
+  // back on whatever tab a *previous* session happened to leave open would
+  // undercut that "PDF first" default more often than it'd help.
+  const [mobileTab, setMobileTab] = useState<"pdf" | "editor" | "comments">("pdf");
   const [showComments, setShowComments] = useState(
     () => localStorage.getItem(`freeleaf.showComments.${projectId}`) === "1",
   );
@@ -120,8 +130,27 @@ export function EditorTab() {
     setShowComments((prev) => {
       const next = !prev;
       localStorage.setItem(`freeleaf.showComments.${projectId}`, next ? "1" : "0");
+      if (next) setMobileTab("comments");
+      // Closing switches *away* from the comments tab (desktop-only
+      // concern in practice — see openCommentsMobileTab below for why the
+      // mobile tab button never actually calls this closing path): once
+      // showComments is false, the comments tab renders nothing, so
+      // leaving mobileTab pointed at it would land on a blank screen that
+      // still looks selected in the tab bar.
+      else setMobileTab((current) => (current === "comments" ? "pdf" : current));
       return next;
     });
+  }, [projectId]);
+
+  // The mobile tab bar's Comments button is "open (if needed) and switch
+  // to it," never a close — unlike the desktop toggle above, hiding the
+  // comments tab costs nothing on mobile (it's not occupying screen space
+  // when it isn't the active tab), so there's no reason for this button to
+  // ever hide it again once opened.
+  const openCommentsMobileTab = useCallback(() => {
+    setShowComments(true);
+    localStorage.setItem(`freeleaf.showComments.${projectId}`, "1");
+    setMobileTab("comments");
   }, [projectId]);
 
   const handleJumpToLine = useCallback(
@@ -129,6 +158,7 @@ export function EditorTab() {
       if (!selectedFile) return;
       jumpTokenRef.current += 1;
       setJump({ fileId: selectedFile.id, line, token: jumpTokenRef.current });
+      setMobileTab("editor");
     },
     [selectedFile],
   );
@@ -175,6 +205,7 @@ export function EditorTab() {
       setFocusedComment({ id: commentId, token: focusCommentTokenRef.current });
       setShowComments(true);
       localStorage.setItem(`freeleaf.showComments.${projectId}`, "1");
+      setMobileTab("comments");
     },
     [projectId],
   );
@@ -248,6 +279,7 @@ export function EditorTab() {
     (line: number) => {
       if (!selectedFile) return;
       void compilePaneRef.current?.jumpToPdf(selectedFile.path, line);
+      setMobileTab("pdf");
     },
     [selectedFile],
   );
@@ -258,6 +290,7 @@ export function EditorTab() {
       jumpTokenRef.current += 1;
       setJump({ fileId: target.id, line, token: jumpTokenRef.current });
       if (target.id !== selectedFileId) selectFile(target.id);
+      setMobileTab("editor");
     },
     [files, selectedFileId, selectFile],
   );
@@ -605,11 +638,10 @@ export function EditorTab() {
     return <ImagePreviewPane file={selectedFile} />;
   }
 
-  return (
-    <>
-    <SplitPane
-      storageKey="freeleaf.editor.split"
-      left={
+  // Built once and reused across both the desktop (side-by-side SplitPane)
+  // and mobile (one-at-a-time, tab-switched) layouts below, rather than
+  // duplicated per layout — same elements, just arranged differently.
+  const editorPaneEl = (
         <div className={styles.pane}>
           <div className={styles.paneHeader}>
             <span className={styles.panePath} title="Cmd/Ctrl+click text to jump to that spot in the PDF">
@@ -788,56 +820,46 @@ export function EditorTab() {
             />
           </div>
         </div>
-      }
-      right={
-        showComments ? (
-          <SplitPane
-            storageKey="freeleaf.editor.commentsSplit"
-            defaultRatio={0.32}
-            left={
-              <CommentsPane
-                projectId={projectId}
-                fileId={selectedFile.id}
-                canResolve={canWrite}
-                canEditText={canEditText}
-                currentLine={cursorLine}
-                docText={currentFileText}
-                onJumpToLine={handleJumpToLine}
-                pendingAnchor={pendingCommentAnchor}
-                onClearPendingAnchor={() => setPendingCommentAnchor(null)}
-                onCommentsChange={setComments}
-                onResolvedAnchorsChange={setResolvedCommentAnchors}
-                focusedComment={focusedComment}
-              />
-            }
-            right={
-              <CompilePane
-                ref={compilePaneRef}
-                projectId={projectId}
-                canWrite={canWrite}
-                onJumpToSource={handleJumpToSource}
-                onRunChanged={setLatestRun}
-                onAddPackage={(pkg, commandOrEnv) => setAddPackageFix({ package: pkg, commandOrEnv })}
-                onFixMissingFile={(filename, fatal) => setMissingFileFix({ filename, fatal })}
-                onFixDuplicateLabel={setDuplicateLabelFix}
-                onFixUnescapedAmpersand={setAmpersandFix}
-              />
-            }
-          />
-        ) : (
-          <CompilePane
-            ref={compilePaneRef}
-            projectId={projectId}
-            canWrite={canWrite}
-            onJumpToSource={handleJumpToSource}
-            onAddPackage={(pkg, commandOrEnv) => setAddPackageFix({ package: pkg, commandOrEnv })}
-            onFixMissingFile={(filename, fatal) => setMissingFileFix({ filename, fatal })}
-            onFixDuplicateLabel={setDuplicateLabelFix}
-            onFixUnescapedAmpersand={setAmpersandFix}
-          />
-        )
-      }
+  );
+
+  const commentsPaneEl = showComments ? (
+    <CommentsPane
+      projectId={projectId}
+      fileId={selectedFile.id}
+      canResolve={canWrite}
+      canEditText={canEditText}
+      currentLine={cursorLine}
+      docText={currentFileText}
+      onJumpToLine={handleJumpToLine}
+      pendingAnchor={pendingCommentAnchor}
+      onClearPendingAnchor={() => setPendingCommentAnchor(null)}
+      onCommentsChange={setComments}
+      onResolvedAnchorsChange={setResolvedCommentAnchors}
+      focusedComment={focusedComment}
     />
+  ) : null;
+
+  // onRunChanged was previously only wired on the "comments pane open"
+  // branch of what used to be a single ternary here — Polishing mode's
+  // error/warning list (latestRun, above) went stale the instant comments
+  // were closed, the much more common state. Both layouts now share this
+  // one instance, so that gap closes as a side effect of not duplicating it.
+  const compilePaneEl = (
+    <CompilePane
+      ref={compilePaneRef}
+      projectId={projectId}
+      canWrite={canWrite}
+      onJumpToSource={handleJumpToSource}
+      onRunChanged={setLatestRun}
+      onAddPackage={(pkg, commandOrEnv) => setAddPackageFix({ package: pkg, commandOrEnv })}
+      onFixMissingFile={(filename, fatal) => setMissingFileFix({ filename, fatal })}
+      onFixDuplicateLabel={setDuplicateLabelFix}
+      onFixUnescapedAmpersand={setAmpersandFix}
+    />
+  );
+
+  const dialogs = (
+    <>
     {tableDesigner && (
       <TableDesignerDialog
         envName={tableDesigner.match.envName}
@@ -898,6 +920,87 @@ export function EditorTab() {
         onConfirm={handleRemoveUnusedBibEntries}
       />
     )}
+    </>
+  );
+
+  if (isMobile) {
+    return (
+      <>
+        <div className={styles.mobileViews}>
+          {/* All three stay mounted (just hidden), not conditionally
+              rendered per tab — unmounting CodeMirror would tear down its
+              live Yjs connection, unmounting CompilePane would interrupt
+              in-flight compile polling, and unmounting CommentsPane would
+              cancel its debounced re-anchor timers (CommentsPane.tsx) —
+              every tab switch would otherwise restart work that was
+              already in flight. */}
+          <div className={styles.mobileView} hidden={mobileTab !== "editor"}>
+            {editorPaneEl}
+          </div>
+          <div className={styles.mobileView} hidden={mobileTab !== "pdf"}>
+            {compilePaneEl}
+          </div>
+          {commentsPaneEl && (
+            <div className={styles.mobileView} hidden={mobileTab !== "comments"}>
+              {commentsPaneEl}
+            </div>
+          )}
+        </div>
+        <nav className={styles.mobileTabBar}>
+          <button
+            type="button"
+            className={[styles.mobileTab, mobileTab === "pdf" ? styles.mobileTabActive : ""].join(" ")}
+            onClick={() => setMobileTab("pdf")}
+          >
+            <FileText size={18} aria-hidden="true" />
+            PDF
+          </button>
+          <button
+            type="button"
+            className={[styles.mobileTab, mobileTab === "editor" ? styles.mobileTabActive : ""].join(" ")}
+            onClick={() => setMobileTab("editor")}
+          >
+            <FileCode size={18} aria-hidden="true" />
+            Editor
+          </button>
+          <button
+            type="button"
+            className={[styles.mobileTab, mobileTab === "comments" ? styles.mobileTabActive : ""].join(" ")}
+            onClick={openCommentsMobileTab}
+          >
+            <MessageSquare size={18} aria-hidden="true" />
+            Comments
+            {unresolvedCommentCount > 0 && (
+              <span className={styles.commentsBadge} aria-hidden="true">
+                {unresolvedCommentCount > 99 ? "99+" : unresolvedCommentCount}
+              </span>
+            )}
+          </button>
+        </nav>
+        {dialogs}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <SplitPane
+        storageKey="freeleaf.editor.split"
+        left={editorPaneEl}
+        right={
+          commentsPaneEl ? (
+            <SplitPane
+              storageKey="freeleaf.editor.commentsSplit"
+              defaultRatio={0.32}
+              left={commentsPaneEl}
+              right={compilePaneEl}
+            />
+          ) : (
+            compilePaneEl
+          )
+        }
+      />
+      {dialogs}
     </>
   );
 }
