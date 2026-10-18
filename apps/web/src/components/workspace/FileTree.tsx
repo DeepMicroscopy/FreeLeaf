@@ -21,7 +21,7 @@ import { useToast } from "../ui/Toast";
 import { useWorkspace } from "../../lib/workspace";
 import type { ProjectFileOut } from "../../lib/workspace";
 import { FILE_SIZE_WARN_BYTES } from "./fileSize";
-import { uploadSingleFile } from "./fileUpload";
+import { replaceFileContent, uploadSingleFile } from "./fileUpload";
 import { buildTree } from "./treeUtils";
 import type { TreeNode } from "./treeUtils";
 import styles from "./FileTree.module.css";
@@ -160,6 +160,24 @@ async function uploadFiles(fileList: FileList | File[], targetFolder = "") {
     for (const file of Array.from(fileList)) {
       const name = sanitizeFileName(file.name);
       const path = targetFolder ? `${targetFolder}/${name}` : name;
+      const existing = files.find((f) => f.path === path);
+
+      if (existing?.type === "folder") {
+        show(`"${path}" is already a folder — rename the file and try again.`, "error");
+        continue;
+      }
+      if (existing) {
+        // window.confirm, not a custom dialog — matches this file's own
+        // convention for a single yes/no destructive choice (handleDelete
+        // above), and this loop already processes files one at a time, so
+        // asking per colliding file as it comes up fits the existing flow
+        // rather than needing to collect every collision up front.
+        if (!window.confirm(`"${path}" already exists. Overwrite it?`)) continue;
+        const { error } = await replaceFileContent(projectId, existing.id, file);
+        if (error) show(`Could not overwrite "${file.name}": ${errorMessage(error, "unknown error")}`, "error");
+        continue;
+      }
+
       const { error } = await uploadSingleFile(projectId, path, file);
       if (error) show(`Could not upload "${file.name}": ${errorMessage(error, "unknown error")}`, "error");
     }
