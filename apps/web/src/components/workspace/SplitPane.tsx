@@ -16,7 +16,19 @@ export function SplitPane({
   defaultRatio = 0.5,
   minPanePx = 260,
 }: {
-  left: ReactNode;
+  /** `null` collapses to a single full-width pane (`right` only, no
+   * divider) — rendered this way rather than the caller swapping between
+   * `<SplitPane left={x} right={y} />` and plain `{y}` at the call site, so
+   * a component living in `right` keeps the exact same position in the
+   * React tree either way. A caller that conditionally wraps/unwraps its
+   * own `right` content in a SplitPane changes the element type at that
+   * tree position the instant the condition flips, which React treats as
+   * "this subtree is gone" — it unmounts and remounts everything in
+   * `right` from scratch, discarding all of its state (a real, confirmed
+   * bug: CompilePane's PDF zoom/view-mode/comment-mode all reset the
+   * instant EditorTab's Comments pane was toggled open, because that was
+   * exactly this swap). */
+  left: ReactNode | null;
   right: ReactNode;
   storageKey: string;
   defaultRatio?: number;
@@ -70,23 +82,32 @@ export function SplitPane({
     if (e.key === "ArrowRight") setRatio((r) => Math.min(0.9, r + step));
   }
 
+  // The right pane's wrapper div is always the same fixed child index of
+  // .container (whatever left-side content precedes it collapses to a
+  // single slot, present or not) — see the `left` prop's own doc comment
+  // for why that positional stability is the entire point, not a style
+  // preference.
   return (
     <div ref={containerRef} className={styles.container}>
-      <div className={styles.pane} style={{ width: `calc(${ratio * 100}% - 1px)` }}>
-        {left}
-      </div>
-      <div
-        className={styles.divider}
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize editor and preview panes"
-        tabIndex={0}
-        onPointerDown={() => setDragging(true)}
-        onKeyDown={handleKeyDown}
-      >
-        <div className={styles.dividerHandle} />
-      </div>
-      <div className={styles.pane} style={{ width: `calc(${(1 - ratio) * 100}% - 1px)` }}>
+      {left !== null && (
+        <>
+          <div className={styles.pane} style={{ width: `calc(${ratio * 100}% - 1px)` }}>
+            {left}
+          </div>
+          <div
+            className={styles.divider}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize editor and preview panes"
+            tabIndex={0}
+            onPointerDown={() => setDragging(true)}
+            onKeyDown={handleKeyDown}
+          >
+            <div className={styles.dividerHandle} />
+          </div>
+        </>
+      )}
+      <div className={styles.pane} style={{ width: left !== null ? `calc(${(1 - ratio) * 100}% - 1px)` : "100%" }}>
         {right}
       </div>
     </div>

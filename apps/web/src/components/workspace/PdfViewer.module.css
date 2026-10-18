@@ -32,6 +32,13 @@
   cursor: pointer;
 }
 
+/* Comment mode (CompilePane.tsx) — a dedicated, toggled-on mode, so the
+ * "clickable" hint is always shown while it's active, not just while a
+ * modifier key happens to be held like .modifierHeld above. */
+.scroller.commentMode .page {
+  cursor: crosshair;
+}
+
 .toolbar {
   position: absolute;
   top: var(--space-2);

@@ -75,8 +75,17 @@ export interface PdfViewerHandle {
 
 export const PdfViewer = forwardRef<
   PdfViewerHandle,
-  { src: string; projectId: string; onSourceClick?: (page: number, x: number, y: number) => void }
->(function PdfViewer({ src, projectId, onSourceClick }, ref) {
+  {
+    src: string;
+    projectId: string;
+    onSourceClick?: (page: number, x: number, y: number) => void;
+    /** Reviewing mode's "comment on the PDF" (CompilePane.tsx) — while on,
+     * a plain click anywhere on a page places a comment there instead of
+     * (or taking priority over) the Ctrl/Cmd+click source-jump below. */
+    commentMode?: boolean;
+    onCommentClick?: (page: number, x: number, y: number) => void;
+  }
+>(function PdfViewer({ src, projectId, onSourceClick, commentMode = false, onCommentClick }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -116,6 +125,10 @@ export const PdfViewer = forwardRef<
   const restoringScrollRef = useRef(false);
   const onSourceClickRef = useRef(onSourceClick);
   onSourceClickRef.current = onSourceClick;
+  const commentModeRef = useRef(commentMode);
+  commentModeRef.current = commentMode;
+  const onCommentClickRef = useRef(onCommentClick);
+  onCommentClickRef.current = onCommentClick;
 
   const renderAllPages = useCallback(async (scale: number) => {
     const container = containerRef.current;
@@ -156,6 +169,19 @@ export const PdfViewer = forwardRef<
       // reinterpretation — the same reason CodeMirror's own forward-search
       // handler (CodeMirrorEditor.tsx) uses `mousedown` rather than `click`.
       canvas.addEventListener("mousedown", (event) => {
+        // Comment mode takes priority and needs no modifier held — it's a
+        // dedicated mode (toggled in CompilePane's toolbar), not a gesture
+        // layered on top of ordinary clicking, so every plain click while
+        // it's on is intentional.
+        if (commentModeRef.current) {
+          const handler = onCommentClickRef.current;
+          if (!handler) return;
+          event.preventDefault();
+          const rect = canvas.getBoundingClientRect();
+          const s = currentScaleRef.current;
+          handler(pageNum, (event.clientX - rect.left) / s, (event.clientY - rect.top) / s);
+          return;
+        }
         const handler = onSourceClickRef.current;
         if (!handler) return;
         // Gated behind Ctrl/Cmd, symmetric with forward search's own
@@ -384,7 +410,7 @@ export const PdfViewer = forwardRef<
         </Button>
       </div>
       <div
-        className={[styles.scroller, modifierHeld ? styles.modifierHeld : ""].join(" ")}
+        className={[styles.scroller, modifierHeld ? styles.modifierHeld : "", commentMode ? styles.commentMode : ""].join(" ")}
         ref={containerRef}
         title="Cmd/Ctrl+click a spot in the PDF to jump to that line in the source"
       />

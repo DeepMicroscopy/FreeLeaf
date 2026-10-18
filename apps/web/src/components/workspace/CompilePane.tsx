@@ -1,6 +1,6 @@
 import { api, apiOrigin } from "@freeleaf/shared";
 import type { components } from "@freeleaf/shared";
-import { Download, FileText, FileX2, RotateCw, Zap, ZapOff } from "lucide-react";
+import { Download, FileText, FileX2, MessageSquarePlus, RotateCw, Zap, ZapOff } from "lucide-react";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 
 import { Button } from "../ui/Button";
@@ -43,6 +43,16 @@ export const CompilePane = forwardRef<
     onFixMissingFile?: (filename: string, fatal: boolean) => void;
     onFixDuplicateLabel?: (label: string) => void;
     onFixUnescapedAmpersand?: (line: number) => void;
+    /** Gates the "Comment" toggle's visibility in the PDF toolbar — a
+     * general reviewing feature (annotate the PDF directly, not just
+     * marked text in the source), so it only makes sense while Reviewing
+     * mode is active, same as the editor's own suggestion tracking. */
+    reviewingMode?: boolean;
+    /** A click on the PDF while comment mode is on, already resolved to a
+     * source position (same SyncTeX backward lookup as onJumpToSource,
+     * just routed here instead) — EditorTab turns it into a pending
+     * comment anchor the same way a marked-text selection would. */
+    onCommentModeClick?: (file: string, line: number) => void;
   }
 >(function CompilePane(
   {
@@ -54,6 +64,8 @@ export const CompilePane = forwardRef<
     onFixMissingFile,
     onFixDuplicateLabel,
     onFixUnescapedAmpersand,
+    reviewingMode,
+    onCommentModeClick,
   },
   ref,
 ) {
@@ -118,6 +130,16 @@ export const CompilePane = forwardRef<
     runRef.current = run;
     const onJumpToSourceRef = useRef(onJumpToSource);
     onJumpToSourceRef.current = onJumpToSource;
+    const onCommentModeClickRef = useRef(onCommentModeClick);
+    onCommentModeClickRef.current = onCommentModeClick;
+    const [commentMode, setCommentMode] = useState(false);
+    // Leaving Reviewing mode elsewhere (the ModeSwitcher, not this toggle)
+    // should turn this off too — a comment-on-click PDF with no visible
+    // indication *why* clicking it no longer jumps to source would be a
+    // confusing state to be stuck in.
+    useEffect(() => {
+      if (!reviewingMode) setCommentMode(false);
+    }, [reviewingMode]);
     const autoOpenFixesRef = useRef(autoOpenFixes);
     autoOpenFixesRef.current = autoOpenFixes;
     const fixHandlersRef = useRef<FixHandlers>({
@@ -171,6 +193,23 @@ export const CompilePane = forwardRef<
           { params: { path: { project_id: projectId, run_id: currentRun.id }, query: { page, x, y } } },
         );
         if (data) onJumpToSourceRef.current?.(data.file, data.line);
+      },
+      [projectId],
+    );
+
+    // Same SyncTeX backward lookup as handleSourceClick above, just routed
+    // to onCommentModeClick instead of onJumpToSource — comment mode and
+    // Ctrl/Cmd+click source-jump are mutually exclusive per click (see
+    // PdfViewer's mousedown handler), so there's no risk of double-firing.
+    const handleCommentModeClick = useCallback(
+      async (page: number, x: number, y: number) => {
+        const currentRun = runRef.current;
+        if (!currentRun) return;
+        const { data } = await api.GET(
+          "/api/projects/{project_id}/compile-runs/{run_id}/synctex/backward",
+          { params: { path: { project_id: projectId, run_id: currentRun.id }, query: { page, x, y } } },
+        );
+        if (data) onCommentModeClickRef.current?.(data.file, data.line);
       },
       [projectId],
     );
@@ -388,6 +427,21 @@ export const CompilePane = forwardRef<
               <FileText size={14} aria-hidden="true" />
               {viewMode === "pdf" ? "View log" : "View PDF"}
             </Button>
+            {reviewingMode && run?.has_pdf && viewMode === "pdf" && (
+              <Button
+                variant={commentMode ? "secondary" : "ghost"}
+                size="sm"
+                onClick={() => setCommentMode((v) => !v)}
+                title={
+                  commentMode
+                    ? "Comment mode is on — click anywhere on the PDF to comment there; click again to turn off"
+                    : "Turn on to add comments by clicking directly on the PDF"
+                }
+              >
+                <MessageSquarePlus size={14} aria-hidden="true" />
+                Comment mode
+              </Button>
+            )}
             {run?.has_pdf && (
               <button
                 type="button"
@@ -454,6 +508,8 @@ export const CompilePane = forwardRef<
                   src={`${apiOrigin()}/api/projects/${projectId}/compile-runs/${run.id}/pdf`}
                   projectId={projectId}
                   onSourceClick={handleSourceClick}
+                  commentMode={commentMode}
+                  onCommentClick={handleCommentModeClick}
                 />
               )}
               {run && !run.has_pdf && !compiling && (

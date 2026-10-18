@@ -14,6 +14,7 @@ import { CodeMirrorEditor } from "./CodeMirrorEditor";
 import type { CodeMirrorEditorHandle, JumpTarget } from "./CodeMirrorEditor";
 import { CommentsPane } from "./CommentsPane";
 import type { PendingCommentAnchor } from "./CommentsPane";
+import { lineBounds } from "./commentAnchorsExtension";
 import { CompilePane } from "./CompilePane";
 import type { SuggestionSpan } from "./suggestions";
 import type { CompilePaneHandle } from "./CompilePane";
@@ -293,6 +294,34 @@ export function EditorTab() {
       setMobileTab("editor");
     },
     [files, selectedFileId, selectFile],
+  );
+
+  // CompilePane's "comment on the PDF" mode (reviewing mode) — a click
+  // already resolved to (file, line) via SyncTeX backward lookup. Anchors
+  // to that line's whole text, same treatment as posting a comment from the
+  // editor with no selection (CommentsPane's own lineBounds fallback) —
+  // just originating from the PDF instead. Only handles the file already
+  // open: resolving to a *different* file (a multi-file \input/\include
+  // document) would need that file's live text to compute an anchor, which
+  // isn't loaded anywhere until it's actually open in the editor — so this
+  // switches to it and asks for the click to be repeated, rather than
+  // guessing at content it doesn't have.
+  const handleAddCommentFromPdf = useCallback(
+    (file: string, line: number) => {
+      if (!selectedFile) return;
+      if (file !== selectedFile.path) {
+        handleJumpToSource(file, line);
+        show(`Switched to ${file} — click the same spot again to comment there.`);
+        return;
+      }
+      const anchor = lineBounds(currentFileText, line);
+      setPendingCommentAnchor(anchor ? { line, from: anchor.from, to: anchor.to, text: anchor.text } : null);
+      setCursorLine(line);
+      setShowComments(true);
+      localStorage.setItem(`freeleaf.showComments.${projectId}`, "1");
+      setMobileTab("comments");
+    },
+    [selectedFile, currentFileText, handleJumpToSource, show, projectId],
   );
 
   // Reviewing mode's "safety baseline" (Plan.md §9 Phase 8): a whole-project
@@ -855,6 +884,8 @@ export function EditorTab() {
       onFixMissingFile={(filename, fatal) => setMissingFileFix({ filename, fatal })}
       onFixDuplicateLabel={setDuplicateLabelFix}
       onFixUnescapedAmpersand={setAmpersandFix}
+      reviewingMode={mode === "reviewing"}
+      onCommentModeClick={handleAddCommentFromPdf}
     />
   );
 
@@ -988,16 +1019,12 @@ export function EditorTab() {
         storageKey="freeleaf.editor.split"
         left={editorPaneEl}
         right={
-          commentsPaneEl ? (
-            <SplitPane
-              storageKey="freeleaf.editor.commentsSplit"
-              defaultRatio={0.32}
-              left={commentsPaneEl}
-              right={compilePaneEl}
-            />
-          ) : (
-            compilePaneEl
-          )
+          <SplitPane
+            storageKey="freeleaf.editor.commentsSplit"
+            defaultRatio={0.32}
+            left={commentsPaneEl}
+            right={compilePaneEl}
+          />
         }
       />
       {dialogs}
