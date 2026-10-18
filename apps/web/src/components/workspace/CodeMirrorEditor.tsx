@@ -914,16 +914,6 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
       ydoc = new Y.Doc();
       const ytext = ydoc.getText("content");
       ytextRef.current = ytext;
-      // TEMP DEBUG — independent of dispatchTransactions logging: shows
-      // *every* actual Y.Text mutation (content or attribute-only), with its
-      // real origin, regardless of whether it ever gets mirrored into
-      // CodeMirror. Remove once root-caused.
-      ytext.observe((event, tr) => {
-        console.log(
-          "[FL-YTEXT-OBS] " +
-            JSON.stringify({ origin: String(tr.origin), local: tr.local, delta: event.delta }),
-        );
-      });
       provider = new WebsocketProvider(data.ws_url, fileId, ydoc, {
         params: { token: data.token },
       });
