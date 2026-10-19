@@ -1,3 +1,4 @@
+import base64
 import json
 
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -8,6 +9,18 @@ from accounts.models import User
 from core.testing import ApiTestCase, login_as
 
 from .models import Project, ProjectFile
+
+# Genuinely valid, minimal PNGs (not just magic-byte-prefixed garbage) — the
+# upload/replace endpoints now decode-validate image content (see
+# content_validation.py), so fixture bytes need to actually be real images.
+# Two distinct ones (different pixel dims, hence different byte length) so
+# tests asserting the replaced size changed still have something to assert.
+VALID_PNG_BYTES = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+)
+VALID_PNG_BYTES_2 = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAD0lEQVR4nGNg+M8AQhAKABvyA/1tVLjHAAAAAElFTkSuQmCC"
+)
 
 
 def post_json(client, url, data=None):
@@ -123,7 +136,7 @@ class FileTreeTests(ApiTestCase):
         self.assertFalse(ProjectFile.objects.filter(id=child.json()["id"]).exists())
 
     def test_upload_image_appears_in_tree(self):
-        png_bytes = b"\x89PNG\r\n\x1a\nfake-but-fine-for-a-test"
+        png_bytes = VALID_PNG_BYTES
         upload = self.owner.post(
             f"/api/projects/{self.project_id}/files/upload?path=figures/diagram.png",
             {"file": SimpleUploadedFile("diagram.png", png_bytes, content_type="image/png")},
@@ -165,7 +178,7 @@ class BinaryContentReplaceTests(ApiTestCase):
         _login_new_user(self.owner, "owner@example.com")
         create = post_json(self.owner, "/api/projects", {"name": "Paper"})
         self.project_id = create.json()["id"]
-        original = b"\x89PNG\r\n\x1a\noriginal-bytes-here"
+        original = VALID_PNG_BYTES
         upload = self.owner.post(
             f"/api/projects/{self.project_id}/files/upload?path=diagram.png",
             {"file": SimpleUploadedFile("diagram.png", original, content_type="image/png")},
@@ -174,7 +187,7 @@ class BinaryContentReplaceTests(ApiTestCase):
         self.original_size = len(original)
 
     def test_overwrite_updates_size_and_bytes_keeps_id_and_path(self):
-        new_bytes = b"\x89PNG\r\n\x1a\nshorter"
+        new_bytes = VALID_PNG_BYTES_2
         response = put_file(
             self.owner, f"/api/projects/{self.project_id}/files/{self.file_id}/binary-content",
             "diagram.png", new_bytes, "image/png",
