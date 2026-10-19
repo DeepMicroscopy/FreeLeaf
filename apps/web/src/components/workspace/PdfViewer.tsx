@@ -287,25 +287,41 @@ export const PdfViewer = forwardRef<
     if (zoomChangeCount.current === 1) return; // skip the initial mount; the load effect already rendered at zoom=1
     if (!docRef.current) return;
     const container = containerRef.current;
-    // Capture scroll position as a *fraction* of total scrollable height,
-    // not "which page" — zooming never changes the page count or content,
-    // just the uniform render scale, so the same fraction lands back at the
-    // same point in the document once the new (taller/shorter) content is
-    // in place. Restoring by page (like the reload/recompile path below,
-    // where the page count genuinely can change) would still work but loses
-    // position *within* the page the user was actually looking at.
-    const maxScrollBefore = container ? container.scrollHeight - container.clientHeight : 0;
-    const scrollFraction = container && maxScrollBefore > 0 ? container.scrollTop / maxScrollBefore : 0;
-    restoringScrollRef.current = true;
-    void renderAllPages(baseScaleRef.current * zoom)
-      .then(() => {
-        if (!container) return;
-        const maxScrollAfter = container.scrollHeight - container.clientHeight;
-        if (maxScrollAfter > 0) container.scrollTop = scrollFraction * maxScrollAfter;
-      })
-      .finally(() => {
-        restoringScrollRef.current = false;
-      });
+
+    // Debounced, not run on every tick: a continuous zoom gesture (Ctrl/Cmd
+    // +scroll, trackpad pinch) fires many rapid `zoom` changes, and each
+    // tick's own render clears and rebuilds the container (see the comment
+    // on the scroll-tracking effect below). With no debounce, a still-
+    // in-flight render from an earlier tick can have *just* cleared the
+    // container when a later tick's effect runs its "capture scroll
+    // fraction" step — reading a transiently ~0-height container and
+    // capturing a near-zero fraction, which the later tick then faithfully
+    // restores, landing the view at the top (reported as "zooming always
+    // goes back to page 1"). Waiting for the gesture to settle means only
+    // one capture-render-restore cycle ever runs per zoom, against a DOM
+    // that isn't mid-rebuild.
+    const timer = setTimeout(() => {
+      // Capture scroll position as a *fraction* of total scrollable height,
+      // not "which page" — zooming never changes the page count or content,
+      // just the uniform render scale, so the same fraction lands back at
+      // the same point in the document once the new (taller/shorter)
+      // content is in place. Restoring by page (like the reload/recompile
+      // path below, where the page count genuinely can change) would still
+      // work but loses position *within* the page the user was looking at.
+      const maxScrollBefore = container ? container.scrollHeight - container.clientHeight : 0;
+      const scrollFraction = container && maxScrollBefore > 0 ? container.scrollTop / maxScrollBefore : 0;
+      restoringScrollRef.current = true;
+      void renderAllPages(baseScaleRef.current * zoom)
+        .then(() => {
+          if (!container) return;
+          const maxScrollAfter = container.scrollHeight - container.clientHeight;
+          if (maxScrollAfter > 0) container.scrollTop = scrollFraction * maxScrollAfter;
+        })
+        .finally(() => {
+          restoringScrollRef.current = false;
+        });
+    }, 120);
+    return () => clearTimeout(timer);
   }, [zoom, renderAllPages]);
 
   // Tracks which page the viewer is scrolled to so the next load (a
