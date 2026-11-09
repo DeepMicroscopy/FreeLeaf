@@ -1,5 +1,5 @@
 import { api } from "@freeleaf/shared";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent, FormEvent } from "react";
 import {
   BookOpen,
@@ -22,6 +22,7 @@ import { useWorkspace } from "../../lib/workspace";
 import type { ProjectFileOut } from "../../lib/workspace";
 import { FILE_SIZE_WARN_BYTES } from "./fileSize";
 import { replaceFileContent, uploadSingleFile } from "./fileUpload";
+import { SetPreviousCopyDialog } from "./SetPreviousCopyDialog";
 import { buildTree } from "./treeUtils";
 import type { TreeNode } from "./treeUtils";
 import styles from "./FileTree.module.css";
@@ -53,7 +54,8 @@ function errorMessage(error: unknown, fallback: string): string {
 }
 
 export function FileTree() {
-  const { projectId, files, refreshFiles, selectedFileId, selectFile, canWrite } = useWorkspace();
+  const { projectId, files, refreshFiles, selectedFileId, selectFile, canWrite, mainDocPath, refreshMainDocPath } =
+    useWorkspace();
   const { show } = useToast();
 
   const tree = useMemo(() => buildTree(files), [files]);
@@ -66,6 +68,78 @@ export function FileTree() {
   const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadTargetRef = useRef("");
+  const [fileMenu, setFileMenu] = useState<{ node: TreeNode; x: number; y: number } | null>(null);
+  const [previousCopyTarget, setPreviousCopyTarget] = useState<TreeNode | null>(null);
+  const [savingBaseline, setSavingBaseline] = useState(false);
+
+  // Escape-to-close, same convention as CodeMirrorEditor.tsx's commentMenu —
+  // the backdrop button alone only covers outside-click dismissal.
+  useEffect(() => {
+    if (!fileMenu) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setFileMenu(null);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [fileMenu]);
+
+  function handleContextMenu(node: TreeNode, x: number, y: number) {
+    if (!canWrite) return;
+    setFileMenu({ node, x, y });
+  }
+
+  async function handleSetMainDocument(node: TreeNode) {
+    setFileMenu(null);
+    if (!node.file) return;
+    const { error } = await api.PATCH("/api/projects/{project_id}/settings", {
+      params: { path: { project_id: projectId } },
+      body: { main_doc_path: node.file.path },
+    });
+    if (error) show("Couldn't set that as the main document.", "error");
+    else {
+      await refreshMainDocPath();
+      show(`${node.file.path} is now the main document.`);
+    }
+  }
+
+  function handleOpenSetPreviousCopy(node: TreeNode) {
+    setFileMenu(null);
+    setPreviousCopyTarget(node);
+  }
+
+  async function handleConfirmSetPreviousCopy() {
+    const target = previousCopyTarget;
+    if (!target?.file) return;
+    const mainFile = files.find((f) => f.path === mainDocPath);
+    if (!mainFile) {
+      show("Set a main document first.", "error");
+      setPreviousCopyTarget(null);
+      return;
+    }
+    setSavingBaseline(true);
+    const { error } = await api.PATCH("/api/projects/{project_id}/files/{file_id}/diff-baseline", {
+      params: { path: { project_id: projectId, file_id: mainFile.id } },
+      body: { baseline_file_id: target.file.id },
+    });
+    setSavingBaseline(false);
+    setPreviousCopyTarget(null);
+    if (error) show((error as { detail?: string }).detail ?? "Couldn't link that file.", "error");
+    else {
+      await refreshFiles();
+      show(`${target.file.path} is now linked as the previous copy of ${mainFile.path}.`);
+    }
+  }
+
+  async function handleRemovePreviousCopyLink(node: TreeNode) {
+    setFileMenu(null);
+    if (!node.file) return;
+    const { error } = await api.PATCH("/api/projects/{project_id}/files/{file_id}/diff-baseline", {
+      params: { path: { project_id: projectId, file_id: node.file.id } },
+      body: { baseline_file_id: null },
+    });
+    if (error) show("Couldn't remove the link.", "error");
+    else await refreshFiles();
+  }
 
   function toggle(path: string) {
     setExpanded((prev) => {
@@ -305,6 +379,7 @@ async function uploadFiles(fileList: FileList | File[], targetFolder = "") {
             dragOverFolder={dragOverFolder}
             onDragOverFolder={setDragOverFolder}
             onDropAt={handleDropAt}
+            onContextMenu={handleContextMenu}
           />
         ))}
 
@@ -321,6 +396,60 @@ async function uploadFiles(fileList: FileList | File[], targetFolder = "") {
 
         {tree.length === 0 && !draft && <p className={styles.emptyHint}>No files yet.</p>}
       </div>
+
+      {fileMenu && (
+        <>
+          <button className={styles.contextMenuBackdrop} aria-label="Close" onClick={() => setFileMenu(null)} />
+          <div
+            className={styles.contextMenu}
+            style={{ left: fileMenu.x, top: fileMenu.y }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {fileMenu.node.file?.path === mainDocPath ? (
+              <div className={styles.contextMenuStatus}>✓ This is the main document</div>
+            ) : (
+              <button
+                type="button"
+                className={styles.contextMenuItem}
+                onClick={() => handleSetMainDocument(fileMenu.node)}
+              >
+                Set as main document
+              </button>
+            )}
+            {fileMenu.node.file?.path !== mainDocPath && (
+              <button
+                type="button"
+                className={styles.contextMenuItem}
+                onClick={() => handleOpenSetPreviousCopy(fileMenu.node)}
+              >
+                Set as previous copy
+              </button>
+            )}
+            {fileMenu.node.file?.diff_baseline_file_id && (
+              <>
+                <div className={styles.contextMenuDivider} />
+                <button
+                  type="button"
+                  className={styles.contextMenuItem}
+                  onClick={() => handleRemovePreviousCopyLink(fileMenu.node)}
+                >
+                  Remove previous-copy link
+                </button>
+              </>
+            )}
+          </div>
+        </>
+      )}
+
+      {previousCopyTarget?.file && (
+        <SetPreviousCopyDialog
+          mainFilePath={files.find((f) => f.path === mainDocPath)?.path ?? mainDocPath ?? "(no main document set)"}
+          targetFilePath={previousCopyTarget.file.path}
+          saving={savingBaseline}
+          onConfirm={handleConfirmSetPreviousCopy}
+          onCancel={() => setPreviousCopyTarget(null)}
+        />
+      )}
     </div>
   );
 }
@@ -350,6 +479,7 @@ function Node({
   dragOverFolder,
   onDragOverFolder,
   onDropAt,
+  onContextMenu,
 }: {
   node: TreeNode;
   depth: number;
@@ -375,6 +505,7 @@ function Node({
   dragOverFolder: string | null;
   onDragOverFolder: (path: string | null) => void;
   onDropAt: (targetFolder: string, e: DragEvent) => void;
+  onContextMenu: (node: TreeNode, x: number, y: number) => void;
 }) {
   const isFolder = node.file?.type === "folder" || (!node.file && node.children.length > 0);
   const isOpen = expanded.has(node.path);
@@ -407,6 +538,11 @@ function Node({
         onDrop={(e) => {
           if (!canWrite || !isFolder) return;
           onDropAt(node.path, e);
+        }}
+        onContextMenu={(e) => {
+          if (!node.file || node.file.type !== "tex") return;
+          e.preventDefault();
+          onContextMenu(node, e.clientX, e.clientY);
         }}
       >
         <button
@@ -522,6 +658,7 @@ function Node({
               dragOverFolder={dragOverFolder}
               onDragOverFolder={onDragOverFolder}
               onDropAt={onDropAt}
+              onContextMenu={onContextMenu}
             />
           ))}
           {draft && draft.parentPath === node.path && (

@@ -16,7 +16,7 @@ import styles from "./SettingsTab.module.css";
 type ProjectSettingsOut = components["schemas"]["ProjectSettingsOut"];
 
 export function SettingsTab() {
-  const { projectId, project, files, canWrite, refreshProject } = useWorkspace();
+  const { projectId, project, files, canWrite, refreshProject, refreshMainDocPath } = useWorkspace();
   const { refreshCentralFile } = useBibliography();
   const { show } = useToast();
   const navigate = useNavigate();
@@ -102,6 +102,7 @@ export function SettingsTab() {
     setSettings(data);
     show("Settings saved.");
     if ("central_bib_path" in patch) void refreshCentralFile();
+    if ("main_doc_path" in patch) void refreshMainDocPath();
   }
 
   if (loading) return <PageSpinner />;

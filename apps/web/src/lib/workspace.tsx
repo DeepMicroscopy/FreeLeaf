@@ -33,6 +33,14 @@ interface WorkspaceContextValue {
    * the sidebar can call it without the two being directly wired together —
    * `null` when no editor is mounted to jump within. */
   jumpToLineRef: MutableRefObject<((line: number) => void) | null>;
+  /** The project's configured main document path (ProjectSettings.main_doc_path)
+   * — `FileTree`'s "Set as previous copy" context-menu action needs to know
+   * which file is main so it can resolve its id for the diff-baseline link. */
+  mainDocPath: string | null;
+  /** Re-fetches just the main-doc setting — call after changing it (e.g. the
+   * file tree's "Set as main document" action) so `mainDocPath` here and the
+   * Settings tab's own picker agree without a full page reload. */
+  refreshMainDocPath: () => Promise<void>;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -43,9 +51,9 @@ export function WorkspaceProvider({ projectId, children }: { projectId: string; 
   const [loading, setLoading] = useState(true);
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
   const [currentFileText, setCurrentFileText] = useState("");
-  // Only used to pick which file opens by default (below) — not exposed via
-  // context, since nothing else needs it (SettingsTab/CodeMirrorEditor each
-  // fetch settings themselves for their own purposes already).
+  // Used to pick which file opens by default (below) and exposed via
+  // context for FileTree's "Set as previous copy" action, which needs to
+  // resolve the main file's id.
   const [mainDocPath, setMainDocPath] = useState<string | null>(null);
   const jumpToLineRef = useRef<((line: number) => void) | null>(null);
 
@@ -59,6 +67,13 @@ export function WorkspaceProvider({ projectId, children }: { projectId: string; 
   const refreshProject = useCallback(async () => {
     const { data } = await api.GET("/api/projects/{project_id}", { params: { path: { project_id: projectId } } });
     setProject(data ?? null);
+  }, [projectId]);
+
+  const refreshMainDocPath = useCallback(async () => {
+    const { data } = await api.GET("/api/projects/{project_id}/settings", {
+      params: { path: { project_id: projectId } },
+    });
+    setMainDocPath(data?.main_doc_path ?? null);
   }, [projectId]);
 
   useEffect(() => {
@@ -121,6 +136,8 @@ export function WorkspaceProvider({ projectId, children }: { projectId: string; 
       currentFileText,
       setCurrentFileText,
       jumpToLineRef,
+      mainDocPath,
+      refreshMainDocPath,
     }),
     [
       projectId,
@@ -133,6 +150,8 @@ export function WorkspaceProvider({ projectId, children }: { projectId: string; 
       canWrite,
       canEditText,
       currentFileText,
+      mainDocPath,
+      refreshMainDocPath,
     ],
   );
 

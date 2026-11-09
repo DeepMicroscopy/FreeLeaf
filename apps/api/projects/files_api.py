@@ -44,12 +44,16 @@ class ProjectFileOut(Schema):
     size: int
     created_at: str
     updated_at: str
+    diff_baseline_file_id: uuid.UUID | None = None
+    diff_baseline_path: str | None = None
 
 
 def _file_out(f: ProjectFile) -> ProjectFileOut:
     return ProjectFileOut(
         id=f.id, path=f.path, type=f.type, size=f.size,
         created_at=f.created_at.isoformat(), updated_at=f.updated_at.isoformat(),
+        diff_baseline_file_id=f.diff_baseline_id,
+        diff_baseline_path=f.diff_baseline.path if f.diff_baseline_id else None,
     )
 
 
@@ -67,7 +71,7 @@ def create_main_tex(project) -> ProjectFile:
 def list_files(request, project_id: uuid.UUID):
     user = get_current_user(request)
     project, _membership = get_authorized_project(user, project_id)
-    files = project.files.order_by("path")
+    files = project.files.select_related("diff_baseline").order_by("path")
     return [_file_out(f) for f in files]
 
 
@@ -281,6 +285,37 @@ def rename_file(request, project_id: uuid.UUID, file_id: uuid.UUID, payload: Fil
             f.save(update_fields=["path", "updated_at"])
     except IntegrityError as exc:
         raise HttpError(409, "A file already exists at that path.") from exc
+    touch_project(project, user)
+    return _file_out(f)
+
+
+class DiffBaselineIn(Schema):
+    baseline_file_id: uuid.UUID | None = None
+
+
+@router.patch("/projects/{project_id}/files/{file_id}/diff-baseline", response=ProjectFileOut)
+def set_diff_baseline(request, project_id: uuid.UUID, file_id: uuid.UUID, payload: DiffBaselineIn):
+    """Revision-diff linking: links `file_id` to a "previous copy" file so
+    the editor shows a permanent diff against it (revisionDiffExtension.ts).
+    `baseline_file_id: null` clears the link. Scoped to .tex files only — a
+    line diff only makes sense for text documents."""
+    user = get_current_user(request)
+    project, membership = get_authorized_project(user, project_id)
+    require_role(membership, Role.OWNER, Role.EDITOR)
+    f = _get_file_or_404(project, file_id)
+    if f.type != FileType.TEX:
+        raise HttpError(400, "Only .tex files can have a previous-copy diff baseline.")
+
+    if payload.baseline_file_id is None:
+        f.diff_baseline = None
+    else:
+        if payload.baseline_file_id == file_id:
+            raise HttpError(400, "A file can't be diffed against itself.")
+        baseline = _get_file_or_404(project, payload.baseline_file_id)
+        if baseline.type != FileType.TEX:
+            raise HttpError(400, "Only .tex files can be set as a previous copy.")
+        f.diff_baseline = baseline
+    f.save(update_fields=["diff_baseline", "updated_at"])
     touch_project(project, user)
     return _file_out(f)
 

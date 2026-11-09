@@ -163,3 +163,55 @@
   font-size: 12.5px;
   color: var(--text-tertiary);
 }
+
+/* Right-click context menu — fixed/viewport-positioned at the raw click
+   coordinates (same pattern as CodeMirrorEditor.module.css's .commentMenu),
+   not anchored to a trigger element like ShareButton's popover is. */
+.contextMenuBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 49;
+  background: transparent;
+  border: none;
+  cursor: default;
+}
+
+.contextMenu {
+  position: fixed;
+  z-index: 50;
+  min-width: 200px;
+  background: var(--bg-surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-2);
+}
+
+.contextMenuItem {
+  display: block;
+  width: 100%;
+  padding: 7px var(--space-2);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.contextMenuItem:hover {
+  background: var(--bg-hover);
+}
+
+.contextMenuStatus {
+  padding: 7px var(--space-2);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.contextMenuDivider {
+  height: 1px;
+  margin: var(--space-2) 0;
+  background: var(--border-subtle);
+}

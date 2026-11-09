@@ -1,6 +1,17 @@
 import { api, apiOrigin, findUnusedBibEntries } from "@freeleaf/shared";
 import type { BibEntry, components } from "@freeleaf/shared";
-import { ChevronDown, ChevronUp, FileCode, FileQuestion, FileText, MessageSquare, Search } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  FileCode,
+  FileQuestion,
+  FileText,
+  GitCompare,
+  MessageSquare,
+  RefreshCw,
+  Search,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "../ui/Button";
@@ -127,6 +138,43 @@ export function EditorTab() {
       cancelled = true;
     };
   }, [projectId, selectedFile?.id]);
+
+  // Revision-diff linking (files_api.py's ProjectFile.diff_baseline) — the
+  // linked "previous copy" file's *current* live content, fetched once per
+  // file-open/link-change rather than kept continuously in sync: it's a
+  // frozen reference point in the common case (a submitted draft that
+  // won't be touched again), and `revisionBaselineRefreshNonce` lets the
+  // indicator badge's Refresh button re-fetch on demand for the rarer case
+  // where it was edited mid-session.
+  const [revisionBaselineText, setRevisionBaselineText] = useState<string | null>(null);
+  const [revisionBaselineRefreshNonce, setRevisionBaselineRefreshNonce] = useState(0);
+  const diffBaselineFileId = selectedFile?.diff_baseline_file_id;
+  useEffect(() => {
+    if (!diffBaselineFileId) {
+      setRevisionBaselineText(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const res = await fetch(`${apiOrigin()}/api/projects/${projectId}/files/${diffBaselineFileId}/content`, {
+        credentials: "include",
+      });
+      if (!cancelled) setRevisionBaselineText(res.ok ? await res.text() : null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, diffBaselineFileId, revisionBaselineRefreshNonce]);
+
+  const clearDiffBaseline = useCallback(async () => {
+    if (!selectedFile) return;
+    const { error } = await api.PATCH("/api/projects/{project_id}/files/{file_id}/diff-baseline", {
+      params: { path: { project_id: projectId, file_id: selectedFile.id } },
+      body: { baseline_file_id: null },
+    });
+    if (error) show((error as { detail?: string }).detail ?? "Couldn't remove the previous-copy link.", "error");
+    else await refreshFiles();
+  }, [projectId, selectedFile, show, refreshFiles]);
 
   const toggleComments = useCallback(() => {
     setShowComments((prev) => {
@@ -682,9 +730,38 @@ export function EditorTab() {
   const editorPaneEl = (
         <div className={styles.pane}>
           <div className={styles.paneHeader}>
-            <span className={styles.panePath} title="Cmd/Ctrl+click text to jump to that spot in the PDF">
-              {selectedFile.path}
-            </span>
+            <div className={styles.panePathGroup}>
+              <span className={styles.panePath} title="Cmd/Ctrl+click text to jump to that spot in the PDF">
+                {selectedFile.path}
+              </span>
+              {selectedFile.diff_baseline_path && (
+                <span
+                  className={styles.revisionDiffBadge}
+                  title={`Permanently diffed against ${selectedFile.diff_baseline_path}`}
+                >
+                  <GitCompare size={13} aria-hidden="true" />
+                  <span className={styles.revisionDiffBadgeLabel}>
+                    Diffing against {selectedFile.diff_baseline_path}
+                  </span>
+                  <button
+                    type="button"
+                    className={styles.revisionDiffBadgeButton}
+                    onClick={() => setRevisionBaselineRefreshNonce((n) => n + 1)}
+                    title="Refresh — the linked file's content may have changed since it was last fetched"
+                  >
+                    <RefreshCw size={12} aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.revisionDiffBadgeButton}
+                    onClick={clearDiffBaseline}
+                    title="Remove the previous-copy link"
+                  >
+                    <X size={12} aria-hidden="true" />
+                  </button>
+                </span>
+              )}
+            </div>
             <div className={styles.paneHeaderActions}>
               <ModeSwitcher />
               <Button
@@ -855,6 +932,7 @@ export function EditorTab() {
               onCommentAnchorClick={handleCommentAnchorClick}
               onDocTextChange={setCurrentFileText}
               onRequestNewAcronym={setNewAcronym}
+              revisionBaseline={revisionBaselineText}
             />
           </div>
         </div>

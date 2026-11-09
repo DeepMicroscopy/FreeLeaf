@@ -128,6 +128,15 @@ class ProjectFile(models.Model):
     size = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # The "previous copy" this file is permanently diffed against in the
+    # editor (revision-diff linking) — e.g. a submitted paper's main.tex
+    # pointing at a frozen draft, so changes since that version stay
+    # visible while revising. SET_NULL so deleting the linked file silently
+    # un-links rather than touching this row, matching Membership.collection's
+    # same nullable-FK convention.
+    diff_baseline = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="diff_targets"
+    )
 
     class Meta:
         constraints = [

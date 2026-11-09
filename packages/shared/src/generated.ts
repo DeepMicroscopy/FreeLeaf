@@ -639,6 +639,29 @@ export interface paths {
         patch: operations["projects_files_api_rename_file"];
         trace?: never;
     };
+    "/api/projects/{project_id}/files/{file_id}/diff-baseline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Set Diff Baseline
+         * @description Revision-diff linking: links `file_id` to a "previous copy" file so
+         *     the editor shows a permanent diff against it (revisionDiffExtension.ts).
+         *     `baseline_file_id: null` clears the link. Scoped to .tex files only — a
+         *     line diff only makes sense for text documents.
+         */
+        patch: operations["projects_files_api_set_diff_baseline"];
+        trace?: never;
+    };
     "/api/projects/{project_id}/settings": {
         parameters: {
             query?: never;
@@ -1542,6 +1565,10 @@ export interface components {
             created_at: string;
             /** Updated At */
             updated_at: string;
+            /** Diff Baseline File Id */
+            diff_baseline_file_id?: string | null;
+            /** Diff Baseline Path */
+            diff_baseline_path?: string | null;
         };
         /** FileCreateIn */
         FileCreateIn: {
@@ -1567,6 +1594,11 @@ export interface components {
         FileRenameIn: {
             /** Path */
             path: string;
+        };
+        /** DiffBaselineIn */
+        DiffBaselineIn: {
+            /** Baseline File Id */
+            baseline_file_id?: string | null;
         };
         /** ProjectSettingsOut */
         ProjectSettingsOut: {
@@ -3138,6 +3170,33 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["FileRenameIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectFileOut"];
+                };
+            };
+        };
+    };
+    projects_files_api_set_diff_baseline: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiffBaselineIn"];
             };
         };
         responses: {

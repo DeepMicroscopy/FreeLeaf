@@ -8,7 +8,7 @@ import { stex } from "@codemirror/legacy-modes/mode/stex";
 import { openSearchPanel, search, searchKeymap } from "@codemirror/search";
 import { EditorState, Transaction } from "@codemirror/state";
 import type { TransactionSpec } from "@codemirror/state";
-import { EditorView, keymap, lineNumbers, tooltips } from "@codemirror/view";
+import { Decoration, EditorView, keymap, lineNumbers, tooltips } from "@codemirror/view";
 import { yCollab, ySyncFacet } from "y-codemirror.next";
 import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
@@ -71,6 +71,11 @@ import {
   setCommentAnchorDecorations,
 } from "./commentAnchorsExtension";
 import type { CommentAnchor } from "./commentAnchorsExtension";
+import {
+  computeRevisionDiffDecorations,
+  revisionDiffField,
+  setRevisionDiffDecorations,
+} from "./revisionDiffExtension";
 import styles from "./CodeMirrorEditor.module.css";
 
 type ConnectionStatus = "connecting" | "live" | "disconnected";
@@ -229,6 +234,20 @@ const theme = EditorView.theme({
   // decoration (for live position tracking — see computeCommentAnchorDecorations's
   // doc comment) but shouldn't stay visually highlighted.
   ".cm-commentAnchorResolved": {},
+  // Revision-diff linking (revisionDiffExtension.ts) — fixed green/red,
+  // distinct from suggestion marks' per-author hues, so the two independent
+  // systems never look ambiguous when they overlap.
+  ".cm-revisionInsert": {
+    backgroundColor: "color-mix(in srgb, #22c55e 20%, transparent)",
+    textDecoration: "underline",
+    textDecorationColor: "#22c55e",
+  },
+  ".cm-revisionDelete": {
+    backgroundColor: "color-mix(in srgb, #ef4444 18%, transparent)",
+    textDecoration: "line-through",
+    textDecorationColor: "#ef4444",
+    opacity: 0.75,
+  },
   ".cm-searchMatch": {
     backgroundColor: "color-mix(in srgb, #eab308 30%, transparent)",
   },
@@ -418,6 +437,11 @@ interface CodeMirrorEditorProps {
    * Outline/Figures & Tables tabs (Plan.md §9 Phase 11) scan this rather
    * than reaching into the editor's own Yjs document. */
   onDocTextChange?: (text: string) => void;
+  /** Revision-diff linking (files_api.py's ProjectFile.diff_baseline) —
+   * raw text content of the linked "previous copy" file to permanently
+   * diff the live document against (revisionDiffExtension.ts). Null means
+   * no baseline linked; decorations are cleared. */
+  revisionBaseline?: string | null;
   /** Acronym autocomplete's "+ New acronym…" entry (acronymCompletion.ts):
    * fires with the range the `\ac{...` completion was triggered from, plus
    * whether a `\begin{acronym}` block already exists and the keys already
@@ -456,6 +480,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
     onAddComment,
     onCommentAnchorClick,
     onDocTextChange,
+    revisionBaseline,
     onRequestNewAcronym,
   },
   ref,
@@ -716,6 +741,17 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
   onAddCommentRef.current = onAddComment;
   const onDocTextChangeRef = useRef(onDocTextChange);
   onDocTextChangeRef.current = onDocTextChange;
+  const revisionBaselineRef = useRef(revisionBaseline);
+  revisionBaselineRef.current = revisionBaseline;
+  const recomputeRevisionDiffRef = useRef(() => {});
+  recomputeRevisionDiffRef.current = () => {
+    const view = viewRef.current;
+    const baseline = revisionBaselineRef.current;
+    if (!view) return;
+    const decorations =
+      baseline == null ? Decoration.none : computeRevisionDiffDecorations(baseline, view.state.doc.toString());
+    view.dispatch({ effects: setRevisionDiffDecorations.of(decorations) });
+  };
   const onRequestNewAcronymRef = useRef(onRequestNewAcronym);
   onRequestNewAcronymRef.current = onRequestNewAcronym;
   const [commentMenu, setCommentMenu] = useState<{ x: number; y: number; from: number; to: number; text: string; line: number } | null>(null);
@@ -1232,6 +1268,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
             ),
             commentAnchorsField,
             polishingLintField,
+            revisionDiffField,
             tableDesignerGutter((lineNumber) => handleTableGutterClickRef.current(lineNumber)),
             packageDocsGutter((packageName) => handlePackageDocsGutterClickRef.current(packageName)),
           ],
@@ -1394,6 +1431,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
         recomputeSuggestionsRef.current();
         recomputePolishingLintRef.current();
         recomputeCommentAnchorsRef.current();
+        recomputeRevisionDiffRef.current();
         onDocTextChangeRef.current?.(ytext.toString());
 
         // Only schedule auto-compile for changes *after* the initial content
@@ -1411,7 +1449,16 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
             onContentChangedRef.current?.();
           }, 1500);
           if (docTextChangeTimerRef.current) clearTimeout(docTextChangeTimerRef.current);
-          docTextChangeTimerRef.current = setTimeout(() => onDocTextChangeRef.current?.(ytext.toString()), 400);
+          docTextChangeTimerRef.current = setTimeout(() => {
+            onDocTextChangeRef.current?.(ytext.toString());
+            // Debounced here (not the zero-delay deferral below) — a
+            // revision diff recompute walks the whole document same as
+            // suggestions/polishing-lint do, but unlike those two it has no
+            // re-entrancy constraint forcing it onto that tighter timer, so
+            // it piggybacks on this already-existing 400ms one instead of
+            // recomputing on every single keystroke.
+            recomputeRevisionDiffRef.current();
+          }, 400);
           // Deferred: this fires *during* yCollab's own transaction application
           // (Yjs's "update" event is emitted mid-transact, itself nested inside
           // a CodeMirror view.update() call), so dispatching another transaction
@@ -1471,6 +1518,15 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
     if (loading) return;
     recomputeCommentAnchorsRef.current();
   }, [commentAnchors, loading]);
+
+  // Recomputes the revision-diff markup when the linked baseline changes
+  // (set, cleared, or manually refreshed) without a content edit having
+  // happened — the ydoc "update" listener above only covers the other
+  // direction (content changed, baseline unchanged).
+  useEffect(() => {
+    if (loading) return;
+    recomputeRevisionDiffRef.current();
+  }, [revisionBaseline, loading]);
 
   // Dismisses the "Add comment" popup on outside click, Escape, or scroll.
   useEffect(() => {
