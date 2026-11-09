@@ -237,6 +237,14 @@ Additionally, some polishing in phase 8:
 - **Acceptance:** creating, assigning, and deleting a collection all work from both dashboard views and persist across reload; duplicating/importing a project never inherits its source's collection; a duplicate collection name fails with a clean error, not a 500.
 ---
 
+### Phase 14 — Revision-diff linking
+- **Goal:** let two `.tex` files in one project be linked as revisions of each other (a "main" document and a "previous copy" of it), with a permanent diff shown in the editor — for revising a paper against reviewer feedback while seeing what's changed since the submitted version.
+- **Data model:** a self-referential nullable `diff_baseline` FK on `ProjectFile` (`SET_NULL` on delete, mirroring `Membership.collection`'s convention), scoped to `.tex` files only.
+- **API:** `PATCH /api/projects/{project_id}/files/{file_id}/diff-baseline` — `{baseline_file_id}` links/clears, rejecting non-`.tex` files and self-links.
+- **UI:** a right-click context menu on file-tree rows ("Set as main document" / "Set as previous copy" / "Remove previous-copy link"), an info/confirm dialog explaining the workflow before linking, and a `diffWordsWithSpace`-based CodeMirror decoration layer (adapted from the removed `trackChangesExtension.ts`, see its ADR) rendering insertions as green marks and removed text as non-editable red-strikethrough widgets, debounced on doc-text-change. Word-level, not line-level — an early version used `diffLines` and marked a whole line as changed over a single-word edit, which read as a full rewrite.
+- **Acceptance:** linking/unlinking persists and survives reload; an edit to the main document is reflected in the diff within ~400ms; deleting the linked file cleanly un-links; non-`.tex` and self-links are rejected with a clear error.
+---
+
 ## 10. Repository layout (target)
 
 ```
