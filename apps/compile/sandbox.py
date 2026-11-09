@@ -12,7 +12,19 @@ API, enforcing every rule in §7:
                                 itself; must override $pdflatex/$xelatex).
   2. No network              -> network_disabled=True
   3. Ephemeral & isolated    -> fresh container per job, removed after;
-                                only the job's own tmpdir is mounted
+                                only the job's own tmpdir is mounted. The
+                                container is ALWAYS fresh and isolated this
+                                way, with no exception. The one deliberate,
+                                bounded relaxation: when the caller passes a
+                                session_id (one browser tab's repeated
+                                compiles), the host-side src/out directory
+                                persists across calls instead of being
+                                wiped, so latexmk's own incremental rebuild
+                                can actually help — size-capped and
+                                idle-evicted (see SESSION_CACHE_MAX_BYTES /
+                                sweep_idle_sessions below), and never
+                                shared across sessions/projects/users. See
+                                docs/decisions/session-compile-cache.md.
   4. Resource limits         -> mem_limit, nano_cpus, pids_limit, wall-clock
                                 timeout enforced by us (container killed on
                                 expiry, not just the client-side wait)
@@ -64,6 +76,51 @@ MAX_OUTPUT_BYTES = 50 * 1024 * 1024  # 50 MB cap on anything we read back
 # HOST_JOBS_DIR path instead.
 CONTAINER_JOBS_DIR = Path(os.environ.get("COMPILE_JOBS_CONTAINER_DIR", "/var/lib/freeleaf/jobs"))
 HOST_JOBS_DIR = os.environ.get("COMPILE_JOBS_HOST_DIR")
+
+# Session-scoped incremental compile cache (docs/decisions/session-compile-
+# cache.md): one browser tab's repeated compiles of the same project reuse
+# the previous compile's src+out directories instead of starting from an
+# empty one each time, so latexmk's own (mtime-based) dependency tracking
+# can actually skip reprocessing unchanged files. Every individual
+# sandboxed container run is exactly as ephemeral/isolated as a one-shot
+# job — only this host-side directory persists, bounded by the cap and
+# sweep below so an abandoned or runaway session can't grow forever.
+SESSIONS_DIR_NAME = "sessions"
+SESSION_CACHE_MAX_BYTES = 300 * 1024 * 1024  # 300 MB
+SESSION_IDLE_TIMEOUT_SECONDS = 30 * 60
+# A session id is client-minted (crypto.randomUUID()) and becomes a path
+# component, so it gets the same treatment as any other untrusted path
+# input in this file: a tight allowlist, not just "contains no slashes".
+_SESSION_ID_RE = re.compile(r"^[A-Za-z0-9-]{1,64}$")
+
+
+def _valid_session_id(session_id: str | None) -> str | None:
+    if session_id and _SESSION_ID_RE.match(session_id):
+        return session_id
+    return None
+
+
+def _dir_size_bytes(path: Path) -> int:
+    return sum(p.stat().st_size for p in path.rglob("*") if p.is_file())
+
+
+def sweep_idle_sessions(idle_seconds: int = SESSION_IDLE_TIMEOUT_SECONDS) -> None:
+    """Deletes any session cache directory untouched for `idle_seconds`.
+    Called periodically from a background thread (main.py) — there's no
+    other scheduler in this codebase, and this process is already
+    long-lived. Safe to race against an in-flight compile for the same
+    session: worst case that one compile just finds its directories
+    missing and recreates them fresh (see run_job below), not an error."""
+    sessions_dir = CONTAINER_JOBS_DIR / SESSIONS_DIR_NAME
+    if not sessions_dir.is_dir():
+        return
+    now = time.time()
+    for entry in sessions_dir.iterdir():
+        try:
+            if entry.is_dir() and now - entry.stat().st_mtime > idle_seconds:
+                shutil.rmtree(entry, ignore_errors=True)
+        except FileNotFoundError:
+            pass  # swept by a concurrent call or the session itself finishing
 
 ENGINE_COMMANDS = {
     # Deliberately no -halt-on-error: that stops the engine at the very
@@ -143,8 +200,11 @@ class CompileResult:
     compiler: str
 
 
-def _safe_extract(tar_bytes: bytes, dest: Path) -> None:
+def _safe_extract(tar_bytes: bytes, dest: Path) -> set[str]:
     """Extract a tar archive, refusing any entry that could escape `dest`.
+    Returns the set of (posix-style, dest-relative) regular-file member
+    names actually extracted — used by the session-scoped cache (below) to
+    prune files that no longer belong to the project.
 
     Python's tarfile.extractall() is a known path-traversal vector when the
     archive is untrusted (CVE-2007-4559 and friends): a member named e.g.
@@ -156,6 +216,7 @@ def _safe_extract(tar_bytes: bytes, dest: Path) -> None:
     its own independent check.
     """
     dest = dest.resolve()
+    file_names: set[str] = set()
     with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:*") as tar:
         for member in tar.getmembers():
             if member.issym() or member.islnk():
@@ -165,7 +226,24 @@ def _safe_extract(tar_bytes: bytes, dest: Path) -> None:
                 raise UnsafeArchiveError(f"refusing path escaping job dir: {member.name}")
             if not member.isfile() and not member.isdir():
                 raise UnsafeArchiveError(f"refusing non-regular file in archive: {member.name}")
+            if member.isfile():
+                file_names.add(member.name)
         tar.extractall(dest)  # noqa: S202 - membership already validated above
+    return file_names
+
+
+def _prune_missing(dest: Path, keep: set[str]) -> None:
+    """Removes any regular file under `dest` not present in `keep` (posix-
+    style, dest-relative paths, matching `_safe_extract`'s return value).
+    Only used for the session-scoped cache's persistent src dir — a
+    one-shot job always starts from an empty dir, where this is a no-op by
+    construction. Without this, a file renamed or deleted in the project
+    would linger in the cached src dir indefinitely (it's never deleted by
+    `tar.extractall()`, which only adds/overwrites), potentially confusing
+    the compile (e.g. a stale duplicate of a renamed figure)."""
+    for path in dest.rglob("*"):
+        if path.is_file() and path.relative_to(dest).as_posix() not in keep:
+            path.unlink(missing_ok=True)
 
 
 def run_job(
@@ -173,16 +251,31 @@ def run_job(
     compiler: str,
     main_file: str,
     on_step: Callable[[str], None] | None = None,
+    session_id: str | None = None,
 ) -> CompileResult:
     if compiler not in ENGINE_COMMANDS:
         raise CompileError(f"unsupported compiler: {compiler}")
 
-    job_id = uuid.uuid4().hex
-    job_dir = CONTAINER_JOBS_DIR / job_id
+    job_id = uuid.uuid4().hex  # always unique per call — container name/logging only
+    session_id = _valid_session_id(session_id)
+    is_session = session_id is not None
+    # Unrecognized/invalid session_id quietly falls back to the one-shot
+    # path below rather than erroring — the cache is a pure performance
+    # hint, never load-bearing for whether a compile succeeds.
+    job_rel = f"{SESSIONS_DIR_NAME}/{session_id}" if is_session else job_id
+    job_dir = CONTAINER_JOBS_DIR / job_rel
     src_dir = job_dir / "src"
     out_dir = job_dir / "out"
-    src_dir.mkdir(parents=True)
-    out_dir.mkdir(parents=True)
+
+    if is_session and job_dir.exists() and _dir_size_bytes(job_dir) > SESSION_CACHE_MAX_BYTES:
+        # A runaway or malicious document bloating its own cached build
+        # output across many compiles in one session — reset rather than
+        # erroring, so this compile just runs cold instead of the cache
+        # ever growing unbounded.
+        shutil.rmtree(job_dir, ignore_errors=True)
+
+    src_dir.mkdir(parents=True, exist_ok=is_session)
+    out_dir.mkdir(parents=True, exist_ok=is_session)
     # Sandbox containers run as uid 1000 (texuser); the bind-mounted dirs
     # must be writable by that uid regardless of the host user running us.
     src_dir.chmod(0o777)
@@ -190,12 +283,22 @@ def run_job(
 
     # Path the *host* daemon can actually bind-mount for the sibling
     # container — see the CONTAINER_JOBS_DIR/HOST_JOBS_DIR note above.
-    host_job_dir = f"{HOST_JOBS_DIR}/{job_id}" if HOST_JOBS_DIR else str(job_dir)
+    host_job_dir = f"{HOST_JOBS_DIR}/{job_rel}" if HOST_JOBS_DIR else str(job_dir)
 
     try:
-        _safe_extract(tar_bytes, src_dir)
+        extracted = _safe_extract(tar_bytes, src_dir)
+        if is_session:
+            # Removes files for anything renamed/deleted in the project
+            # since this session's cache was last populated — tar
+            # extraction only ever adds/overwrites, never deletes.
+            _prune_missing(src_dir, extracted)
     except Exception:
-        shutil.rmtree(job_dir, ignore_errors=True)
+        # A one-shot job's dir is scratch space for this call alone — wipe
+        # it. A session's cache holds genuinely useful prior state from
+        # earlier *successful* compiles; a failed extraction attempt on
+        # this one call shouldn't discard it.
+        if not is_session:
+            shutil.rmtree(job_dir, ignore_errors=True)
         raise
 
     engine_cmd = ENGINE_COMMANDS[compiler]
@@ -292,7 +395,13 @@ def run_job(
                 container.remove(force=True)
             except (APIError, NotFound):
                 pass
-        shutil.rmtree(job_dir, ignore_errors=True)
+        if is_session:
+            try:
+                os.utime(job_dir, None)  # idle-eviction freshness marker, see sweep_idle_sessions
+            except FileNotFoundError:
+                pass  # swept concurrently by sweep_idle_sessions — fine, see its own doc comment
+        else:
+            shutil.rmtree(job_dir, ignore_errors=True)
 
 
 def _read_capped(path: Path) -> bytes | None:

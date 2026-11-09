@@ -3202,7 +3202,9 @@ export interface operations {
     };
     projects_compile_api_start_compile: {
         parameters: {
-            query?: never;
+            query?: {
+                session?: string | null;
+            };
             header?: never;
             path: {
                 project_id: string;

@@ -17,6 +17,26 @@ import styles from "./CompilePane.module.css";
 type CompileRunOut = components["schemas"]["CompileRunOut"];
 
 const AUTO_COMPILE_DEBOUNCE_MS = 800;
+
+// Lets the compile service reuse this tab's previous build directory
+// instead of starting cold every time (apps/compile/sandbox.py's
+// session-scoped cache) — purely a speed hint, sent as an optional query
+// param. sessionStorage, not a plain in-memory variable: survives a
+// same-tab reload so the cache isn't needlessly thrown away, but (unlike
+// localStorage) never collides with another tab open on the same project,
+// matching the reasoning in PdfViewer.tsx's own per-tab storage.
+function getCompileSessionId(projectId: string): string {
+  const key = `freeleaf.compileSession.${projectId}`;
+  try {
+    const existing = sessionStorage.getItem(key);
+    if (existing) return existing;
+    const id = crypto.randomUUID();
+    sessionStorage.setItem(key, id);
+    return id;
+  } catch {
+    return crypto.randomUUID(); // private browsing / quota — compile still works, just starts cold
+  }
+}
 // Compiling is a two-phase start/poll flow now (Plan.md project-overview
 // polish: live compile progress) — the sandbox's own wall-clock cap is 60s;
 // this leaves generous headroom above that for the polling loop itself.
@@ -115,6 +135,9 @@ export const CompilePane = forwardRef<
       },
       [autoCompileEnabledKey],
     );
+    const compileSessionIdRef = useRef<string>("");
+    if (!compileSessionIdRef.current) compileSessionIdRef.current = getCompileSessionId(projectId);
+
     const [compiling, setCompiling] = useState(false);
     const [progressSteps, setProgressSteps] = useState<string[]>([]);
     const pollTokenRef = useRef(0);
@@ -239,7 +262,7 @@ export const CompilePane = forwardRef<
         // of how polling ended.
         const pollUntilDone = async () => {
           const { data: started, error, response } = await api.POST("/api/projects/{project_id}/compile", {
-            params: { path: { project_id: projectId } },
+            params: { path: { project_id: projectId }, query: { session: compileSessionIdRef.current } },
           });
           if (!started) {
             // Surface the real reason instead of a one-size-fits-all

@@ -108,7 +108,19 @@ def materialize_tar(project, resolved_content: dict[uuid.UUID, str] | None = Non
     the compile service. Storage keys are opaque server-generated ids
     (see files_api.py); `path` is what's already been validated against
     path traversal at file-creation time — reused here as the tar member
-    name so the compiled document sees the same tree the editor shows."""
+    name so the compiled document sees the same tree the editor shows.
+
+    `info.mtime` is stamped from `f.updated_at` rather than left at its
+    tarfile-default of 0 (epoch) — this is what makes the session-scoped
+    incremental compile cache (sandbox.py) correct: `updated_at` only
+    changes when a file's content actually changes, so an unchanged file
+    gets the exact same mtime on every compile, and latexmk's own (purely
+    mtime-based — verified against `latexmk`'s docs, it has no general
+    content-checksum staleness check) dependency tracking correctly skips
+    reprocessing it. A real edit gets a newer `updated_at` and is correctly
+    seen as changed. Applies equally to resolved (suggestion-applied)
+    content: it's a pure function of the same underlying edit, so it only
+    differs when `updated_at` does too."""
     resolved_content = resolved_content or {}
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w") as tar:
@@ -119,16 +131,26 @@ def materialize_tar(project, resolved_content: dict[uuid.UUID, str] | None = Non
                 data = storage.get_object(f.storage_key)
             info = tarfile.TarInfo(name=f.path)
             info.size = len(data)
+            info.mtime = int(f.updated_at.timestamp())
             tar.addfile(info, io.BytesIO(data))
     return buf.getvalue()
 
 
-def dispatch_compile_start(tar_bytes: bytes, compiler: str, main_file: str) -> str:
+def dispatch_compile_start(tar_bytes: bytes, compiler: str, main_file: str, session_id: str | None = None) -> str:
     """Starts the job on the compile service and returns its job_id
     immediately — apps/compile now runs the actual latexmk job in a
     background thread rather than blocking the HTTP response on it (live
-    compile progress; see apps/compile/main.py)."""
+    compile progress; see apps/compile/main.py).
+
+    `session_id`, when given, lets apps/compile reuse the previous compile's
+    build directory for this same browser tab instead of starting from an
+    empty one — see sandbox.py's session-scoped cache. Purely a performance
+    hint: omitted or unrecognized, the compile service falls back to its
+    original one-shot-per-call behavior, so this never changes compile
+    *correctness*, only its speed."""
     url = f"{COMPILE_SERVICE_URL}/compile?compiler={quote(compiler)}&main={quote(main_file)}"
+    if session_id:
+        url += f"&session={quote(session_id)}"
     request = urllib.request.Request(
         url, data=tar_bytes, method="POST", headers={"Content-Type": "application/x-tar"}
     )
@@ -346,7 +368,7 @@ class CompileStartOut(Schema):
 
 
 @router.post("/projects/{project_id}/compile", response=CompileStartOut)
-def start_compile(request, project_id: uuid.UUID):
+def start_compile(request, project_id: uuid.UUID, session: str | None = None):
     # Timing + a running in-flight count (debugging aid) — the working
     # theory for recent slow/stuck compiles is simply too many
     # overlapping compile requests landing on one small server (every
@@ -371,7 +393,7 @@ def start_compile(request, project_id: uuid.UUID):
         t_tar_start = time.monotonic()
         tar_bytes = materialize_tar(project, resolved_content)
         t_dispatch_start = time.monotonic()
-        job_id = dispatch_compile_start(tar_bytes, settings_row.compiler, settings_row.main_doc_path)
+        job_id = dispatch_compile_start(tar_bytes, settings_row.compiler, settings_row.main_doc_path, session)
         t_end = time.monotonic()
         logger.info(
             "compile dispatched: project=%s user=%s job=%s inflight=%d "

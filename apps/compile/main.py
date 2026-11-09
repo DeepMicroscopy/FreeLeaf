@@ -16,7 +16,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from sandbox import ENGINE_COMMANDS, CompileError, run_job
+from sandbox import ENGINE_COMMANDS, SESSION_IDLE_TIMEOUT_SECONDS, CompileError, run_job, sweep_idle_sessions
 from synctex_query import backward_search, forward_search
 
 MAX_REQUEST_BYTES = 100 * 1024 * 1024  # 100 MB cap on an uploaded project tar
@@ -42,7 +42,9 @@ def _sweep_old_jobs() -> None:
         del _jobs[jid]
 
 
-def _run_and_track(job_id: str, tar_bytes: bytes, compiler: str, main_file: str) -> None:
+def _run_and_track(
+    job_id: str, tar_bytes: bytes, compiler: str, main_file: str, session_id: str | None
+) -> None:
     def on_step(label: str) -> None:
         with _jobs_lock:
             job = _jobs.get(job_id)
@@ -50,7 +52,7 @@ def _run_and_track(job_id: str, tar_bytes: bytes, compiler: str, main_file: str)
                 job["steps"].append(label)
 
     try:
-        result = run_job(tar_bytes, compiler, main_file, on_step=on_step)
+        result = run_job(tar_bytes, compiler, main_file, on_step=on_step, session_id=session_id)
     except CompileError as exc:
         error = str(exc)
         result = None
@@ -106,6 +108,7 @@ class Handler(BaseHTTPRequestHandler):
         params = parse_qs(parsed.query)
         compiler = (params.get("compiler") or ["pdflatex"])[0]
         main_file = (params.get("main") or ["main.tex"])[0]
+        session_id = (params.get("session") or [None])[0]
 
         if compiler not in ENGINE_COMMANDS:
             self._json(400, {"detail": f"unsupported compiler: {compiler}"})
@@ -123,7 +126,9 @@ class Handler(BaseHTTPRequestHandler):
             _jobs[job_id] = {"steps": [], "done": False, "result": None, "error": None, "created": time.monotonic()}
             active = sum(1 for j in _jobs.values() if not j["done"])
         print(f"[compile] job {job_id} received (compiler={compiler}, active_jobs={active})", flush=True)
-        threading.Thread(target=_run_and_track, args=(job_id, tar_bytes, compiler, main_file), daemon=True).start()
+        threading.Thread(
+            target=_run_and_track, args=(job_id, tar_bytes, compiler, main_file, session_id), daemon=True
+        ).start()
         self._json(200, {"job_id": job_id})
 
     def _handle_compile_status(self, job_id: str) -> None:
@@ -203,8 +208,25 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+_SESSION_SWEEP_INTERVAL_SECONDS = 60
+
+
+def _sweep_sessions_forever() -> None:
+    """Background eviction for the session-scoped incremental compile cache
+    (sandbox.py) — there's no scheduler/cron/Celery anywhere in this
+    codebase, so this process (already long-lived, already using daemon
+    threads for per-job progress tracking) hosts its own loop instead."""
+    while True:
+        time.sleep(_SESSION_SWEEP_INTERVAL_SECONDS)
+        try:
+            sweep_idle_sessions(SESSION_IDLE_TIMEOUT_SECONDS)
+        except Exception as exc:  # noqa: BLE001 - must never kill this loop
+            print(f"[compile] session sweep failed: {exc}", flush=True)
+
+
 def main():
     port = int(os.environ.get("PORT", "8100"))
+    threading.Thread(target=_sweep_sessions_forever, daemon=True).start()
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     server.serve_forever()
 
