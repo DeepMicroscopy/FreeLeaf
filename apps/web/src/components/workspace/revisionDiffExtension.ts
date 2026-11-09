@@ -1,4 +1,4 @@
-import { diffLines } from "diff";
+import { diffWordsWithSpace } from "diff";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import type { DecorationSet } from "@codemirror/view";
 import { StateEffect, StateField } from "@codemirror/state";
@@ -53,15 +53,25 @@ class RemovedRevisionTextWidget extends WidgetType {
   }
 }
 
-/** Computes decorations by walking `diffLines(baselineText, currentText)`
- * hunk by hunk, tracking a running position in `currentText` — unchanged
- * and added hunks advance that position (their text is really there in the
- * live doc); removed hunks don't (their text only exists in the baseline),
- * so they're rendered as a zero-width widget at the position they would
- * have occupied. */
+/** Computes decorations by walking `diffWordsWithSpace(baselineText,
+ * currentText)` hunk by hunk, tracking a running position in `currentText`
+ * — unchanged and added hunks advance that position (their text is really
+ * there in the live doc); removed hunks don't (their text only exists in
+ * the baseline), so they're rendered as a zero-width widget at the
+ * position they would have occupied.
+ *
+ * Word-level, not line-level: an early version used `diffLines`, which
+ * marked an *entire line* as removed+added whenever even one word changed
+ * within it — confusing (looked like a full rewrite for a single-digit
+ * edit, e.g. "365 cases" → "122 cases" struck through both whole
+ * sentences). `diffWordsWithSpace` (preserves whitespace/newlines as real
+ * content, unlike plain `diffWords`) narrows the decoration down to just
+ * the words that actually changed, while this function's own hunk-walking
+ * logic is otherwise unchanged — `diffLines`/`diffWordsWithSpace` return
+ * the same `Change[]` shape either way. */
 export function computeRevisionDiffDecorations(baselineText: string, currentText: string): DecorationSet {
   if (baselineText === currentText) return Decoration.none;
-  const parts = diffLines(baselineText, currentText);
+  const parts = diffWordsWithSpace(baselineText, currentText);
   const decorations = [];
   let pos = 0;
 
