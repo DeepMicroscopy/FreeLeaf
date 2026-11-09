@@ -1,6 +1,6 @@
 import { apiOrigin } from "@freeleaf/shared";
 import { ArrowLeft, Download, Menu, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useParams } from "react-router-dom";
 
 import { EditorTab } from "../components/workspace/EditorTab";
@@ -30,6 +30,18 @@ export function ProjectWorkspace() {
 
 function WorkspaceShell() {
   const { projectId, project, loading } = useWorkspace();
+
+  // Project name first so the tab is easy to pick out among several open
+  // projects — "FreeLeaf" alone looked identical in every tab. Restored on
+  // unmount so leaving the workspace (back to the dashboard) doesn't leave a
+  // stale project name in the tab.
+  useEffect(() => {
+    if (!project) return;
+    document.title = `${project.name} - FreeLeaf`;
+    return () => {
+      document.title = "FreeLeaf";
+    };
+  }, [project?.name]);
 
   if (loading) return <PageSpinner />;
   if (!project) return <Navigate to="/projects" replace />;
