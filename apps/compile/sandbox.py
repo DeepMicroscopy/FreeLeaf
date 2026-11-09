@@ -252,6 +252,7 @@ def run_job(
     main_file: str,
     on_step: Callable[[str], None] | None = None,
     session_id: str | None = None,
+    force_clean: bool = False,
 ) -> CompileResult:
     if compiler not in ENGINE_COMMANDS:
         raise CompileError(f"unsupported compiler: {compiler}")
@@ -272,6 +273,11 @@ def run_job(
         # output across many compiles in one session — reset rather than
         # erroring, so this compile just runs cold instead of the cache
         # ever growing unbounded.
+        shutil.rmtree(job_dir, ignore_errors=True)
+    elif is_session and force_clean:
+        # "Full recompile" (CompilePane's dropdown) — a deliberate one-off
+        # bypass of this session's cache, not a lasting "disable it" mode:
+        # wipe now, then let it build back up normally from this compile on.
         shutil.rmtree(job_dir, ignore_errors=True)
 
     src_dir.mkdir(parents=True, exist_ok=is_session)

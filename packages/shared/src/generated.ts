@@ -3204,6 +3204,7 @@ export interface operations {
         parameters: {
             query?: {
                 session?: string | null;
+                force_clean?: boolean;
             };
             header?: never;
             path: {

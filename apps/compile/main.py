@@ -43,7 +43,12 @@ def _sweep_old_jobs() -> None:
 
 
 def _run_and_track(
-    job_id: str, tar_bytes: bytes, compiler: str, main_file: str, session_id: str | None
+    job_id: str,
+    tar_bytes: bytes,
+    compiler: str,
+    main_file: str,
+    session_id: str | None,
+    force_clean: bool,
 ) -> None:
     def on_step(label: str) -> None:
         with _jobs_lock:
@@ -52,7 +57,9 @@ def _run_and_track(
                 job["steps"].append(label)
 
     try:
-        result = run_job(tar_bytes, compiler, main_file, on_step=on_step, session_id=session_id)
+        result = run_job(
+            tar_bytes, compiler, main_file, on_step=on_step, session_id=session_id, force_clean=force_clean
+        )
     except CompileError as exc:
         error = str(exc)
         result = None
@@ -109,6 +116,7 @@ class Handler(BaseHTTPRequestHandler):
         compiler = (params.get("compiler") or ["pdflatex"])[0]
         main_file = (params.get("main") or ["main.tex"])[0]
         session_id = (params.get("session") or [None])[0]
+        force_clean = (params.get("force_clean") or [""])[0] in ("1", "true")
 
         if compiler not in ENGINE_COMMANDS:
             self._json(400, {"detail": f"unsupported compiler: {compiler}"})
@@ -127,7 +135,9 @@ class Handler(BaseHTTPRequestHandler):
             active = sum(1 for j in _jobs.values() if not j["done"])
         print(f"[compile] job {job_id} received (compiler={compiler}, active_jobs={active})", flush=True)
         threading.Thread(
-            target=_run_and_track, args=(job_id, tar_bytes, compiler, main_file, session_id), daemon=True
+            target=_run_and_track,
+            args=(job_id, tar_bytes, compiler, main_file, session_id, force_clean),
+            daemon=True,
         ).start()
         self._json(200, {"job_id": job_id})
 

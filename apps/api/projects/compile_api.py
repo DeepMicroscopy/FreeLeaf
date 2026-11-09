@@ -136,7 +136,9 @@ def materialize_tar(project, resolved_content: dict[uuid.UUID, str] | None = Non
     return buf.getvalue()
 
 
-def dispatch_compile_start(tar_bytes: bytes, compiler: str, main_file: str, session_id: str | None = None) -> str:
+def dispatch_compile_start(
+    tar_bytes: bytes, compiler: str, main_file: str, session_id: str | None = None, force_clean: bool = False
+) -> str:
     """Starts the job on the compile service and returns its job_id
     immediately — apps/compile now runs the actual latexmk job in a
     background thread rather than blocking the HTTP response on it (live
@@ -147,10 +149,17 @@ def dispatch_compile_start(tar_bytes: bytes, compiler: str, main_file: str, sess
     empty one — see sandbox.py's session-scoped cache. Purely a performance
     hint: omitted or unrecognized, the compile service falls back to its
     original one-shot-per-call behavior, so this never changes compile
-    *correctness*, only its speed."""
+    *correctness*, only its speed.
+
+    `force_clean`, the "Full recompile" dropdown option, discards that
+    session's cached build directory before this one compile (then lets it
+    build back up normally from here) — a one-off bypass, not a lasting
+    "disable the cache" mode."""
     url = f"{COMPILE_SERVICE_URL}/compile?compiler={quote(compiler)}&main={quote(main_file)}"
     if session_id:
         url += f"&session={quote(session_id)}"
+    if force_clean:
+        url += "&force_clean=1"
     request = urllib.request.Request(
         url, data=tar_bytes, method="POST", headers={"Content-Type": "application/x-tar"}
     )
@@ -368,7 +377,7 @@ class CompileStartOut(Schema):
 
 
 @router.post("/projects/{project_id}/compile", response=CompileStartOut)
-def start_compile(request, project_id: uuid.UUID, session: str | None = None):
+def start_compile(request, project_id: uuid.UUID, session: str | None = None, force_clean: bool = False):
     # Timing + a running in-flight count (debugging aid) — the working
     # theory for recent slow/stuck compiles is simply too many
     # overlapping compile requests landing on one small server (every
@@ -393,7 +402,9 @@ def start_compile(request, project_id: uuid.UUID, session: str | None = None):
         t_tar_start = time.monotonic()
         tar_bytes = materialize_tar(project, resolved_content)
         t_dispatch_start = time.monotonic()
-        job_id = dispatch_compile_start(tar_bytes, settings_row.compiler, settings_row.main_doc_path, session)
+        job_id = dispatch_compile_start(
+            tar_bytes, settings_row.compiler, settings_row.main_doc_path, session, force_clean
+        )
         t_end = time.monotonic()
         logger.info(
             "compile dispatched: project=%s user=%s job=%s inflight=%d "

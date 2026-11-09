@@ -1,6 +1,6 @@
 import { api, apiOrigin } from "@freeleaf/shared";
 import type { components } from "@freeleaf/shared";
-import { Download, FileText, FileX2, MessageSquarePlus, RotateCw, Zap, ZapOff } from "lucide-react";
+import { ChevronDown, Download, FileText, FileX2, MessageSquarePlus, RotateCw, Zap, ZapOff } from "lucide-react";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 
 import { Button } from "../ui/Button";
@@ -139,6 +139,7 @@ export const CompilePane = forwardRef<
     if (!compileSessionIdRef.current) compileSessionIdRef.current = getCompileSessionId(projectId);
 
     const [compiling, setCompiling] = useState(false);
+    const [compileMenuOpen, setCompileMenuOpen] = useState(false);
     const [progressSteps, setProgressSteps] = useState<string[]>([]);
     const pollTokenRef = useRef(0);
     const [loadingLast, setLoadingLast] = useState(true);
@@ -244,12 +245,18 @@ export const CompilePane = forwardRef<
     // the auto-open preference exists to let people avoid. So only the
     // explicit path ever auto-opens, regardless of the preference.
     const explicitRerunRequestedRef = useRef(false);
+    // "Full recompile" (the dropdown's cache-bypass option) requested while
+    // another compile was already in flight — queued the same way an
+    // ordinary rerun-while-busy is, so it isn't silently downgraded to a
+    // normal cache-aware compile just because it had to wait.
+    const forceCleanRerunRequestedRef = useRef(false);
 
     const compile = useCallback(
-      async (explicit: boolean) => {
+      async (explicit: boolean, forceClean = false) => {
         if (inFlightRef.current) {
           rerunRequestedRef.current = true;
           if (explicit) explicitRerunRequestedRef.current = true;
+          if (forceClean) forceCleanRerunRequestedRef.current = true;
           return;
         }
         inFlightRef.current = true;
@@ -262,7 +269,10 @@ export const CompilePane = forwardRef<
         // of how polling ended.
         const pollUntilDone = async () => {
           const { data: started, error, response } = await api.POST("/api/projects/{project_id}/compile", {
-            params: { path: { project_id: projectId }, query: { session: compileSessionIdRef.current } },
+            params: {
+              path: { project_id: projectId },
+              query: { session: compileSessionIdRef.current, force_clean: forceClean },
+            },
           });
           if (!started) {
             // Surface the real reason instead of a one-size-fits-all
@@ -334,7 +344,9 @@ export const CompilePane = forwardRef<
           rerunRequestedRef.current = false;
           const rerunExplicit = explicitRerunRequestedRef.current;
           explicitRerunRequestedRef.current = false;
-          compile(rerunExplicit);
+          const rerunForceClean = forceCleanRerunRequestedRef.current;
+          forceCleanRerunRequestedRef.current = false;
+          compile(rerunExplicit, rerunForceClean);
         }
       },
       [projectId, show],
@@ -477,30 +489,82 @@ export const CompilePane = forwardRef<
                 {downloading ? "Downloading…" : "Download"}
               </button>
             )}
-            <Button
-              variant={autoCompileEnabled ? "ghost" : "secondary"}
-              size="sm"
-              onClick={() => setAutoCompileEnabled(!autoCompileEnabled)}
-              title={
-                autoCompileEnabled
-                  ? "Auto-compile is on — turn off to compile only on Recompile/Cmd+S"
-                  : "Auto-compile is off — turn on to compile automatically after each edit"
-              }
-            >
-              {autoCompileEnabled ? <Zap size={14} aria-hidden="true" /> : <ZapOff size={14} aria-hidden="true" />}
-              Auto-compile
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => compile(true)}
-              loading={compiling}
-              disabled={!canWrite}
-              title={canWrite ? undefined : "You don't have permission to compile this project."}
-            >
-              <RotateCw size={14} aria-hidden="true" />
-              Recompile
-            </Button>
+            <div className={styles.splitButton}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => compile(true)}
+                loading={compiling}
+                disabled={!canWrite}
+                title={canWrite ? undefined : "You don't have permission to compile this project."}
+                className={styles.splitButtonMain}
+              >
+                <RotateCw size={14} aria-hidden="true" />
+                Recompile
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setCompileMenuOpen((v) => !v)}
+                disabled={!canWrite}
+                className={styles.splitButtonChevron}
+                title="More compile options"
+                aria-label="More compile options"
+              >
+                <ChevronDown size={14} aria-hidden="true" />
+              </Button>
+              {compileMenuOpen && (
+                <>
+                  <button
+                    className={styles.backdrop}
+                    aria-label="Close"
+                    onClick={() => setCompileMenuOpen(false)}
+                  />
+                  <div className={styles.compileMenu}>
+                    <button
+                      type="button"
+                      className={styles.compileMenuItem}
+                      disabled={!canWrite}
+                      onClick={() => {
+                        setCompileMenuOpen(false);
+                        compile(true, true);
+                      }}
+                    >
+                      <RotateCw size={14} aria-hidden="true" />
+                      <span>
+                        <span className={styles.compileMenuItemLabel}>Full recompile</span>
+                        <span className={styles.compileMenuItemHint}>
+                          Rebuilds from scratch, ignoring the build cache
+                        </span>
+                      </span>
+                    </button>
+                    <div className={styles.compileMenuDivider} />
+                    <button
+                      type="button"
+                      className={styles.compileMenuItem}
+                      onClick={() => {
+                        setCompileMenuOpen(false);
+                        setAutoCompileEnabled(!autoCompileEnabled);
+                      }}
+                    >
+                      {autoCompileEnabled ? (
+                        <Zap size={14} aria-hidden="true" />
+                      ) : (
+                        <ZapOff size={14} aria-hidden="true" />
+                      )}
+                      <span>
+                        <span className={styles.compileMenuItemLabel}>Auto-compile</span>
+                        <span className={styles.compileMenuItemHint}>
+                          {autoCompileEnabled
+                            ? "On — compiles automatically after each edit"
+                            : "Off — compile only on Recompile/Cmd+S"}
+                        </span>
+                      </span>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
         <div className={styles.body}>
