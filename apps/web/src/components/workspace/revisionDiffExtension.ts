@@ -1,4 +1,5 @@
 import { diffWordsWithSpace } from "diff";
+import type { Change } from "diff";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import type { DecorationSet } from "@codemirror/view";
 import { StateEffect, StateField } from "@codemirror/state";
@@ -53,12 +54,82 @@ class RemovedRevisionTextWidget extends WidgetType {
   }
 }
 
-/** Computes decorations by walking `diffWordsWithSpace(baselineText,
- * currentText)` hunk by hunk, tracking a running position in `currentText`
- * — unchanged and added hunks advance that position (their text is really
- * there in the live doc); removed hunks don't (their text only exists in
- * the baseline), so they're rendered as a zero-width widget at the
- * position they would have occupied.
+// A word-level diff of two substantially-rewritten sentences tends to find
+// short runs of genuinely identical text (a lone "and"/"to"/"of the")
+// stranded between real changes, purely because they happen to match —
+// mathematically correct (it's the true shortest edit script) but visually
+// chaotic: a dozen tiny alternating red/green fragments instead of two or
+// three readable "this phrase became that phrase" blocks. jsdiff has no
+// built-in cleanup for this (unlike e.g. diff-match-patch's
+// diff_cleanupSemantic); this is a hand-rolled version scoped to this one
+// readability problem: an unchanged run of at most MAX_ABSORBED_WORDS
+// words, sitting between a change on *both* sides, gets folded into that
+// surrounding change instead of staying its own stable island. Absorbing
+// means splitting it into a removed copy (joins the old-side text) and an
+// added copy (joins the new-side text) — the word visibly appears on both
+// sides of the replacement, which reads correctly for "this whole phrase
+// was replaced" rather than implying the connector word itself changed.
+const MAX_ABSORBED_WORDS = 2;
+
+function wordCount(text: string): number {
+  const trimmed = text.trim();
+  return trimmed === "" ? 0 : trimmed.split(/\s+/).length;
+}
+
+function fuseSmallGaps(parts: Change[]): Change[] {
+  // A genuine word substitution already comes out of diffWordsWithSpace as
+  // removed-then-added *immediately adjacent* — so simply merging adjacent
+  // same-type parts never fires once a small common run is absorbed into
+  // both sides (removed, added, removed, added, ... never has two
+  // same-type neighbors). Instead, walk the whole run of changes (real
+  // added/removed parts plus any small common parts absorbed into it) as
+  // one cluster, build its combined old-side and new-side text in a single
+  // pass, and emit exactly one removed block followed by one added block
+  // for that whole cluster — removed first so its (zero-width) widget
+  // lands immediately before the live inserted text it's being read
+  // alongside.
+  const result: Change[] = [];
+  let i = 0;
+  while (i < parts.length) {
+    const part = parts[i];
+    if (!part.added && !part.removed) {
+      // A real anchor: either too long to absorb, or not followed by
+      // more change at all (so there's no cluster to absorb it into).
+      result.push(part);
+      i++;
+      continue;
+    }
+
+    let removedText = "";
+    let addedText = "";
+    while (i < parts.length) {
+      const p = parts[i];
+      const isCommon = !p.added && !p.removed;
+      if (isCommon) {
+        const next = parts[i + 1];
+        const nextIsChange = !!next && (!!next.added || !!next.removed);
+        if (!nextIsChange || wordCount(p.value) > MAX_ABSORBED_WORDS) break;
+        removedText += p.value;
+        addedText += p.value;
+      } else if (p.removed) {
+        removedText += p.value;
+      } else {
+        addedText += p.value;
+      }
+      i++;
+    }
+    if (removedText) result.push({ value: removedText, added: false, removed: true, count: 0 });
+    if (addedText) result.push({ value: addedText, added: true, removed: false, count: 0 });
+  }
+  return result;
+}
+
+/** Computes decorations by walking `fuseSmallGaps(diffWordsWithSpace(...))`
+ * hunk by hunk, tracking a running position in `currentText` — unchanged
+ * and added hunks advance that position (their text is really there in the
+ * live doc); removed hunks don't (their text only exists in the
+ * baseline), so they're rendered as a zero-width widget at the position
+ * they would have occupied.
  *
  * Word-level, not line-level: an early version used `diffLines`, which
  * marked an *entire line* as removed+added whenever even one word changed
@@ -66,12 +137,13 @@ class RemovedRevisionTextWidget extends WidgetType {
  * edit, e.g. "365 cases" → "122 cases" struck through both whole
  * sentences). `diffWordsWithSpace` (preserves whitespace/newlines as real
  * content, unlike plain `diffWords`) narrows the decoration down to just
- * the words that actually changed, while this function's own hunk-walking
- * logic is otherwise unchanged — `diffLines`/`diffWordsWithSpace` return
- * the same `Change[]` shape either way. */
+ * the words that actually changed — but taken alone, for a heavily
+ * rewritten sentence, that reintroduces the opposite problem (many tiny
+ * fragmented changes instead of a couple of readable ones), which
+ * `fuseSmallGaps` cleans up before this function ever sees the parts. */
 export function computeRevisionDiffDecorations(baselineText: string, currentText: string): DecorationSet {
   if (baselineText === currentText) return Decoration.none;
-  const parts = diffWordsWithSpace(baselineText, currentText);
+  const parts = fuseSmallGaps(diffWordsWithSpace(baselineText, currentText));
   const decorations = [];
   let pos = 0;
 
