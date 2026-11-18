@@ -234,13 +234,19 @@ const theme = EditorView.theme({
   // decoration (for live position tracking — see computeCommentAnchorDecorations's
   // doc comment) but shouldn't stay visually highlighted.
   ".cm-commentAnchorResolved": {},
-  // Revision-diff linking (revisionDiffExtension.ts) — fixed green/red,
+  // Revision-diff linking (revisionDiffExtension.ts) — fixed amber/red,
   // distinct from suggestion marks' per-author hues, so the two independent
-  // systems never look ambiguous when they overlap.
+  // systems never look ambiguous when they overlap. Insert used to be green,
+  // which read identically to the editor's own text-selection highlight
+  // (--accent-soft-border, drawn from the same green --accent palette) —
+  // switched to amber so a revision insertion stays visually distinct from
+  // "this text is just selected". Amber-600 (#d97706), not the lighter
+  // #eab308/#f59e0b already used by cm-commentAnchor/cm-searchMatch/
+  // cm-lintFinding, so an added-text region doesn't read as one of those too.
   ".cm-revisionInsert": {
-    backgroundColor: "color-mix(in srgb, #22c55e 20%, transparent)",
+    backgroundColor: "color-mix(in srgb, #d97706 20%, transparent)",
     textDecoration: "underline",
-    textDecorationColor: "#22c55e",
+    textDecorationColor: "#d97706",
   },
   ".cm-revisionDelete": {
     backgroundColor: "color-mix(in srgb, #ef4444 18%, transparent)",
