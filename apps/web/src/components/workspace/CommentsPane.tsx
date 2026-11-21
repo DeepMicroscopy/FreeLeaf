@@ -102,7 +102,13 @@ export function CommentsPane({
   // `pendingAnchor` object — focus the composer so the user can start typing
   // immediately instead of having to click into it themselves.
   useEffect(() => {
-    if (pendingAnchor) newCommentTextareaRef.current?.focus();
+    if (!pendingAnchor) return;
+    const el = newCommentTextareaRef.current;
+    // The pane's own root scrolls (not a nested list), so if the user had
+    // scrolled down into the comment list, the composer — rendered above
+    // it — can be scrolled out of view above the fold even once focused.
+    el?.scrollIntoView({ block: "nearest" });
+    el?.focus();
   }, [pendingAnchor]);
 
   const load = useCallback(async () => {
