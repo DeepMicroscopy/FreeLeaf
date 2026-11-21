@@ -253,6 +253,15 @@ export function ProjectsPage() {
     }
     const groups = collections.map((c) => ({ collection: c as ProjectCollectionOut | null, projects: byCollection.get(c.id) ?? [] }));
     if (uncategorized.length > 0) groups.push({ collection: null, projects: uncategorized });
+    // Groups themselves are ordered by recency too, same as the projects
+    // inside them — whichever group was touched most recently (its most
+    // recently updated project, or its own creation time while still empty)
+    // floats to the top, instead of staying pinned in creation order forever.
+    groups.sort((a, b) => {
+      const key = (g: (typeof groups)[number]) =>
+        g.projects.reduce((latest, p) => (p.updated_at > latest ? p.updated_at : latest), g.collection?.created_at ?? "");
+      return key(b).localeCompare(key(a));
+    });
     return groups;
   }, [sortedProjects, collections]);
 

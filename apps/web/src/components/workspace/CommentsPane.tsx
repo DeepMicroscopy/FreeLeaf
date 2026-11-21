@@ -86,6 +86,7 @@ export function CommentsPane({
   const [replyBody, setReplyBody] = useState("");
   const [flashedId, setFlashedId] = useState<string | null>(null);
   const itemRefs = useRef(new Map<string, HTMLLIElement>());
+  const newCommentTextareaRef = useRef<HTMLTextAreaElement>(null);
   const hideResolvedKey = `freeleaf.hideResolvedComments.${projectId}`;
   const [hideResolved, setHideResolvedState] = useState(() => localStorage.getItem(hideResolvedKey) === "1");
   const setHideResolved = useCallback(
@@ -95,6 +96,14 @@ export function CommentsPane({
     },
     [hideResolvedKey],
   );
+
+  // Right-click "Add comment" on a selection (EditorTab's
+  // handleAddCommentFromSelection) opens this pane and sets a fresh
+  // `pendingAnchor` object — focus the composer so the user can start typing
+  // immediately instead of having to click into it themselves.
+  useEffect(() => {
+    if (pendingAnchor) newCommentTextareaRef.current?.focus();
+  }, [pendingAnchor]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -310,6 +319,7 @@ export function CommentsPane({
           <div className={styles.newCommentLine}>On line {currentLine}</div>
         )}
         <textarea
+          ref={newCommentTextareaRef}
           className={styles.textarea}
           placeholder="Add a comment…"
           value={newBody}
