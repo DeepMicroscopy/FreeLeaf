@@ -488,10 +488,15 @@ export function ProjectsPage() {
           <>
             {groupedProjects?.map((group) => {
               const groupId = group.collection?.id ?? "uncategorized";
-              const collapsed = groupedProjects.length > 1 && Boolean(view.collapsedCollections[groupId]);
+              // Only a named collection is a foldable section — the
+              // uncategorized bucket renders as a plain, always-expanded run
+              // of cards inline with the rest of the list instead of a
+              // heading of its own, so it reads as "everything else" rather
+              // than competing with real collections for top billing.
+              const collapsed = group.collection != null && Boolean(view.collapsedCollections[groupId]);
               return (
                 <section key={groupId} className={styles.collectionSection}>
-                  {groupedProjects.length > 1 && (
+                  {group.collection && (
                     <div className={styles.collectionHeader}>
                       <button
                         type="button"
@@ -504,20 +509,18 @@ export function ProjectsPage() {
                         ) : (
                           <ChevronDown size={14} aria-hidden="true" />
                         )}
-                        <h2 className={styles.collectionTitle}>{group.collection?.name ?? "Uncategorized"}</h2>
+                        <h2 className={styles.collectionTitle}>{group.collection.name}</h2>
                         <span className={styles.collectionCount}>{group.projects.length}</span>
                       </button>
-                      {group.collection && (
-                        <button
-                          type="button"
-                          className={styles.collectionDelete}
-                          aria-label={`Delete ${group.collection.name} collection`}
-                          title="Delete collection"
-                          onClick={() => handleDeleteCollection(group.collection!)}
-                        >
-                          <Trash2 size={13} aria-hidden="true" />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        className={styles.collectionDelete}
+                        aria-label={`Delete ${group.collection.name} collection`}
+                        title="Delete collection"
+                        onClick={() => handleDeleteCollection(group.collection!)}
+                      >
+                        <Trash2 size={13} aria-hidden="true" />
+                      </button>
                     </div>
                   )}
                   {!collapsed && (
@@ -600,10 +603,13 @@ export function ProjectsPage() {
             </thead>
             {groupedProjects?.map((group) => {
               const groupId = group.collection?.id ?? "uncategorized";
-              const collapsed = groupedProjects.length > 1 && Boolean(view.collapsedCollections[groupId]);
+              // See the grid view's identical comment: only a named
+              // collection gets a foldable header row — uncategorized
+              // projects fall straight into plain rows.
+              const collapsed = group.collection != null && Boolean(view.collapsedCollections[groupId]);
               return (
               <tbody key={groupId}>
-                {groupedProjects.length > 1 && (
+                {group.collection && (
                   <tr className={styles.collectionRow}>
                     <th colSpan={SORT_COLUMNS.length} className={styles.collectionRowTitle}>
                       <button
@@ -617,22 +623,20 @@ export function ProjectsPage() {
                         ) : (
                           <ChevronDown size={14} aria-hidden="true" />
                         )}
-                        {group.collection?.name ?? "Uncategorized"}
+                        {group.collection.name}
                         <span className={styles.collectionCount}>{group.projects.length}</span>
                       </button>
                     </th>
                     <th className={styles.collectionRowAction}>
-                      {group.collection && (
-                        <button
-                          type="button"
-                          className={styles.collectionDelete}
-                          aria-label={`Delete ${group.collection.name} collection`}
-                          title="Delete collection"
-                          onClick={() => handleDeleteCollection(group.collection!)}
-                        >
-                          <Trash2 size={13} aria-hidden="true" />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        className={styles.collectionDelete}
+                        aria-label={`Delete ${group.collection.name} collection`}
+                        title="Delete collection"
+                        onClick={() => handleDeleteCollection(group.collection!)}
+                      >
+                        <Trash2 size={13} aria-hidden="true" />
+                      </button>
                     </th>
                   </tr>
                 )}

@@ -8,7 +8,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # distribution the per-job sandbox image installs. This container never runs
 # arbitrary user LaTeX itself, so this doesn't touch the sandbox's own
 # lockdown (docker/texlive/Dockerfile, sandbox.py) at all.
-RUN apt-get update && apt-get install -y --no-install-recommends texlive-binaries \
+#
+# latexdiff (revision-diff compile, sandbox.py's _run_latexdiff) lives here
+# too, not in the sandbox image: it's pure Perl text processing over two
+# .tex sources — it never executes the LaTeX it reads — so running it in
+# this trusted, already-has-filesystem-access orchestrator is both simpler
+# and strictly safer than giving the locked-down sandbox any reason to read
+# a second file outside what it's compiling. Depends only on perl:any (no
+# texlive-* Recommends needed — it's never the thing compiling anything).
+RUN apt-get update && apt-get install -y --no-install-recommends texlive-binaries latexdiff \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

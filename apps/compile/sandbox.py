@@ -44,6 +44,7 @@ import io
 import os
 import re
 import shutil
+import subprocess
 import tarfile
 import threading
 import time
@@ -121,6 +122,44 @@ def sweep_idle_sessions(idle_seconds: int = SESSION_IDLE_TIMEOUT_SECONDS) -> Non
                 shutil.rmtree(entry, ignore_errors=True)
         except FileNotFoundError:
             pass  # swept by a concurrent call or the session itself finishing
+
+# Revision-diff compile ("Compile diff" in the dropdown, only offered when
+# the main document has a linked previous-copy baseline — see
+# revisionDiffExtension.ts/files_api.py's diff_baseline). Runs `latexdiff`
+# directly in this trusted orchestrator container (installed in
+# apps/compile/Dockerfile) rather than inside the ephemeral sandbox: it's
+# pure Perl text processing over the two .tex sources, never executes the
+# LaTeX it reads, so it doesn't need (or want) the full compile sandbox's
+# isolation — it needs to read project files, which the sandbox is
+# deliberately walled off from after it starts. The merged, \DIFadd/\DIFdel-
+# marked-up output is written back into the *same* src_dir the rest of the
+# project already lives in (not a separate tmpdir) specifically so its
+# relative \input/\includegraphics/\bibliography paths resolve exactly like
+# the original file's did.
+DIFF_MAIN_FILENAME = "__freeleaf_latexdiff__.tex"
+LATEXDIFF_TIMEOUT_SECONDS = 20
+
+
+def _run_latexdiff(src_dir: Path, baseline_rel: str, main_rel: str) -> str:
+    """Returns the latexdiff-generated .tex text. Raises CompileError (same
+    channel the sandboxed compile itself uses for a hard failure) if
+    latexdiff can't produce one — e.g. one side is unparseable LaTeX."""
+    try:
+        proc = subprocess.run(
+            ["latexdiff", baseline_rel, main_rel],
+            cwd=src_dir,
+            capture_output=True,
+            timeout=LATEXDIFF_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise CompileError("latexdiff timed out") from exc
+    except OSError as exc:
+        raise CompileError(f"could not run latexdiff: {exc}") from exc
+    if proc.returncode != 0 or not proc.stdout:
+        log = proc.stderr.decode("utf-8", errors="replace").strip()
+        raise CompileError(f"latexdiff failed:\n{log}" if log else "latexdiff produced no output")
+    return proc.stdout.decode("utf-8", errors="replace")
+
 
 ENGINE_COMMANDS = {
     # Deliberately no -halt-on-error: that stops the engine at the very
@@ -253,6 +292,7 @@ def run_job(
     on_step: Callable[[str], None] | None = None,
     session_id: str | None = None,
     force_clean: bool = False,
+    diff_baseline: str | None = None,
 ) -> CompileResult:
     if compiler not in ENGINE_COMMANDS:
         raise CompileError(f"unsupported compiler: {compiler}")
@@ -307,6 +347,18 @@ def run_job(
             shutil.rmtree(job_dir, ignore_errors=True)
         raise
 
+    compile_main_file = main_file
+    if diff_baseline:
+        if diff_baseline not in extracted or main_file not in extracted:
+            raise CompileError("Diff baseline file is missing from the project archive.")
+        diff_text = _run_latexdiff(src_dir, diff_baseline, main_file)
+        # Written next to main_file itself (not src_dir's root) so its
+        # relative \input/\includegraphics/\bibliography paths resolve
+        # exactly like the original did, even when main_file lives in a
+        # subdirectory.
+        compile_main_file = str(Path(main_file).with_name(DIFF_MAIN_FILENAME))
+        (src_dir / compile_main_file).write_text(diff_text, encoding="utf-8")
+
     engine_cmd = ENGINE_COMMANDS[compiler]
     var_name = compiler  # $pdflatex or $xelatex
     mode_flag = "-pdf" if compiler == "pdflatex" else "-xelatex"
@@ -323,7 +375,7 @@ def run_job(
         "-outdir=/work/out",
         "-e",
         f"${var_name}=q/{engine_cmd}/",
-        main_file,
+        compile_main_file,
     ]
 
     client = docker.from_env()
@@ -380,8 +432,8 @@ def run_job(
             log_bytes = b""
         log = log_bytes[:MAX_OUTPUT_BYTES].decode("utf-8", errors="replace")
 
-        pdf_bytes = _read_capped(out_dir / (Path(main_file).stem + ".pdf"))
-        synctex_bytes = _read_capped(out_dir / (Path(main_file).stem + ".synctex.gz"))
+        pdf_bytes = _read_capped(out_dir / (Path(compile_main_file).stem + ".pdf"))
+        synctex_bytes = _read_capped(out_dir / (Path(compile_main_file).stem + ".synctex.gz"))
 
         if status == "success" and pdf_bytes is None:
             status = "failed"  # no PDF actually landed — genuinely nothing to show

@@ -3264,6 +3264,7 @@ export interface operations {
             query?: {
                 session?: string | null;
                 force_clean?: boolean;
+                diff?: boolean;
             };
             header?: never;
             path: {

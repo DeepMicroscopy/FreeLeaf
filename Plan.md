@@ -243,6 +243,7 @@ Additionally, some polishing in phase 8:
 - **API:** `PATCH /api/projects/{project_id}/files/{file_id}/diff-baseline` — `{baseline_file_id}` links/clears, rejecting non-`.tex` files and self-links.
 - **UI:** a right-click context menu on file-tree rows ("Set as main document" / "Set as previous copy" / "Remove previous-copy link"), an info/confirm dialog explaining the workflow before linking, and a `diffWordsWithSpace`-based CodeMirror decoration layer (adapted from the removed `trackChangesExtension.ts`, see its ADR) rendering insertions as green marks and removed text as non-editable red-strikethrough widgets, debounced on doc-text-change. Word-level, not line-level — an early version used `diffLines` and marked a whole line as changed over a single-word edit, which read as a full rewrite.
 - **Acceptance:** linking/unlinking persists and survives reload; an edit to the main document is reflected in the diff within ~400ms; deleting the linked file cleanly un-links; non-`.tex` and self-links are rejected with a clear error.
+- **Compile diff:** once the main document has a linked baseline, the compile dropdown offers "Compile diff" — runs `latexdiff` (installed directly in the `apps/compile` orchestrator, not the sandbox; see its own ADR) between the baseline and the live main file and compiles the resulting `\DIFadd`/`\DIFdel`-marked-up document instead, producing an actual change-marked-up PDF (distinct from the in-editor decoration above, which never touches LaTeX output).
 ---
 
 ## 10. Repository layout (target)

@@ -1,6 +1,6 @@
 import { api, apiOrigin } from "@freeleaf/shared";
 import type { components } from "@freeleaf/shared";
-import { ChevronDown, Download, FileText, FileX2, MessageSquarePlus, RotateCw, Zap, ZapOff } from "lucide-react";
+import { ChevronDown, Download, FileText, FileX2, GitCompare, MessageSquarePlus, RotateCw, Zap, ZapOff } from "lucide-react";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 
 import { Button } from "../ui/Button";
@@ -89,7 +89,11 @@ export const CompilePane = forwardRef<
   },
   ref,
 ) {
-    const { project } = useWorkspace();
+    const { project, files, mainDocPath } = useWorkspace();
+    // "Compile diff" (latexdiff) dropdown option — only meaningful, and only
+    // offered, once the main document is actually linked to a previous-copy
+    // baseline (FileTree's "Set as previous copy"/revisionDiffExtension.ts).
+    const hasDiffBaseline = files.find((f) => f.path === mainDocPath)?.diff_baseline_file_id != null;
     const [run, setRunState] = useState<CompileRunOut | null>(null);
     const onRunChangedRef = useRef(onRunChanged);
     onRunChangedRef.current = onRunChanged;
@@ -250,13 +254,17 @@ export const CompilePane = forwardRef<
     // ordinary rerun-while-busy is, so it isn't silently downgraded to a
     // normal cache-aware compile just because it had to wait.
     const forceCleanRerunRequestedRef = useRef(false);
+    // "Compile diff" (latexdiff), queued the same way across a busy-compile
+    // rerun as forceClean above.
+    const diffRerunRequestedRef = useRef(false);
 
     const compile = useCallback(
-      async (explicit: boolean, forceClean = false) => {
+      async (explicit: boolean, forceClean = false, diff = false) => {
         if (inFlightRef.current) {
           rerunRequestedRef.current = true;
           if (explicit) explicitRerunRequestedRef.current = true;
           if (forceClean) forceCleanRerunRequestedRef.current = true;
+          if (diff) diffRerunRequestedRef.current = true;
           return;
         }
         inFlightRef.current = true;
@@ -271,7 +279,7 @@ export const CompilePane = forwardRef<
           const { data: started, error, response } = await api.POST("/api/projects/{project_id}/compile", {
             params: {
               path: { project_id: projectId },
-              query: { session: compileSessionIdRef.current, force_clean: forceClean },
+              query: { session: compileSessionIdRef.current, force_clean: forceClean, diff },
             },
           });
           if (!started) {
@@ -346,7 +354,9 @@ export const CompilePane = forwardRef<
           explicitRerunRequestedRef.current = false;
           const rerunForceClean = forceCleanRerunRequestedRef.current;
           forceCleanRerunRequestedRef.current = false;
-          compile(rerunExplicit, rerunForceClean);
+          const rerunDiff = diffRerunRequestedRef.current;
+          diffRerunRequestedRef.current = false;
+          compile(rerunExplicit, rerunForceClean, rerunDiff);
         }
       },
       [projectId, show],
@@ -538,6 +548,25 @@ export const CompilePane = forwardRef<
                         </span>
                       </span>
                     </button>
+                    {hasDiffBaseline && (
+                      <button
+                        type="button"
+                        className={styles.compileMenuItem}
+                        disabled={!canWrite}
+                        onClick={() => {
+                          setCompileMenuOpen(false);
+                          compile(true, false, true);
+                        }}
+                      >
+                        <GitCompare size={14} aria-hidden="true" />
+                        <span>
+                          <span className={styles.compileMenuItemLabel}>Compile diff</span>
+                          <span className={styles.compileMenuItemHint}>
+                            Marks up changes against the linked previous copy (latexdiff)
+                          </span>
+                        </span>
+                      </button>
+                    )}
                     <div className={styles.compileMenuDivider} />
                     <button
                       type="button"

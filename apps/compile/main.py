@@ -49,6 +49,7 @@ def _run_and_track(
     main_file: str,
     session_id: str | None,
     force_clean: bool,
+    diff_baseline: str | None,
 ) -> None:
     def on_step(label: str) -> None:
         with _jobs_lock:
@@ -58,7 +59,13 @@ def _run_and_track(
 
     try:
         result = run_job(
-            tar_bytes, compiler, main_file, on_step=on_step, session_id=session_id, force_clean=force_clean
+            tar_bytes,
+            compiler,
+            main_file,
+            on_step=on_step,
+            session_id=session_id,
+            force_clean=force_clean,
+            diff_baseline=diff_baseline,
         )
     except CompileError as exc:
         error = str(exc)
@@ -117,6 +124,7 @@ class Handler(BaseHTTPRequestHandler):
         main_file = (params.get("main") or ["main.tex"])[0]
         session_id = (params.get("session") or [None])[0]
         force_clean = (params.get("force_clean") or [""])[0] in ("1", "true")
+        diff_baseline = (params.get("diff_baseline") or [None])[0]
 
         if compiler not in ENGINE_COMMANDS:
             self._json(400, {"detail": f"unsupported compiler: {compiler}"})
@@ -136,7 +144,7 @@ class Handler(BaseHTTPRequestHandler):
         print(f"[compile] job {job_id} received (compiler={compiler}, active_jobs={active})", flush=True)
         threading.Thread(
             target=_run_and_track,
-            args=(job_id, tar_bytes, compiler, main_file, session_id, force_clean),
+            args=(job_id, tar_bytes, compiler, main_file, session_id, force_clean, diff_baseline),
             daemon=True,
         ).start()
         self._json(200, {"job_id": job_id})

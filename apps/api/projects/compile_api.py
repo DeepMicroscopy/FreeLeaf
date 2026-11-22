@@ -137,7 +137,12 @@ def materialize_tar(project, resolved_content: dict[uuid.UUID, str] | None = Non
 
 
 def dispatch_compile_start(
-    tar_bytes: bytes, compiler: str, main_file: str, session_id: str | None = None, force_clean: bool = False
+    tar_bytes: bytes,
+    compiler: str,
+    main_file: str,
+    session_id: str | None = None,
+    force_clean: bool = False,
+    diff_baseline: str | None = None,
 ) -> str:
     """Starts the job on the compile service and returns its job_id
     immediately — apps/compile now runs the actual latexmk job in a
@@ -154,12 +159,21 @@ def dispatch_compile_start(
     `force_clean`, the "Full recompile" dropdown option, discards that
     session's cached build directory before this one compile (then lets it
     build back up normally from here) — a one-off bypass, not a lasting
-    "disable the cache" mode."""
+    "disable the cache" mode.
+
+    `diff_baseline`, the "Compile diff" dropdown option (only offered when
+    the main document has a linked previous-copy baseline — ProjectFile.
+    diff_baseline), is that baseline file's project-relative path. The
+    compile service runs latexdiff between it and the live main file and
+    compiles *that* merged, change-marked-up document instead — see
+    sandbox.py's _run_latexdiff."""
     url = f"{COMPILE_SERVICE_URL}/compile?compiler={quote(compiler)}&main={quote(main_file)}"
     if session_id:
         url += f"&session={quote(session_id)}"
     if force_clean:
         url += "&force_clean=1"
+    if diff_baseline:
+        url += f"&diff_baseline={quote(diff_baseline)}"
     request = urllib.request.Request(
         url, data=tar_bytes, method="POST", headers={"Content-Type": "application/x-tar"}
     )
@@ -377,7 +391,9 @@ class CompileStartOut(Schema):
 
 
 @router.post("/projects/{project_id}/compile", response=CompileStartOut)
-def start_compile(request, project_id: uuid.UUID, session: str | None = None, force_clean: bool = False):
+def start_compile(
+    request, project_id: uuid.UUID, session: str | None = None, force_clean: bool = False, diff: bool = False
+):
     # Timing + a running in-flight count (debugging aid) — the working
     # theory for recent slow/stuck compiles is simply too many
     # overlapping compile requests landing on one small server (every
@@ -397,13 +413,28 @@ def start_compile(request, project_id: uuid.UUID, session: str | None = None, fo
         require_role(membership, Role.OWNER, Role.EDITOR)
 
         settings_row = get_or_create_settings(project)
+
+        diff_baseline_path = None
+        if diff:
+            main_file = (
+                project.files.filter(path=settings_row.main_doc_path).exclude(type=FileType.FOLDER).first()
+            )
+            if main_file is None or main_file.diff_baseline_id is None:
+                raise HttpError(400, "The main document has no linked previous copy to diff against.")
+            diff_baseline_path = main_file.diff_baseline.path
+
         t_flush_start = time.monotonic()
         resolved_content = flush_collab_rooms(project)
         t_tar_start = time.monotonic()
         tar_bytes = materialize_tar(project, resolved_content)
         t_dispatch_start = time.monotonic()
         job_id = dispatch_compile_start(
-            tar_bytes, settings_row.compiler, settings_row.main_doc_path, session, force_clean
+            tar_bytes,
+            settings_row.compiler,
+            settings_row.main_doc_path,
+            session,
+            force_clean,
+            diff_baseline_path,
         )
         t_end = time.monotonic()
         logger.info(
