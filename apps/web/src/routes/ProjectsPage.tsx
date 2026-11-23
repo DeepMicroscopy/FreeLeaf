@@ -524,7 +524,7 @@ export function ProjectsPage() {
                     </div>
                   )}
                   {!collapsed && (
-                    <ul className={styles.grid}>
+                    <ul className={[styles.grid, group.collection ? styles.gridIndented : ""].join(" ")}>
                       {group.projects.map((p) => (
                         <li key={p.id}>
                           <div
@@ -642,7 +642,7 @@ export function ProjectsPage() {
                 )}
                 {!collapsed && group.projects.map((p) => (
                   <tr key={p.id}>
-                    <td>
+                    <td className={group.collection ? styles.rowNameCellIndented : undefined}>
                       <button className={styles.rowNameButton} onClick={() => navigate(`/projects/${p.id}`)}>
                         {p.name}
                       </button>

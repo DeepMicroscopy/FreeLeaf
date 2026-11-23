@@ -277,6 +277,20 @@
   color: var(--danger-600);
 }
 
+/* Nests a named collection's cards/rows visually under its header — a
+   vertical rule plus indent, the same "child of" language a file tree
+   uses — so the grouping reads at a glance instead of only through the
+   header text above. Uncategorized items stay flush left (no class). */
+.gridIndented {
+  padding-left: var(--space-4);
+  border-left: 2px solid var(--border-subtle);
+}
+
+.table td.rowNameCellIndented {
+  padding-left: calc(var(--space-3) + var(--space-4));
+  border-left: 2px solid var(--border-subtle);
+}
+
 .collectionRowTitle {
   text-align: left;
   padding: 10px var(--space-3) 6px;
