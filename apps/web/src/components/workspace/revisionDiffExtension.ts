@@ -71,6 +71,43 @@ class RemovedRevisionTextWidget extends WidgetType {
 // was replaced" rather than implying the connector word itself changed.
 const MAX_ABSORBED_WORDS = 2;
 
+function isWhitespaceOnly(text: string): boolean {
+  return text.trim() === "";
+}
+
+// Re-indentation (a block's leading whitespace changing, with no change to
+// its actual words) is reflow, not content a revision-diff should highlight
+// — but `diffWordsWithSpace` deliberately treats whitespace as real
+// diffable content (so a genuine text change like "wordword" -> "word word"
+// still shows), which means every re-indented line comes out as its own
+// removed/added whitespace pair. Left in place, `fuseSmallGaps`'s absorption
+// heuristic (below) then makes it worse: it counts a long braced
+// key={value} pair as a single "word" by its naive whitespace split, so a
+// multi-line block of real content sandwiched between two such whitespace
+// pairs reads as "≤2 words" and gets absorbed — duplicating that whole
+// block into both the removed and added sides. Collapsing a whitespace-only
+// removed/added pair into an ordinary unchanged part, before fusing ever
+// runs, suppresses the reflow noise and removes the absorption trigger in
+// one step; anything with real (non-whitespace) content on either side is
+// untouched.
+function suppressWhitespaceOnlyChanges(parts: Change[]): Change[] {
+  const out: Change[] = [];
+  let i = 0;
+  while (i < parts.length) {
+    const part = parts[i];
+    const next = parts[i + 1];
+    const isChangePair = next != null && ((part.removed && next.added) || (part.added && next.removed));
+    if (isChangePair && isWhitespaceOnly(part.value) && isWhitespaceOnly(next.value)) {
+      out.push({ value: part.added ? part.value : next.value, added: false, removed: false, count: 0 });
+      i += 2;
+      continue;
+    }
+    out.push(part);
+    i++;
+  }
+  return out;
+}
+
 function wordCount(text: string): number {
   const trimmed = text.trim();
   return trimmed === "" ? 0 : trimmed.split(/\s+/).length;
@@ -184,7 +221,7 @@ function hierarchicalWordDiff(oldText: string, newText: string): Change[] {
  * `fuseSmallGaps` cleans up before this function ever sees the parts. */
 export function computeRevisionDiffDecorations(baselineText: string, currentText: string): DecorationSet {
   if (baselineText === currentText) return Decoration.none;
-  const parts = fuseSmallGaps(hierarchicalWordDiff(baselineText, currentText));
+  const parts = fuseSmallGaps(suppressWhitespaceOnlyChanges(hierarchicalWordDiff(baselineText, currentText)));
   const decorations = [];
   let pos = 0;
 
