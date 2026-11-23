@@ -346,6 +346,14 @@
   color: var(--text-primary);
 }
 
+/* Mirrors the grid view's `.collectionSection + .collectionSection` gap —
+   without it, an uncategorized group's un-headered rows run on directly
+   beneath the previous group with nothing marking the boundary. */
+.table tbody + tbody > tr:first-child > td,
+.table tbody + tbody > tr:first-child > th {
+  padding-top: var(--space-5);
+}
+
 .sortHeader {
   display: inline-flex;
   align-items: center;
