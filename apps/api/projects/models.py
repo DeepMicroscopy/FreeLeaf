@@ -83,6 +83,16 @@ class Membership(models.Model):
     collection = models.ForeignKey(
         ProjectCollection, null=True, blank=True, on_delete=models.SET_NULL, related_name="memberships"
     )
+    # Who created the ShareLink this member joined through — null for a
+    # project's own owner (created directly, never via a share link) and for
+    # any other member added outside the invite flow. SET_NULL so deleting
+    # the inviter's account doesn't touch this membership.
+    invited_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    # Set once this member has been shown the project's one-time welcome
+    # screen (ProjectWelcome.tsx) — null means "show it next time they open
+    # the project". Only meaningful alongside invited_by: the welcome screen
+    # is for invited collaborators, not a project's own owner.
+    welcomed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints = [
@@ -101,6 +111,10 @@ class ShareLink(models.Model):
     role = models.CharField(max_length=16, choices=Role.choices, default=Role.EDITOR)
     expires_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    # Who generated this invite link — copied onto Membership.invited_by when
+    # someone joins through it, so "who invited you" survives even if this
+    # link is later revoked or expires.
+    created_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
 
     def __str__(self):
         return f"ShareLink({self.project_id}, {self.role})"

@@ -411,6 +411,27 @@ export interface paths {
         patch: operations["projects_api_update_project"];
         trace?: never;
     };
+    "/api/projects/{project_id}/welcome-seen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark Welcome Seen
+         * @description Dismisses ProjectWelcome.tsx for good for this member — called once
+         *     they pick either of its two buttons, regardless of which.
+         */
+        post: operations["projects_api_mark_welcome_seen"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/members": {
         parameters: {
             query?: never;
@@ -1428,6 +1449,13 @@ export interface components {
             collection_id?: string | null;
             /** Collection Name */
             collection_name?: string | null;
+            /** Invited By Name */
+            invited_by_name?: string | null;
+            /**
+             * Needs Welcome
+             * @default false
+             */
+            needs_welcome: boolean;
         };
         /** FromTemplateIn */
         FromTemplateIn: {
@@ -2747,6 +2775,28 @@ export interface operations {
                 "application/json": components["schemas"]["ProjectUpdateIn"];
             };
         };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectOut"];
+                };
+            };
+        };
+    };
+    projects_api_mark_welcome_seen: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description OK */
             200: {

@@ -55,9 +55,16 @@ class ProjectOut(Schema):
     has_thumbnail: bool = False
     collection_id: uuid.UUID | None = None
     collection_name: str | None = None
+    # Who invited the current viewer into this project, and whether they
+    # still need to see the one-time welcome screen (ProjectWelcome.tsx) —
+    # both null/false for a project's own owner, since they weren't invited.
+    invited_by_name: str | None = None
+    needs_welcome: bool = False
 
 
-def _project_out(project: Project, role: str, collection: ProjectCollection | None = None) -> ProjectOut:
+def _project_out(
+    project: Project, role: str, collection: ProjectCollection | None = None, membership: Membership | None = None
+) -> ProjectOut:
     return ProjectOut(
         id=project.id,
         name=project.name,
@@ -77,6 +84,12 @@ def _project_out(project: Project, role: str, collection: ProjectCollection | No
         has_thumbnail=bool(project.thumbnail_storage_key),
         collection_id=collection.id if collection else None,
         collection_name=collection.name if collection else None,
+        invited_by_name=(
+            membership.invited_by.display_name or membership.invited_by.email
+            if membership and membership.invited_by
+            else None
+        ),
+        needs_welcome=bool(membership and membership.invited_by_id and not membership.welcomed_at),
     )
 
 
@@ -359,7 +372,7 @@ def duplicate_project(request, project_id: uuid.UUID, payload: ProjectDuplicateI
 def get_project(request, project_id: uuid.UUID):
     user = get_current_user(request)
     project, membership = get_authorized_project(user, project_id)
-    return _project_out(project, membership.role)
+    return _project_out(project, membership.role, membership=membership)
 
 
 class ProjectUpdateIn(Schema):
@@ -378,6 +391,18 @@ def update_project(request, project_id: uuid.UUID, payload: ProjectUpdateIn):
     project.save(update_fields=["name"])
     touch_project(project, user)
     return _project_out(project, membership.role)
+
+
+@router.post("/projects/{project_id}/welcome-seen", response=ProjectOut)
+def mark_welcome_seen(request, project_id: uuid.UUID):
+    """Dismisses ProjectWelcome.tsx for good for this member — called once
+    they pick either of its two buttons, regardless of which."""
+    user = get_current_user(request)
+    project, membership = get_authorized_project(user, project_id)
+    if not membership.welcomed_at:
+        membership.welcomed_at = timezone.now()
+        membership.save(update_fields=["welcomed_at"])
+    return _project_out(project, membership.role, membership=membership)
 
 
 @router.delete("/projects/{project_id}")
@@ -560,6 +585,7 @@ def create_share_link(request, project_id: uuid.UUID, payload: ShareLinkCreateIn
         token_hash=hash_token(token),
         role=payload.role,
         expires_at=expires_at,
+        created_by=user,
     )
     return _share_link_out(link, token=token)
 
@@ -604,6 +630,6 @@ def join_via_share_link(request, token: str, payload: ShareLinkJoinIn):
         log_in(request, user)
 
     membership, _ = Membership.objects.get_or_create(
-        project=link.project, user=user, defaults={"role": link.role}
+        project=link.project, user=user, defaults={"role": link.role, "invited_by": link.created_by}
     )
-    return _project_out(link.project, membership.role)
+    return _project_out(link.project, membership.role, membership=membership)

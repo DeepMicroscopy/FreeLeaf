@@ -6,6 +6,7 @@ import { NavLink, Navigate, Route, Routes, useParams } from "react-router-dom";
 import { EditorTab } from "../components/workspace/EditorTab";
 import { HistoryTab } from "../components/workspace/HistoryTab";
 import { LibraryTab } from "../components/workspace/LibraryTab";
+import { ProjectWelcome } from "../components/workspace/ProjectWelcome";
 import { SettingsTab } from "../components/workspace/SettingsTab";
 import { ShareButton } from "../components/workspace/ShareButton";
 import { WorkspaceSidebar } from "../components/workspace/WorkspaceSidebar";
@@ -30,6 +31,12 @@ export function ProjectWorkspace() {
 
 function WorkspaceShell() {
   const { projectId, project, loading } = useWorkspace();
+  // Local-only override: the server flips `needs_welcome` to false once
+  // ProjectWelcome.tsx calls the dismiss endpoint, but that response isn't
+  // what's in `project` here (WorkspaceProvider doesn't auto-refetch from
+  // it) — so track "dismissed this mount" ourselves rather than waiting on
+  // a refreshProject() round-trip before the real shell can render.
+  const [welcomeDismissed, setWelcomeDismissed] = useState(false);
 
   // Project name first so the tab is easy to pick out among several open
   // projects — "FreeLeaf" alone looked identical in every tab. Restored on
@@ -45,6 +52,10 @@ function WorkspaceShell() {
 
   if (loading) return <PageSpinner />;
   if (!project) return <Navigate to="/projects" replace />;
+
+  if (project.needs_welcome && !welcomeDismissed) {
+    return <ProjectWelcome projectId={projectId} project={project} onDone={() => setWelcomeDismissed(true)} />;
+  }
 
   const base = `/projects/${projectId}`;
 
