@@ -5,6 +5,7 @@ import json
 from django.test import Client
 
 from accounts.models import User
+from core import storage
 from core.testing import ApiTestCase, login_as
 
 from .models import Comment, ProjectFile
@@ -221,3 +222,71 @@ class DeleteCommentTests(CommentTestsBase):
         )
         self.owner.delete(f"/api/projects/{self.project_id}/comments/{top['id']}")
         self.assertEqual(Comment.objects.filter(project_id=self.project_id).count(), 0)
+
+
+class AnchorLostTests(CommentTestsBase):
+    """A comment whose anchored text can no longer be found is flagged
+    anchor_lost, not deleted — see Comment's docstring. Rewriting a
+    commented-on sentence shouldn't silently discard the feedback on it."""
+
+    def _comment_on(self, text):
+        return post_json(
+            self.owner,
+            f"/api/projects/{self.project_id}/files/{self.file_id}/comments",
+            {"body": "look here", "anchor_line": 1, "anchor_from": 0, "anchor_to": len(text), "anchor_text": text},
+        ).json()
+
+    def test_flags_lost_when_text_is_gone_from_stored_content(self):
+        storage.put_object(ProjectFile.objects.get(id=self.file_id).storage_key, b"original sentence", "text/plain")
+        comment = self._comment_on("original sentence")
+        storage.put_object(ProjectFile.objects.get(id=self.file_id).storage_key, b"a totally rewritten sentence", "text/plain")
+
+        response = post_json(self.owner, f"/api/projects/{self.project_id}/comments/{comment['id']}/anchor-lost")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["anchor_lost"])
+        # Frozen, not cleared — the thread still shows what it used to point at.
+        self.assertEqual(response.json()["anchor_text"], "original sentence")
+        self.assertTrue(Comment.objects.get(id=comment["id"]).anchor_lost_at is not None)
+
+    def test_does_not_flag_when_text_is_still_present(self):
+        storage.put_object(ProjectFile.objects.get(id=self.file_id).storage_key, b"original sentence", "text/plain")
+        comment = self._comment_on("original sentence")
+
+        response = post_json(self.owner, f"/api/projects/{self.project_id}/comments/{comment['id']}/anchor-lost")
+        self.assertEqual(response.status_code, 409)
+        self.assertIsNone(Comment.objects.get(id=comment["id"]).anchor_lost_at)
+
+    def test_viewer_cannot_flag_anchor_lost(self):
+        viewer = self._add_viewer()
+        storage.put_object(ProjectFile.objects.get(id=self.file_id).storage_key, b"gone now", "text/plain")
+        comment = self._comment_on("original sentence")
+
+        response = post_json(viewer, f"/api/projects/{self.project_id}/comments/{comment['id']}/anchor-lost")
+        self.assertEqual(response.status_code, 403)
+
+    def test_idempotent_does_not_bump_an_already_flagged_comment(self):
+        storage.put_object(ProjectFile.objects.get(id=self.file_id).storage_key, b"gone now", "text/plain")
+        comment = self._comment_on("original sentence")
+        post_json(self.owner, f"/api/projects/{self.project_id}/comments/{comment['id']}/anchor-lost")
+        first = Comment.objects.get(id=comment["id"]).anchor_lost_at
+
+        response = post_json(self.owner, f"/api/projects/{self.project_id}/comments/{comment['id']}/anchor-lost")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Comment.objects.get(id=comment["id"]).anchor_lost_at, first)
+
+    def test_relocating_the_anchor_clears_the_lost_flag(self):
+        storage.put_object(ProjectFile.objects.get(id=self.file_id).storage_key, b"gone now", "text/plain")
+        comment = self._comment_on("original sentence")
+        post_json(self.owner, f"/api/projects/{self.project_id}/comments/{comment['id']}/anchor-lost")
+        self.assertTrue(Comment.objects.get(id=comment["id"]).anchor_lost_at is not None)
+
+        # The edit that hid the text gets undone — the client re-locates it
+        # and refreshes the anchor as usual.
+        response = patch_json(
+            self.owner,
+            f"/api/projects/{self.project_id}/comments/{comment['id']}/anchor",
+            {"anchor_line": 1, "anchor_from": 0, "anchor_to": len("original sentence")},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()["anchor_lost"])
+        self.assertIsNone(Comment.objects.get(id=comment["id"]).anchor_lost_at)

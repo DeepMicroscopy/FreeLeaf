@@ -216,3 +216,19 @@
   color: var(--text-secondary);
   word-break: break-word;
 }
+
+/* The quoted text is frozen at whatever it was last resolved to — no
+   longer live, so the border loses the "this is really there" yellow. */
+.anchorQuoteLost {
+  border-left-color: var(--border-default);
+  color: var(--text-tertiary);
+}
+
+.anchorLostNotice {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  color: var(--danger-600);
+}

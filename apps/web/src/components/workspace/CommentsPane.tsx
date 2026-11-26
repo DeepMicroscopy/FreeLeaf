@@ -1,6 +1,6 @@
 import { api } from "@freeleaf/shared";
 import type { components } from "@freeleaf/shared";
-import { Check, Eye, EyeOff, MessageSquare, Trash2, Undo2, X } from "lucide-react";
+import { AlertTriangle, Check, Eye, EyeOff, MessageSquare, Trash2, Undo2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "../ui/Button";
@@ -142,12 +142,12 @@ export function CommentsPane({
     const located = locateCommentAnchors(docText, anchors);
 
     const nextResolved = new Map<string, ResolvedAnchor>();
-    const orphanedIds: string[] = [];
+    const lostIds: string[] = [];
     for (const c of comments) {
       if (c.anchor_text == null) continue;
       const loc = located.get(c.id);
       if (!loc) {
-        orphanedIds.push(c.id);
+        if (!c.anchor_lost) lostIds.push(c.id);
         continue;
       }
       nextResolved.set(c.id, { from: loc.from, to: loc.to, line: docText.slice(0, loc.from).split("\n").length });
@@ -157,28 +157,41 @@ export function CommentsPane({
 
     if (!canEditText) return;
 
+    let anyChanged = false;
     for (const c of comments) {
       const resolved = nextResolved.get(c.id);
       if (!resolved) continue;
-      if (resolved.from === c.anchor_from && resolved.to === c.anchor_to && resolved.line === c.anchor_line) continue;
-      void api.PATCH("/api/projects/{project_id}/comments/{comment_id}/anchor", {
+      // Also fires for a comment that was flagged anchor_lost and has now
+      // resolved again (e.g. the edit that hid it got undone) even if its
+      // coordinates happen to match what's already stored — that PATCH is
+      // what clears the flag server-side, not just a position refresh.
+      if (
+        !c.anchor_lost &&
+        resolved.from === c.anchor_from &&
+        resolved.to === c.anchor_to &&
+        resolved.line === c.anchor_line
+      ) {
+        continue;
+      }
+      const { error } = await api.PATCH("/api/projects/{project_id}/comments/{comment_id}/anchor", {
         params: { path: { project_id: projectId, comment_id: c.id } },
         body: { anchor_line: resolved.line, anchor_from: resolved.from, anchor_to: resolved.to },
       });
+      if (!error && c.anchor_lost) anyChanged = true;
     }
 
-    if (orphanedIds.length === 0) return;
-    let anyDeleted = false;
-    for (const id of orphanedIds) {
-      // 409 means the file's *stored* content (periodically flushed, see
-      // apps/collab Room.flush) hasn't caught up with this edit yet, not
-      // that anything's wrong — the retry timer below tries again shortly.
-      const { error } = await api.DELETE("/api/projects/{project_id}/comments/{comment_id}/orphaned", {
-        params: { path: { project_id: projectId, comment_id: id } },
-      });
-      if (!error) anyDeleted = true;
+    if (lostIds.length > 0) {
+      for (const id of lostIds) {
+        // 409 means the file's *stored* content (periodically flushed, see
+        // apps/collab Room.flush) hasn't caught up with this edit yet, not
+        // that anything's wrong — the retry timer below tries again shortly.
+        const { error } = await api.POST("/api/projects/{project_id}/comments/{comment_id}/anchor-lost", {
+          params: { path: { project_id: projectId, comment_id: id } },
+        });
+        if (!error) anyChanged = true;
+      }
     }
-    if (anyDeleted) void load();
+    if (anyChanged) void load();
   }, [comments, docText, canEditText, projectId, onResolvedAnchorsChange, load]);
 
   useEffect(() => {
@@ -447,12 +460,26 @@ function CommentCard({
     <div>
       <div className={styles.commentMeta}>
         <span className={styles.author}>{comment.created_by_name ?? "Anonymous"}</span>
-        <button className={styles.lineLink} onClick={() => onJumpToLine(line)}>
-          Line {line}
+        <button
+          className={styles.lineLink}
+          onClick={() => onJumpToLine(line)}
+          title={comment.anchor_lost ? "Last known line — the anchored text can no longer be found" : undefined}
+        >
+          {comment.anchor_lost ? `~Line ${line}` : `Line ${line}`}
         </button>
         <span className={styles.time}>{new Date(comment.created_at).toLocaleString()}</span>
       </div>
-      {comment.anchor_text && <blockquote className={styles.anchorQuote}>“{comment.anchor_text}”</blockquote>}
+      {comment.anchor_text && (
+        <blockquote className={[styles.anchorQuote, comment.anchor_lost ? styles.anchorQuoteLost : ""].join(" ")}>
+          “{comment.anchor_text}”
+        </blockquote>
+      )}
+      {comment.anchor_lost && (
+        <p className={styles.anchorLostNotice}>
+          <AlertTriangle size={12} aria-hidden="true" />
+          This text can no longer be found — it may have been rewritten or removed.
+        </p>
+      )}
       <div className={styles.body}>{comment.body}</div>
       <div className={styles.actions}>
         {comment.resolved ? (

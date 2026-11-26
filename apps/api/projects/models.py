@@ -288,9 +288,16 @@ class Comment(models.Model):
     refreshed line/offsets back via comments_api.update_anchor — so these
     fields stay reasonably fresh for anyone *not* currently viewing the file
     live, while the open editor's own view is always exact. If `anchor_text`
-    can no longer be found anywhere in the document, the frontend deletes
-    the comment outright via comments_api.delete_orphaned_comment rather
-    than leaving it pointing at content that no longer exists."""
+    can no longer be found anywhere in the document, the frontend marks it
+    `anchor_lost_at` via comments_api.mark_anchor_lost rather than leaving it
+    pointing at content that no longer exists — previously this deleted the
+    comment outright, which silently discarded reviewer feedback the moment
+    someone rewrote the sentence it was attached to (see docs/decisions/
+    comment-anchoring.md's revised Consequences). `anchor_line`/`anchor_from`/
+    `anchor_to`/`anchor_text` are left exactly as last resolved, a frozen
+    record of where the comment used to point. If a later edit (e.g. an
+    undo) brings the exact text back, update_anchor re-resolving it clears
+    `anchor_lost_at` automatically — it isn't a one-way trip."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="comments")
@@ -300,6 +307,11 @@ class Comment(models.Model):
     anchor_from = models.PositiveIntegerField(null=True, blank=True)
     anchor_to = models.PositiveIntegerField(null=True, blank=True)
     anchor_text = models.TextField(null=True, blank=True)
+    # Set when a re-anchor pass could no longer find anchor_text anywhere in
+    # the file (e.g. the anchored sentence was rewritten) — null means the
+    # anchor is (as far as the last check knew) still good. See the class
+    # docstring above.
+    anchor_lost_at = models.DateTimeField(null=True, blank=True)
     body = models.TextField()
     created_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)
     created_at = models.DateTimeField(auto_now_add=True)

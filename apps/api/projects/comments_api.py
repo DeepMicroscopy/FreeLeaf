@@ -2,9 +2,10 @@
 with one level of flat replies. Any project member can comment, reply, or
 refresh a comment's anchor position; only owners/editors can resolve a
 thread; a comment can be manually deleted by its own author or by an owner,
-or auto-deleted by anyone who can edit content once its anchored text no
-longer exists anywhere in the file (see Comment's own docstring and
-delete_orphaned_comment below).
+or auto-flagged as anchor-lost by anyone who can edit content once its
+anchored text no longer exists anywhere in the file (see Comment's own
+docstring and mark_anchor_lost below) — flagged, not deleted, so rewriting a
+commented-on sentence doesn't silently discard the review feedback on it.
 """
 
 import uuid
@@ -43,6 +44,7 @@ class CommentOut(Schema):
     anchor_from: int | None = None
     anchor_to: int | None = None
     anchor_text: str | None = None
+    anchor_lost: bool = False
     body: str
     created_at: str
     created_by_name: str | None = None
@@ -71,6 +73,7 @@ def _comment_out(comment: Comment, user, is_owner: bool) -> CommentOut:
         anchor_from=comment.anchor_from,
         anchor_to=comment.anchor_to,
         anchor_text=comment.anchor_text,
+        anchor_lost=comment.anchor_lost_at is not None,
         body=comment.body,
         created_at=comment.created_at.isoformat(),
         created_by_name=_display_name(comment.created_by),
@@ -203,7 +206,10 @@ def update_anchor(request, project_id: uuid.UUID, comment_id: uuid.UUID, payload
     Comment's docstring. Same "any project member" permission as commenting
     itself: this only corrects where an existing comment's own text now
     sits, never its content, so it carries no more trust than posting a
-    comment in the first place.
+    comment in the first place. Successfully re-locating also clears
+    `anchor_lost_at` — a comment that was flagged lost (e.g. the anchored
+    sentence was rewritten) and then comes back (e.g. that edit gets undone)
+    isn't stuck flagged forever.
     """
     user = get_current_user(request)
     project, _membership = get_authorized_project(user, project_id)
@@ -216,15 +222,16 @@ def update_anchor(request, project_id: uuid.UUID, comment_id: uuid.UUID, payload
     comment.anchor_line = max(1, payload.anchor_line)
     comment.anchor_from = payload.anchor_from
     comment.anchor_to = payload.anchor_to
-    comment.save(update_fields=["anchor_line", "anchor_from", "anchor_to"])
+    comment.anchor_lost_at = None
+    comment.save(update_fields=["anchor_line", "anchor_from", "anchor_to", "anchor_lost_at"])
     is_owner = _membership.role == Role.OWNER
     return _comment_out(comment, user, is_owner)
 
 
-@router.delete("/projects/{project_id}/comments/{comment_id}/orphaned")
-def delete_orphaned_comment(request, project_id: uuid.UUID, comment_id: uuid.UUID):
-    """Deletes a comment whose anchored text no longer exists anywhere in
-    its file — called by any client the moment it notices this while
+@router.post("/projects/{project_id}/comments/{comment_id}/anchor-lost", response=CommentOut)
+def mark_anchor_lost(request, project_id: uuid.UUID, comment_id: uuid.UUID):
+    """Flags a comment whose anchored text no longer exists anywhere in its
+    file — called by any client the moment it notices this while
     re-anchoring, not just the comment's own author or the project owner
     (unlike the regular delete endpoint above), since the edit that made a
     comment's text disappear is very often made by someone other than that
@@ -235,19 +242,25 @@ def delete_orphaned_comment(request, project_id: uuid.UUID, comment_id: uuid.UUI
     an edit that orphaned it until the next periodic flush catches up (see
     apps/collab Room.flush), which just means this returns 409 and the
     caller's next re-anchor pass tries again, not that anything is wrong.
+
+    Flags rather than deletes (see Comment's docstring) — idempotent if
+    already flagged, so a retry after a 409 doesn't bump anchor_lost_at.
     """
     user = get_current_user(request)
     project, membership = get_authorized_project(user, project_id)
     require_role(membership, Role.OWNER, Role.EDITOR, Role.REVIEWER)
     comment = _get_comment_or_404(project, comment_id)
     if comment.parent_id is not None:
-        raise HttpError(400, "Only top-level comments can be pruned this way.")
+        raise HttpError(400, "Only top-level comments can be flagged this way.")
     if not comment.anchor_text:
         raise HttpError(400, "This comment has no anchored text to verify.")
 
     content = storage.get_object(comment.file.storage_key).decode(errors="replace")
     if comment.anchor_text in content:
-        raise HttpError(409, "The anchored text is still present in the file — not deleting.")
+        raise HttpError(409, "The anchored text is still present in the file — not flagging.")
 
-    comment.delete()
-    return {"ok": True}
+    if comment.anchor_lost_at is None:
+        comment.anchor_lost_at = timezone.now()
+        comment.save(update_fields=["anchor_lost_at"])
+    is_owner = membership.role == Role.OWNER
+    return _comment_out(comment, user, is_owner)

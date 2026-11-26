@@ -1145,12 +1145,15 @@ export interface paths {
          *     Comment's docstring. Same "any project member" permission as commenting
          *     itself: this only corrects where an existing comment's own text now
          *     sits, never its content, so it carries no more trust than posting a
-         *     comment in the first place.
+         *     comment in the first place. Successfully re-locating also clears
+         *     `anchor_lost_at` — a comment that was flagged lost (e.g. the anchored
+         *     sentence was rewritten) and then comes back (e.g. that edit gets undone)
+         *     isn't stuck flagged forever.
          */
         patch: operations["projects_comments_api_update_anchor"];
         trace?: never;
     };
-    "/api/projects/{project_id}/comments/{comment_id}/orphaned": {
+    "/api/projects/{project_id}/comments/{comment_id}/anchor-lost": {
         parameters: {
             query?: never;
             header?: never;
@@ -1159,11 +1162,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post?: never;
         /**
-         * Delete Orphaned Comment
-         * @description Deletes a comment whose anchored text no longer exists anywhere in
-         *     its file — called by any client the moment it notices this while
+         * Mark Anchor Lost
+         * @description Flags a comment whose anchored text no longer exists anywhere in its
+         *     file — called by any client the moment it notices this while
          *     re-anchoring, not just the comment's own author or the project owner
          *     (unlike the regular delete endpoint above), since the edit that made a
          *     comment's text disappear is very often made by someone other than that
@@ -1174,8 +1176,12 @@ export interface paths {
          *     an edit that orphaned it until the next periodic flush catches up (see
          *     apps/collab Room.flush), which just means this returns 409 and the
          *     caller's next re-anchor pass tries again, not that anything is wrong.
+         *
+         *     Flags rather than deletes (see Comment's docstring) — idempotent if
+         *     already flagged, so a retry after a 409 doesn't bump anchor_lost_at.
          */
-        delete: operations["projects_comments_api_delete_orphaned_comment"];
+        post: operations["projects_comments_api_mark_anchor_lost"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1886,6 +1892,11 @@ export interface components {
             anchor_to?: number | null;
             /** Anchor Text */
             anchor_text?: string | null;
+            /**
+             * Anchor Lost
+             * @default false
+             */
+            anchor_lost: boolean;
             /** Body */
             body: string;
             /** Created At */
@@ -4019,7 +4030,7 @@ export interface operations {
             };
         };
     };
-    projects_comments_api_delete_orphaned_comment: {
+    projects_comments_api_mark_anchor_lost: {
         parameters: {
             query?: never;
             header?: never;
@@ -4036,7 +4047,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["CommentOut"];
+                };
             };
         };
     };
