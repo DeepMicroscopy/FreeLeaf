@@ -1,9 +1,11 @@
-import { api } from "@freeleaf/shared";
+import { api, apiOrigin } from "@freeleaf/shared";
+import type { components } from "@freeleaf/shared";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Mail, Users } from "lucide-react";
+import { Mail, Star, Users } from "lucide-react";
 
+import { PenguinMascot } from "../components/workspace/PenguinMascot";
 import { Button } from "../components/ui/Button";
 import { TextField } from "../components/ui/TextField";
 import { PageSpinner } from "../components/ui/Spinner";
@@ -15,6 +17,7 @@ import loginStyles from "./LoginPage.module.css";
 import styles from "./JoinPage.module.css";
 
 type MagicLinkState = "idle" | "sending" | "sent";
+type SharePreview = components["schemas"]["ShareLinkPreviewOut"];
 
 export function JoinPage() {
   const { token } = useParams<{ token: string }>();
@@ -26,10 +29,25 @@ export function JoinPage() {
   const [joinError, setJoinError] = useState<string | null>(null);
   const attemptedAutoJoin = useRef(false);
 
+  // The greeting (who invited you, to what) is fetched and shown up front —
+  // before picking how to identify yourself, not only after joining (see
+  // ProjectWelcome.tsx for the equivalent post-join screen) — so this isn't
+  // the viewer's first impression of a bare, unexplained sign-in box.
+  const [preview, setPreview] = useState<SharePreview | null>(null);
+  const [previewInvalid, setPreviewInvalid] = useState(false);
+
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [magicLinkState, setMagicLinkState] = useState<MagicLinkState>("idle");
   const [magicLinkError, setMagicLinkError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!token) return;
+    api.GET("/api/share-links/{token}", { params: { path: { token } } }).then(({ data, error }) => {
+      if (error || !data) setPreviewInvalid(true);
+      else setPreview(data);
+    });
+  }, [token]);
 
   async function join(name?: string) {
     if (!token) return;
@@ -95,23 +113,70 @@ export function JoinPage() {
     );
   }
 
+  if (previewInvalid) {
+    return (
+      <EmptyState
+        icon={<Users size={32} aria-hidden="true" />}
+        title="Invite link not found"
+        description="This invite link is invalid, has expired, or has been revoked by the project owner."
+      />
+    );
+  }
+
   return (
     <div className={loginStyles.page}>
-      <div className={loginStyles.card}>
-        <div className={loginStyles.brand}>
-          <span className={loginStyles.logo} aria-hidden="true">
-            🍃
-          </span>
-          <h1 className={loginStyles.title}>You're invited</h1>
+      <div className={[loginStyles.card, styles.card].join(" ")}>
+        <div className={styles.greeting}>
+          <PenguinMascot pose="happy" size={64} />
+          <div>
+            <h1 className={loginStyles.title}>Welcome to {siteName}</h1>
+            {preview ? (
+              <p className={styles.inviteLine}>
+                {preview.invited_by_name ? (
+                  <>
+                    <strong>{preview.invited_by_name}</strong> invited you to join{" "}
+                  </>
+                ) : (
+                  "You've been invited to join "
+                )}
+                <strong>{preview.project_name}</strong>
+              </p>
+            ) : (
+              <p className={styles.inviteLine}>Loading your invite…</p>
+            )}
+          </div>
         </div>
-        <p className={loginStyles.tagline}>Join this {siteName} project to start collaborating.</p>
+
+        {preview?.has_thumbnail && (
+          <img className={styles.thumbnail} src={`${apiOrigin()}/api/share-links/${token}/thumbnail`} alt="" />
+        )}
+
+        <p className={styles.description}>
+          {siteName} is a self-hostable, collaborative LaTeX editor — write and compile together in real time, with
+          a live PDF preview, inline comments, and tracked-suggestion reviewing, all in the browser.
+        </p>
 
         {joinError && <p className={styles.error}>{joinError}</p>}
 
-        <a className={loginStyles.orcidButton} href={orcidLoginUrl(`/join/${token}`)}>
-          <OrcidMark />
-          Sign in with ORCID
-        </a>
+        <div className={styles.identifyIntro}>
+          <h2 className={styles.identifyHeading}>Choose how we should identify you</h2>
+          <p className={styles.identifyReason}>
+            The project's collaborators will see this name next to any comments or edits you make — so before you
+            can start, let them know who you are.
+          </p>
+        </div>
+
+        <div>
+          <a className={loginStyles.orcidButton} href={orcidLoginUrl(`/join/${token}`)}>
+            <OrcidMark />
+            Sign in with ORCID
+          </a>
+          <p className={styles.recommendedHint}>
+            <Star size={12} aria-hidden="true" />
+            Recommended — sign back in anytime from the login page and see every project you've been invited to, all
+            in one place.
+          </p>
+        </div>
 
         <div className={loginStyles.divider}>
           <span>or</span>
@@ -129,6 +194,7 @@ export function JoinPage() {
           </div>
         ) : (
           <form className={loginStyles.form} onSubmit={handleMagicLinkSubmit}>
+            <p className={styles.optionHint}>We'll email a one-time sign-in link for this invite.</p>
             <TextField
               label="Email"
               type="email"
@@ -150,6 +216,10 @@ export function JoinPage() {
         </div>
 
         <form className={styles.guestForm} onSubmit={handleGuestJoin}>
+          <p className={styles.optionHint}>
+            No account needed — fastest to get started, but you won't be able to sign back in from another device or
+            browser.
+          </p>
           <TextField
             label="Display name (optional)"
             placeholder="Anonymous Panda"

@@ -81,3 +81,29 @@ class WelcomeTests(ApiTestCase):
         # already-dismissed welcome stays dismissed.
         rejoin = post_json(joiner, f"/api/share-links/{token}/join", {})
         self.assertFalse(rejoin.json()["needs_welcome"])
+
+
+class SharePreviewTests(WelcomeTests):
+    """The public, pre-authentication preview JoinPage.tsx shows on
+    /join/:token — before picking how to identify yourself, not just after."""
+
+    def test_anonymous_visitor_can_preview_without_joining(self):
+        token = self._invite(role="viewer")
+        response = Client().get(f"/api/share-links/{token}")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["project_name"], "Paper")
+        self.assertEqual(data["role"], "viewer")
+        self.assertEqual(data["invited_by_name"], "owner@example.com")
+        self.assertFalse(data["has_thumbnail"])
+        # A preview never creates a membership.
+        self.assertEqual(Membership.objects.filter(project_id=self.project_id).count(), 1)
+
+    def test_invalid_token_404s(self):
+        response = Client().get("/api/share-links/not-a-real-token")
+        self.assertEqual(response.status_code, 404)
+
+    def test_thumbnail_404s_when_project_has_none(self):
+        token = self._invite(role="viewer")
+        response = Client().get(f"/api/share-links/{token}/thumbnail")
+        self.assertEqual(response.status_code, 404)

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { FileText, GitBranch, MessageSquare, Users } from "lucide-react";
 
 import type { ProjectOut } from "../../lib/workspace";
+import { useSiteInfo } from "../../lib/siteInfo";
 import { Button } from "../ui/Button";
 import { PenguinMascot } from "./PenguinMascot";
 import styles from "./ProjectWelcome.module.css";
@@ -50,6 +51,7 @@ export function ProjectWelcome({
   project: ProjectOut;
   onDone: () => void;
 }) {
+  const { siteName } = useSiteInfo();
   const [showIntro, setShowIntro] = useState(false);
   const [dismissing, setDismissing] = useState(false);
   const actionLabel = ROLE_ACTION_LABEL[project.role] ?? "Continue";
@@ -70,7 +72,7 @@ export function ProjectWelcome({
             <div className={styles.header}>
               <PenguinMascot pose="happy" size={92} />
               <div>
-                <h1 className={styles.title}>Welcome to FreeLeaf</h1>
+                <h1 className={styles.title}>Welcome to {siteName}</h1>
                 <p className={styles.invite}>
                   {project.invited_by_name ? (
                     <>
@@ -93,7 +95,7 @@ export function ProjectWelcome({
             )}
 
             <p className={styles.description}>
-              FreeLeaf is a self-hostable, collaborative LaTeX editor — write and compile together in real time,
+              {siteName} is a self-hostable, collaborative LaTeX editor — write and compile together in real time,
               with a live PDF preview, inline comments, and tracked-suggestion reviewing, all in the browser.
             </p>
 

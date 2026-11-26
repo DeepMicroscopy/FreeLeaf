@@ -609,6 +609,54 @@ def revoke_share_link(request, project_id: uuid.UUID, link_id: uuid.UUID):
     return {"detail": "revoked"}
 
 
+def _resolve_valid_share_link(token: str) -> ShareLink:
+    link = ShareLink.objects.filter(token_hash=hash_token(token)).select_related("project", "created_by").first()
+    if link is None or (link.expires_at and link.expires_at < timezone.now()):
+        raise HttpError(404, "Invalid or expired invite link.")
+    return link
+
+
+class ShareLinkPreviewOut(Schema):
+    project_name: str
+    role: str
+    invited_by_name: str | None = None
+    has_thumbnail: bool = False
+
+
+@router.get("/share-links/{token}", response=ShareLinkPreviewOut, auth=None)
+def preview_share_link(request, token: str):
+    """Public, read-only preview of what a share link leads to — shown on
+    the pre-authentication /join/:token screen (JoinPage.tsx) so a new
+    collaborator sees who invited them and to what *before* picking how to
+    identify themselves, not only after joining (see ProjectWelcome.tsx for
+    the equivalent post-join screen). No more sensitive than the join
+    endpoint itself: anyone holding this token can already join at
+    `link.role` with no further proof, so previewing the project's name and
+    inviter first discloses strictly less than joining does.
+    """
+    check_rate_limit(f"share-preview:{client_ip(request)}", limit=30, window_seconds=60)
+    link = _resolve_valid_share_link(token)
+    return ShareLinkPreviewOut(
+        project_name=link.project.name,
+        role=link.role,
+        invited_by_name=(link.created_by.display_name or link.created_by.email if link.created_by else None),
+        has_thumbnail=bool(link.project.thumbnail_storage_key),
+    )
+
+
+@router.get("/share-links/{token}/thumbnail", auth=None)
+def share_link_thumbnail(request, token: str):
+    """Same bytes as the authenticated /projects/{id}/thumbnail, but gated
+    on the token's own validity instead of membership — for the preview
+    above, reachable before the viewer has joined (or even authenticated)
+    at all."""
+    check_rate_limit(f"share-preview:{client_ip(request)}", limit=30, window_seconds=60)
+    link = _resolve_valid_share_link(token)
+    if not link.project.thumbnail_storage_key:
+        raise HttpError(404, "No thumbnail for this project yet.")
+    return HttpResponse(storage.get_object(link.project.thumbnail_storage_key), content_type="image/png")
+
+
 class ShareLinkJoinIn(Schema):
     display_name: str | None = None
 
@@ -616,12 +664,7 @@ class ShareLinkJoinIn(Schema):
 @router.post("/share-links/{token}/join", response=ProjectOut, auth=CsrfProtect())
 def join_via_share_link(request, token: str, payload: ShareLinkJoinIn):
     check_rate_limit(f"share-join:{client_ip(request)}", limit=20, window_seconds=60)
-
-    link = ShareLink.objects.filter(token_hash=hash_token(token)).select_related("project").first()
-    if link is None:
-        raise HttpError(404, "Invalid or expired invite link.")
-    if link.expires_at and link.expires_at < timezone.now():
-        raise HttpError(404, "Invalid or expired invite link.")
+    link = _resolve_valid_share_link(token)
 
     user = get_current_user(request)
     if user is None:

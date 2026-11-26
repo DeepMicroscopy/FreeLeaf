@@ -531,6 +531,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/share-links/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview Share Link
+         * @description Public, read-only preview of what a share link leads to — shown on
+         *     the pre-authentication /join/:token screen (JoinPage.tsx) so a new
+         *     collaborator sees who invited them and to what *before* picking how to
+         *     identify themselves, not only after joining (see ProjectWelcome.tsx for
+         *     the equivalent post-join screen). No more sensitive than the join
+         *     endpoint itself: anyone holding this token can already join at
+         *     `link.role` with no further proof, so previewing the project's name and
+         *     inviter first discloses strictly less than joining does.
+         */
+        get: operations["projects_api_preview_share_link"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/share-links/{token}/thumbnail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Share Link Thumbnail
+         * @description Same bytes as the authenticated /projects/{id}/thumbnail, but gated
+         *     on the token's own validity instead of membership — for the preview
+         *     above, reachable before the viewer has joined (or even authenticated)
+         *     at all.
+         */
+        get: operations["projects_api_share_link_thumbnail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/share-links/{token}/join": {
         parameters: {
             query?: never;
@@ -1576,6 +1626,20 @@ export interface components {
             role: string;
             /** Expires In Hours */
             expires_in_hours?: number | null;
+        };
+        /** ShareLinkPreviewOut */
+        ShareLinkPreviewOut: {
+            /** Project Name */
+            project_name: string;
+            /** Role */
+            role: string;
+            /** Invited By Name */
+            invited_by_name?: string | null;
+            /**
+             * Has Thumbnail
+             * @default false
+             */
+            has_thumbnail: boolean;
         };
         /** ShareLinkJoinIn */
         ShareLinkJoinIn: {
@@ -2968,6 +3032,48 @@ export interface operations {
             path: {
                 project_id: string;
                 link_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    projects_api_preview_share_link: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareLinkPreviewOut"];
+                };
+            };
+        };
+    };
+    projects_api_share_link_thumbnail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
             };
             cookie?: never;
         };

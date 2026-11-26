@@ -1,3 +1,74 @@
+.card {
+  max-width: 440px;
+}
+
+.greeting {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.inviteLine {
+  margin-top: 2px;
+  color: var(--text-secondary);
+  font-size: 13.5px;
+}
+
+.thumbnail {
+  width: 100%;
+  max-height: 200px;
+  object-fit: contain;
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.description {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.identifyIntro {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.identifyHeading {
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.identifyReason {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.recommendedHint {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin: 6px 2px 0;
+  font-size: 11.5px;
+  color: var(--accent);
+  line-height: 1.4;
+}
+
+.recommendedHint svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  fill: currentColor;
+}
+
+.optionHint {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+  margin: 0;
+}
+
 .guestForm {
   display: flex;
   flex-direction: column;
