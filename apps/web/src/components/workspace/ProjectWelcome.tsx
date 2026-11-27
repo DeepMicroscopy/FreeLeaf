@@ -94,11 +94,6 @@ export function ProjectWelcome({
               />
             )}
 
-            <p className={styles.description}>
-              {siteName} is a self-hostable, collaborative LaTeX editor — write and compile together in real time,
-              with a live PDF preview, inline comments, and tracked-suggestion reviewing, all in the browser.
-            </p>
-
             <div className={styles.actions}>
               <Button variant="secondary" onClick={() => setShowIntro(true)} disabled={dismissing}>
                 Introduce me to the tool
