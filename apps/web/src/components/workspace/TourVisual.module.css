@@ -1,0 +1,161 @@
+.frame {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--bg-canvas);
+}
+
+.chrome {
+  display: flex;
+  gap: 5px;
+  padding: 7px 9px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--border-subtle);
+}
+
+.body {
+  position: relative;
+  display: flex;
+  min-height: 140px;
+}
+
+.syncBadge {
+  position: absolute;
+  top: 50%;
+  left: 58%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent-500);
+  color: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+
+.editorPane {
+  flex: 1 1 58%;
+  padding: 10px 12px;
+}
+
+.bodySingle .editorPane {
+  flex: 1 1 100%;
+}
+
+/* Always a plain white "paper", independent of app theme, same as the
+   real PDF preview pane. */
+.pdfPane {
+  flex: 0 0 42%;
+  background: #ffffff;
+  border-left: 1px solid var(--border-subtle);
+  padding: 10px;
+}
+
+.pdfFigure {
+  height: 22px;
+  border-radius: 3px;
+  background: #e4e6e1;
+  margin-bottom: 8px;
+}
+
+.pdfLine {
+  height: 5px;
+  border-radius: 2px;
+  background: #d8dad5;
+  margin-bottom: 6px;
+}
+
+.lines {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding-top: 6px;
+}
+
+.lineRow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.line {
+  height: 7px;
+  border-radius: 4px;
+  background: var(--border-subtle);
+}
+
+.lineInsert {
+  background: color-mix(in srgb, var(--accent-500) 35%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--accent-500) 65%, transparent);
+}
+
+.lineDelete {
+  position: relative;
+  background: color-mix(in srgb, var(--danger-500) 22%, transparent);
+  opacity: 0.8;
+}
+
+.lineDelete::after {
+  content: "";
+  position: absolute;
+  inset: 50% 0 auto 0;
+  border-top: 1px solid var(--danger-600);
+}
+
+.commentBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent-500);
+  color: white;
+}
+
+.cursor {
+  position: relative;
+  width: 2px;
+  height: 14px;
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+
+.cursor::after {
+  content: "";
+  position: absolute;
+  top: -5px;
+  left: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.cursorA {
+  background: var(--accent-500);
+}
+
+.cursorA::after {
+  background: var(--accent-500);
+}
+
+/* A second, distinct collaborator color — not reused from accent/danger/the
+   revision-diff amber, so two simultaneous cursors read as clearly different. */
+.cursorB {
+  background: #7c6fe0;
+}
+
+.cursorB::after {
+  background: #7c6fe0;
+}

@@ -62,35 +62,39 @@
   gap: var(--space-2);
 }
 
-.featureList {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.tourStepHeader {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
+  align-items: center;
+  gap: var(--space-2);
 }
 
-.feature {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
-}
-
-.featureIcon {
+.tourStepIcon {
   flex-shrink: 0;
-  margin-top: 2px;
   color: var(--accent);
 }
 
-.featureTitle {
-  font-size: 13.5px;
-  font-weight: 600;
+.tourStepTitle {
+  font-size: 14.5px;
+  font-weight: 650;
 }
 
-.featureBody {
-  font-size: 13px;
-  color: var(--text-secondary);
-  line-height: 1.4;
-  margin-top: 2px;
+.tourDots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+
+.tourDot {
+  width: 7px;
+  height: 7px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--border-subtle);
+  cursor: pointer;
+}
+
+.tourDotActive {
+  width: 18px;
+  background: var(--accent);
 }

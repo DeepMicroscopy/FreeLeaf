@@ -1,11 +1,12 @@
 import { api, apiOrigin } from "@freeleaf/shared";
 import { useState } from "react";
-import { FileText, GitBranch, MessageSquare, Users } from "lucide-react";
+import { Code2, FileText, GitBranch, MessageSquare, Users } from "lucide-react";
 
 import type { ProjectOut } from "../../lib/workspace";
 import { useSiteInfo } from "../../lib/siteInfo";
 import { Button } from "../ui/Button";
 import { PenguinMascot } from "./PenguinMascot";
+import { TourVisual } from "./TourVisual";
 import styles from "./ProjectWelcome.module.css";
 
 // Only ever shown to an invited member (owners create their own project,
@@ -19,28 +20,38 @@ const ROLE_ACTION_LABEL: Record<string, string> = {
   viewer: "Start reading",
 };
 
-const FEATURES = [
+const TOUR_STEPS = [
+  {
+    icon: Code2,
+    title: "Write in a real LaTeX editor",
+    body: "Syntax highlighting and inline error checks as you type — no local TeX install needed.",
+    visual: "editor",
+  },
   {
     icon: FileText,
-    title: "Live PDF preview",
-    body: "Compiles your LaTeX and shows the typeset PDF side by side as you write.",
+    title: "Watch the PDF update as you go",
+    body: "Every change recompiles in a sandboxed TeX Live container and refreshes the preview right next to your source.",
+    visual: "pdf",
   },
   {
     icon: Users,
-    title: "Real-time collaboration",
-    body: "Everyone's cursor and edits show up live, like a shared document.",
+    title: "Collaborate in real time",
+    body: "Everyone's cursor and edits appear instantly, like a shared document — no more emailing .tex files back and forth.",
+    visual: "collab",
   },
   {
     icon: MessageSquare,
-    title: "Reviewing mode",
-    body: "Suggest changes as tracked edits and leave inline comments, without touching the real text.",
+    title: "Comment and suggest changes",
+    body: "Reviewers can leave inline comments or propose tracked edits without touching the real text.",
+    visual: "review",
   },
   {
     icon: GitBranch,
-    title: "Revision diffs",
-    body: "Link a document to an earlier version to see exactly what's changed since then.",
+    title: "Track what's changed since any version",
+    body: "Link a document to an earlier revision to see a permanent diff against it — handy when revising against reviewer feedback.",
+    visual: "diff",
   },
-];
+] as const;
 
 export function ProjectWelcome({
   projectId,
@@ -53,8 +64,10 @@ export function ProjectWelcome({
 }) {
   const { siteName } = useSiteInfo();
   const [showIntro, setShowIntro] = useState(false);
+  const [tourStep, setTourStep] = useState(0);
   const [dismissing, setDismissing] = useState(false);
   const actionLabel = ROLE_ACTION_LABEL[project.role] ?? "Continue";
+  const isLastTourStep = tourStep === TOUR_STEPS.length - 1;
 
   async function finish() {
     setDismissing(true);
@@ -62,6 +75,22 @@ export function ProjectWelcome({
       params: { path: { project_id: projectId } },
     });
     onDone();
+  }
+
+  function backFromTour() {
+    if (tourStep === 0) {
+      setShowIntro(false);
+    } else {
+      setTourStep((step) => step - 1);
+    }
+  }
+
+  function advanceTour() {
+    if (isLastTourStep) {
+      finish();
+    } else {
+      setTourStep((step) => step + 1);
+    }
   }
 
   return (
@@ -95,7 +124,14 @@ export function ProjectWelcome({
             )}
 
             <div className={styles.actions}>
-              <Button variant="secondary" onClick={() => setShowIntro(true)} disabled={dismissing}>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setTourStep(0);
+                  setShowIntro(true);
+                }}
+                disabled={dismissing}
+              >
                 Introduce me to the tool
               </Button>
               <Button variant="primary" onClick={finish} loading={dismissing}>
@@ -106,28 +142,42 @@ export function ProjectWelcome({
         ) : (
           <>
             <div className={styles.header}>
-              <PenguinMascot pose="happy" size={72} />
-              <h1 className={styles.title}>What you can do here</h1>
+              <PenguinMascot pose="happy" size={56} />
+              <h1 className={styles.title}>A quick tour</h1>
             </div>
 
-            <ul className={styles.featureList}>
-              {FEATURES.map(({ icon: Icon, title, body }) => (
-                <li key={title} className={styles.feature}>
-                  <Icon size={18} aria-hidden="true" className={styles.featureIcon} />
-                  <div>
-                    <p className={styles.featureTitle}>{title}</p>
-                    <p className={styles.featureBody}>{body}</p>
-                  </div>
-                </li>
+            <TourVisual kind={TOUR_STEPS[tourStep].visual} />
+
+            <div>
+              <div className={styles.tourStepHeader}>
+                {(() => {
+                  const Icon = TOUR_STEPS[tourStep].icon;
+                  return <Icon size={16} aria-hidden="true" className={styles.tourStepIcon} />;
+                })()}
+                <p className={styles.tourStepTitle}>{TOUR_STEPS[tourStep].title}</p>
+              </div>
+              <p className={styles.description}>{TOUR_STEPS[tourStep].body}</p>
+            </div>
+
+            <div className={styles.tourDots}>
+              {TOUR_STEPS.map((step, i) => (
+                <button
+                  key={step.title}
+                  type="button"
+                  className={[styles.tourDot, i === tourStep ? styles.tourDotActive : ""].join(" ")}
+                  aria-label={`Go to step ${i + 1} of ${TOUR_STEPS.length}`}
+                  aria-current={i === tourStep}
+                  onClick={() => setTourStep(i)}
+                />
               ))}
-            </ul>
+            </div>
 
             <div className={styles.actions}>
-              <Button variant="secondary" onClick={() => setShowIntro(false)} disabled={dismissing}>
+              <Button variant="secondary" onClick={backFromTour} disabled={dismissing}>
                 Back
               </Button>
-              <Button variant="primary" onClick={finish} loading={dismissing}>
-                {actionLabel}
+              <Button variant="primary" onClick={advanceTour} loading={dismissing && isLastTourStep}>
+                {isLastTourStep ? actionLabel : "Next"}
               </Button>
             </div>
           </>
